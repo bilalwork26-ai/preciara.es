@@ -20,7 +20,7 @@ export function Header() {
       <Container>
         <div className="flex h-16 items-center gap-3 lg:h-20 lg:gap-6">
           <Link href="/" className="shrink-0" aria-label="Preciara — Inicio">
-            <Logo theme="light" markClassName="h-8 w-8 shrink-0 lg:h-9 lg:w-9" />
+            <Logo theme="light" markClassName="h-9 w-9 shrink-0 lg:h-10 lg:w-10" />
           </Link>
 
           <CategoriesMenu className="hidden shrink-0 lg:block" />

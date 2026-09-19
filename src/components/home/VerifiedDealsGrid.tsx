@@ -8,12 +8,15 @@ export function VerifiedDealsGrid() {
     <section aria-labelledby="bajadas-heading">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 id="bajadas-heading" className="flex items-center gap-2 font-serif text-2xl font-bold text-navy-900">
+          <h2 id="bajadas-heading" className="flex flex-wrap items-center gap-2 font-serif text-2xl font-bold text-navy-900">
             <Tags className="h-5 w-5 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
-            Bajadas verificadas hoy
+            Bajadas destacadas
+            <span className="rounded-full bg-beige px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-navy-500">
+              Datos demo
+            </span>
           </h2>
           <p className="mt-1 text-sm text-navy-500">
-            Productos con bajada de precio real, verificada y actualizada en el tiempo definido para cada tienda.
+            Ejemplo de comparación e historial con productos de demostración.
           </p>
         </div>
         <Link

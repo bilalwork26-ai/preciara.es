@@ -9,18 +9,23 @@ const indicators = [
 
 export function PromoBannerSecondary() {
   return (
-    <div className="relative min-h-[320px] overflow-hidden rounded-[2rem] bg-ivory sm:min-h-[380px] lg:min-h-[440px]">
+    <div className="relative min-h-[340px] overflow-hidden rounded-[2rem] bg-ivory sm:min-h-[380px] lg:min-h-[400px]">
+      {/*
+        object-position desplazado a la derecha: el portátil queda entero en
+        la mitad derecha de la foto, dejando la zona de ventana/mar (clara)
+        libre a la izquierda para el texto, sin invadir la pantalla.
+      */}
       <Image
         src="/images/banner-laptop.webp"
         alt=""
         fill
         sizes="(min-width: 1024px) 34vw, 100vw"
-        className="object-cover object-[38%_50%]"
+        className="object-cover object-[55%_46%]"
       />
-      {/* Degradado solo donde hace falta para garantizar legibilidad del texto. */}
+      {/* Degradado marfil solo donde hace falta para garantizar legibilidad del texto. */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-gradient-to-r from-white/92 via-white/55 to-transparent"
+        className="absolute inset-0 bg-gradient-to-r from-ivory/95 from-15% via-ivory/70 via-44% to-transparent"
       />
 
       <div className="relative flex h-full flex-col justify-between p-6 sm:p-8 lg:p-10">
@@ -28,8 +33,9 @@ export function PromoBannerSecondary() {
           Especial portátiles
         </span>
 
-        <div className="max-w-[15rem]">
-          <h2 className="font-serif text-2xl font-bold leading-[1.1] text-navy-900 sm:text-3xl">
+        {/* Zona izquierda: limitada a ~44% del ancho del banner para no invadir la pantalla del portátil. */}
+        <div className="max-w-[44%]">
+          <h2 className="font-serif text-xl font-bold leading-[1.15] text-navy-900 sm:text-2xl lg:text-3xl">
             Rendimiento para todo lo que viene.
           </h2>
           <p className="mt-2 text-sm text-navy-500">Compara los mejores portátiles de 2026.</p>
@@ -42,10 +48,10 @@ export function PromoBannerSecondary() {
           </a>
         </div>
 
-        <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+        <ul className="flex max-w-[46%] flex-wrap gap-x-3 gap-y-1.5">
           {indicators.map(({ icon: Icon, label }) => (
             <li key={label} className="flex items-center gap-1.5 text-xs font-medium text-navy-700">
-              <Icon className="h-3.5 w-3.5 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
+              <Icon className="h-3.5 w-3.5 shrink-0 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
               {label}
             </li>
           ))}

@@ -11,17 +11,17 @@ export default function Home() {
     <>
       <TrustStrip />
 
-      <Container className="pb-8 pt-6 sm:pt-8">
+      <Container className="pb-8 pt-4 sm:pt-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.7fr_1fr]">
           <PromoBannerMain />
           <PromoBannerSecondary />
         </div>
 
-        <div id="categorias" className="mt-6 scroll-mt-24">
+        <div id="categorias" className="mt-5 scroll-mt-24">
           <CategoryRow />
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <VerifiedDealsGrid />
           <ComparisonPanel />
         </div>

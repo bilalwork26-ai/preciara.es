@@ -1,33 +1,33 @@
 type MarkProps = {
   className?: string;
-  /** Color del "tallo" de la P. Blanco/marfil sobre fondos navy, navy sobre fondos claros. */
-  ink?: string;
+  /** "dark" = sobre fondos claros (tallo navy, teal estándar). "light" = sobre la cabecera navy (tallo marfil, teal más claro para mantener contraste). */
+  theme?: "dark" | "light";
 };
 
 /**
- * Símbolo de Preciara: una "P" formada por dos flechas enfrentadas (arriba
- * en azul cristal apuntando a la derecha, abajo en teal apuntando a la
- * izquierda) que representan la comparación de precios entre tiendas, con
- * un pequeño indicador coral de bajada de precio en el punto donde ambas
- * casi se tocan. Sin gema, sin diamante, sin caja exterior.
+ * Símbolo de Preciara: una "P" ancha y sólida formada por dos flechas
+ * enfrentadas (arriba en azul cristal apuntando a la derecha, abajo en
+ * teal apuntando a la izquierda) que representan la comparación de
+ * precios, con un pequeño indicador coral de bajada de precio. Trazos
+ * gruesos y sin huecos internos grandes para que la silueta se reconozca
+ * de un vistazo, incluso a tamaño de favicon. Sin gema, sin caja exterior.
  */
-export function PreciaraMark({ className, ink = "var(--color-navy-900)" }: MarkProps) {
+export function PreciaraMark({ className, theme = "dark" }: MarkProps) {
+  const ink = theme === "light" ? "var(--color-ivory)" : "var(--color-navy-900)";
+  // El teal estándar (#087F78) apenas contrasta sobre el navy de la cabecera
+  // (3.6:1): sobre fondo navy se usa el teal-500, más claro (5:1).
+  const arrowTeal = theme === "light" ? "var(--color-teal-500)" : "var(--color-teal-600)";
+
   return (
-    <svg viewBox="0 0 68 70" fill="none" aria-hidden="true" className={className}>
+    <svg viewBox="0 0 100 100" fill="none" aria-hidden="true" className={className}>
       {/* Tallo de la P */}
-      <path d="M4 4 L16 4 L16 58 L10 66 L4 58 Z" fill={ink} />
+      <path d="M8 4 L24 4 L24 78 L16 96 L8 78 Z" fill={ink} />
       {/* Flecha superior: apunta a la derecha (azul cristal) */}
-      <path
-        d="M16 13 L38 13 L38 6 L56 18 L38 30 L38 23 L16 23 Z"
-        fill="var(--color-crystal)"
-      />
+      <path d="M24 17 L64 17 L64 4 L88 25.5 L64 47 L64 34 L24 34 Z" fill="var(--color-crystal)" />
       {/* Flecha inferior: apunta a la izquierda (teal) */}
-      <path
-        d="M56 45 L34 45 L34 38 L16 50 L34 62 L34 55 L56 55 Z"
-        fill="var(--color-teal-600)"
-      />
+      <path d="M88 66 L48 66 L48 53 L24 74.5 L48 96 L48 83 L88 83 Z" fill={arrowTeal} />
       {/* Indicador coral de bajada de precio */}
-      <path d="M50 31 L62 31 L56 41 Z" fill="var(--color-coral-500)" />
+      <path d="M76 48 L92 48 L84 58 Z" fill="var(--color-coral-500)" />
     </svg>
   );
 }
@@ -46,14 +46,13 @@ type LogoProps = {
  * sobre la cabecera navy; `theme="dark"` (por defecto) sobre fondos claros.
  */
 export function Logo({ className, markOnly = false, markClassName, theme = "dark" }: LogoProps) {
-  const ink = theme === "light" ? "var(--color-ivory)" : "var(--color-navy-900)";
   const textColor = theme === "light" ? "text-ivory" : "text-navy-900";
 
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className ?? ""}`}>
-      <PreciaraMark ink={ink} className={markClassName ?? "h-9 w-9 shrink-0"} />
+    <span className={`inline-flex items-center gap-3 ${className ?? ""}`}>
+      <PreciaraMark theme={theme} className={markClassName ?? "h-10 w-10 shrink-0"} />
       {!markOnly && (
-        <span className={`font-serif text-xl font-bold tracking-tight ${textColor}`}>
+        <span className={`font-serif text-2xl font-bold leading-none tracking-tight ${textColor}`}>
           Preciara
         </span>
       )}

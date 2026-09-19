@@ -1,11 +1,16 @@
-import { ShieldCheck, Store, Tags, ClipboardCheck, Leaf } from "lucide-react";
+import { ShieldCheck, Store, LineChart, ClipboardCheck, Leaf } from "lucide-react";
 
+/**
+ * Mensajes deliberadamente neutrales: describen funciones del sitio, no
+ * cifras ni resultados ("miles de productos", "tiendas comparadas"...).
+ * Mientras el catálogo sea de demostración no podemos afirmar hechos.
+ */
 const items = [
-  { icon: ShieldCheck, title: "Precios revisados a diario", subtitle: "Miles de productos verificados" },
-  { icon: Store, title: "Comparamos diferentes tiendas", subtitle: "Las mejores ofertas, en un solo lugar" },
-  { icon: Tags, title: "Bajadas confirmadas", subtitle: "Solo precios reales" },
-  { icon: ClipboardCheck, title: "Datos claros para decidir", subtitle: "Sin letra pequeña" },
-  { icon: Leaf, title: "Un consumo más inteligente", subtitle: "Mejores precios, un planeta más feliz" },
+  { icon: ShieldCheck, title: "Comparación clara", subtitle: "Precios organizados en un solo lugar" },
+  { icon: Store, title: "Diferentes tiendas", subtitle: "Compara opciones antes de decidir" },
+  { icon: LineChart, title: "Historial de precios", subtitle: "Consulta cómo cambia cada precio" },
+  { icon: ClipboardCheck, title: "Datos fáciles de entender", subtitle: "Sin información confusa" },
+  { icon: Leaf, title: "Consumo inteligente", subtitle: "Decide con más información" },
 ];
 
 export function TrustStrip() {
@@ -13,7 +18,7 @@ export function TrustStrip() {
     <div className="border-b border-border bg-ivory">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <ul
-          className="no-scrollbar flex snap-x gap-6 overflow-x-auto py-4 lg:grid lg:grid-cols-5 lg:gap-4 lg:overflow-visible"
+          className="no-scrollbar flex snap-x gap-6 overflow-x-auto py-3 lg:grid lg:grid-cols-5 lg:gap-4 lg:overflow-visible"
           aria-label="Indicadores de confianza"
           tabIndex={0}
         >

@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 80" fill="none">
-  <g transform="translate(6,10) scale(0.8)">
-    <path d="M4 4 L16 4 L16 58 L10 66 L4 58 Z" fill="#071A33" />
-    <path d="M16 13 L38 13 L38 6 L56 18 L38 30 L38 23 L16 23 Z" fill="#19A7CE" />
-    <path d="M56 45 L34 45 L34 38 L16 50 L34 62 L34 55 L56 55 Z" fill="#087F78" />
-    <path d="M50 31 L62 31 L56 41 Z" fill="#F06449" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 290 80" fill="none">
+  <g transform="translate(4,8) scale(0.64)">
+    <path d="M8 4 L24 4 L24 78 L16 96 L8 78 Z" fill="#071A33" />
+    <path d="M24 17 L64 17 L64 4 L88 25.5 L64 47 L64 34 L24 34 Z" fill="#19A7CE" />
+    <path d="M88 66 L48 66 L48 53 L24 74.5 L48 96 L48 83 L88 83 Z" fill="#087F78" />
+    <path d="M76 48 L92 48 L84 58 Z" fill="#F06449" />
   </g>
   <text
-    x="76"
+    x="86"
     y="54"
     font-family="Georgia, 'Iowan Old Style', 'Palatino Linotype', serif"
     font-size="40"
