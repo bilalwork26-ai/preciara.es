@@ -12,11 +12,14 @@ export const metadata: Metadata = {
   title: "Resultados de búsqueda",
 };
 
+// Marcas diacríticas combinantes (tildes, diéresis...) tras normalizar a NFD.
+const COMBINING_MARKS = new RegExp(
+  `[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`,
+  "g"
+);
+
 function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+  return value.normalize("NFD").replace(COMBINING_MARKS, "").toLowerCase();
 }
 
 export default async function BuscarPage({
