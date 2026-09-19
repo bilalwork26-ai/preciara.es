@@ -1,4 +1,5 @@
 import { getImageProps } from "next/image";
+import { Container } from "@/components/ui/Container";
 import { SearchForm } from "./SearchForm";
 import { CategoryPills } from "./CategoryPills";
 
@@ -15,7 +16,7 @@ export function Hero() {
     src: "/images/hero-desktop.webp",
     width: 1672,
     height: 941,
-    sizes: "(min-width: 1024px) 50vw, 100vw",
+    sizes: "(min-width: 1024px) 54vw, 100vw",
   });
 
   const { props: imgProps } = getImageProps({
@@ -27,49 +28,61 @@ export function Hero() {
   });
 
   return (
-    <section className="relative overflow-hidden border-b border-border bg-gradient-to-b from-beige/60 to-ivory">
-      <div className="mx-auto w-full max-w-7xl px-4 pb-10 pt-12 sm:px-6 sm:pt-16 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-2 lg:items-center lg:gap-12">
-          <div className="max-w-2xl">
-            <h1 className="font-serif text-4xl font-semibold leading-[1.1] tracking-tight text-navy-900 sm:text-5xl">
-              Precios claros.
-              <br />
-              Compras inteligentes.
-            </h1>
-            <p className="mt-4 text-lg leading-relaxed text-navy-500">
-              Compara precios, sigue su evolución y compra siempre en el
-              mejor momento.
-            </p>
+    <section className="border-b border-border bg-gradient-to-b from-beige/60 to-ivory">
+      <Container className="pb-6 pt-6 sm:pt-8 lg:pb-8 lg:pt-10">
+        {/*
+          Composición unificada: un único panel contiene texto, buscador e
+          imagen. Solo el panel exterior tiene esquinas redondeadas; la foto
+          rellena su columna borde a borde y queda recortada por el propio
+          `overflow-hidden` del panel, así que nunca parece una tarjeta
+          independiente.
+        */}
+        <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-white via-white to-crystal-100/40">
+          <div className="grid lg:grid-cols-[0.85fr_1fr] lg:items-stretch">
+            <div className="flex flex-col justify-center gap-5 px-6 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
+              <h1 className="font-serif text-4xl font-semibold leading-[1.1] tracking-tight text-navy-900 sm:text-5xl">
+                Precios claros.
+                <br />
+                Compras inteligentes.
+              </h1>
+              <p className="max-w-md text-lg leading-relaxed text-navy-500">
+                Compara precios, sigue su evolución y compra siempre en el
+                mejor momento.
+              </p>
 
-            <div className="mt-6">
               <SearchForm />
             </div>
-          </div>
 
-          {/*
-            Art direction: dos imágenes distintas (recorte vertical en móvil,
-            horizontal en escritorio). <picture> + <source media> hace que el
-            navegador descargue solo la que corresponde, nunca las dos. Ver
-            https://nextjs.org/docs/app/api-reference/components/image#art-direction
-          */}
-          <div className="aspect-[4/5] overflow-hidden rounded-2xl shadow-sm ring-1 ring-navy-900/5 md:aspect-[16/9]">
-            <picture>
-              {/* Tableta y escritorio (≥768px) comparten la imagen horizontal. */}
-              <source media="(min-width: 768px)" srcSet={desktopSrcSet} />
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- alt viene de imgProps (common.alt vía getImageProps) */}
-              <img
-                {...imgProps}
-                fetchPriority="high"
-                className="h-full w-full object-cover object-[50%_78%] md:object-center"
+            {/*
+              Art direction: dos imágenes distintas (recorte vertical en
+              móvil, horizontal en tableta/escritorio). <picture> + <source
+              media> hace que el navegador descargue solo la que
+              corresponde, nunca las dos. Ver
+              https://nextjs.org/docs/app/api-reference/components/image#art-direction
+            */}
+            <div className="relative aspect-[4/5] md:aspect-[16/9] lg:aspect-auto">
+              <picture>
+                <source media="(min-width: 768px)" srcSet={desktopSrcSet} />
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- alt viene de imgProps (common.alt vía getImageProps) */}
+                <img
+                  {...imgProps}
+                  fetchPriority="high"
+                  className="absolute inset-0 h-full w-full object-cover object-[50%_78%] md:object-center"
+                />
+              </picture>
+              {/* Funde el borde de la foto con el panel en vez de un corte duro. */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 left-0 hidden w-24 bg-gradient-to-r from-white/85 to-transparent lg:block"
               />
-            </picture>
+            </div>
           </div>
         </div>
 
-        <div id="categorias" className="mt-8 scroll-mt-24">
+        <div id="categorias" className="mt-4 scroll-mt-24 sm:mt-5">
           <CategoryPills />
         </div>
-      </div>
+      </Container>
     </section>
   );
 }

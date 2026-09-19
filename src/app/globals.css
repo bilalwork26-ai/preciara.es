@@ -28,6 +28,10 @@
 
   --color-border: #e5dbc4;
 
+  /* Azul cristal: faceta clara del logotipo, acentos puntuales */
+  --color-crystal: #6e9cc4;
+  --color-crystal-100: #dbe9f3;
+
   --background: var(--color-ivory);
   --foreground: var(--color-navy-900);
 }
@@ -59,6 +63,9 @@
 
   --color-border: var(--color-border);
 
+  --color-crystal: var(--color-crystal);
+  --color-crystal-100: var(--color-crystal-100);
+
   --font-serif: var(--font-fraunces);
   --font-sans: var(--font-jakarta);
 }
@@ -77,4 +84,18 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-teal-600);
   outline-offset: 2px;
+}
+
+/* Nunca mostrar un anillo de foco al hacer clic con el ratón; solo con teclado. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Tira de categorías con scroll horizontal en móvil, sin barra visible. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

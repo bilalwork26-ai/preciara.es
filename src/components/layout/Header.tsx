@@ -13,13 +13,13 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-ivory/95 backdrop-blur supports-[backdrop-filter]:bg-ivory/80">
       <Container>
-        <div className="flex h-16 items-center justify-between gap-4">
+        <div className="flex h-[72px] items-center gap-8">
           <Link href="/" className="shrink-0" aria-label="Preciara — Inicio">
             <Logo />
           </Link>
 
-          <nav aria-label="Navegación principal" className="hidden md:block">
-            <ul className="flex items-center gap-6">
+          <nav aria-label="Navegación principal" className="hidden lg:block">
+            <ul className="flex items-center gap-7">
               {navItems.map((item) => (
                 <li key={item.label}>
                   {item.comingSoon ? (
@@ -42,7 +42,7 @@ export function Header() {
             </ul>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               className="hidden items-center gap-2 rounded-full border border-navy-800 px-4 py-2 text-sm font-medium text-navy-800 transition-colors hover:bg-navy-800 hover:text-ivory sm:inline-flex"
@@ -55,7 +55,7 @@ export function Header() {
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className="inline-flex items-center justify-center rounded-full p-2 text-navy-800 md:hidden"
+              className="inline-flex items-center justify-center rounded-full p-2 text-navy-800 lg:hidden"
               aria-expanded={open}
               aria-controls="mobile-nav"
               aria-label={open ? "Cerrar menú" : "Abrir menú"}
@@ -67,7 +67,7 @@ export function Header() {
       </Container>
 
       {open && (
-        <nav id="mobile-nav" aria-label="Navegación principal (móvil)" className="border-t border-border md:hidden">
+        <nav id="mobile-nav" aria-label="Navegación principal (móvil)" className="border-t border-border lg:hidden">
           <Container>
             <ul className="flex flex-col gap-1 py-3">
               {navItems.map((item) => (

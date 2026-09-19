@@ -11,7 +11,7 @@ export default function Home() {
     <>
       <Hero />
 
-      <Container className="py-10">
+      <Container className="pb-10 pt-6 sm:pt-7">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <section id="bajadas-verificadas" className="scroll-mt-24">
             <VerifiedDrops />
