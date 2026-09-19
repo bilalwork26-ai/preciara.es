@@ -13,4 +13,8 @@ export const demoCategories: Category[] = [
   { id: "cat-moda", slug: "moda", name: "Moda", icon: "Shirt" },
   { id: "cat-infantil", slug: "infantil", name: "Infantil", icon: "Baby" },
   { id: "cat-viajes", slug: "viajes", name: "Viajes", icon: "Plane" },
+  { id: "cat-motor", slug: "motor", name: "Motor", icon: "Car" },
+  { id: "cat-jardin", slug: "jardin-bricolaje", name: "Jardín y bricolaje", icon: "Hammer" },
+  { id: "cat-mascotas", slug: "mascotas", name: "Mascotas", icon: "PawPrint" },
+  { id: "cat-libros", slug: "libros-ocio", name: "Libros y ocio", icon: "BookOpen" },
 ];

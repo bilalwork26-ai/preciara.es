@@ -2,107 +2,131 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, X, LogIn } from "lucide-react";
+import * as icons from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Menu, X, Heart, Bell, User } from "lucide-react";
 import { Logo } from "@/components/icons/Logo";
 import { Container } from "@/components/ui/Container";
-import { navItems } from "./nav-items";
+import { CategoriesMenu } from "./CategoriesMenu";
+import { UtilityButton } from "./UtilityButton";
+import { SearchForm } from "@/components/home/SearchForm";
+import { demoCategories } from "@/data/demo/categories";
 
 export function Header() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-ivory/95 backdrop-blur supports-[backdrop-filter]:bg-ivory/80">
+    <header className="sticky top-0 z-40 bg-navy-900">
       <Container>
-        <div className="flex h-[72px] items-center gap-8">
+        <div className="flex h-16 items-center gap-3 lg:h-20 lg:gap-6">
           <Link href="/" className="shrink-0" aria-label="Preciara — Inicio">
-            <Logo />
+            <Logo theme="light" markClassName="h-8 w-8 shrink-0 lg:h-9 lg:w-9" />
           </Link>
 
-          <nav aria-label="Navegación principal" className="hidden lg:block">
-            <ul className="flex items-center gap-7">
-              {navItems.map((item) => (
-                <li key={item.label}>
-                  {item.comingSoon ? (
-                    <span className="inline-flex items-center gap-1.5 text-sm text-navy-300">
-                      {item.label}
-                      <span className="rounded-full bg-beige px-2 py-0.5 text-xs font-medium text-navy-500">
-                        Próximamente
-                      </span>
-                    </span>
-                  ) : (
-                    <Link
-                      href={item.href}
-                      className="text-sm font-medium text-navy-700 transition-colors hover:text-teal-600"
-                    >
-                      {item.label}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <CategoriesMenu className="hidden shrink-0 lg:block" />
 
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              className="hidden items-center gap-2 rounded-full border border-navy-800 px-4 py-2 text-sm font-medium text-navy-800 transition-colors hover:bg-navy-800 hover:text-ivory sm:inline-flex"
-              aria-label="Iniciar sesión (próximamente)"
-            >
-              <LogIn className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
-              Iniciar sesión
-            </button>
+          <SearchForm id="search-header-desktop" className="hidden min-w-0 flex-1 md:flex" />
 
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              className="inline-flex items-center justify-center rounded-full p-2 text-navy-800 lg:hidden"
-              aria-expanded={open}
-              aria-controls="mobile-nav"
-              aria-label={open ? "Cerrar menú" : "Abrir menú"}
-            >
-              {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
+          <div className="ml-auto hidden shrink-0 items-center gap-1 lg:flex">
+            <UtilityButton
+              icon={Heart}
+              label="Guardados"
+              message="Aquí podrás guardar tus productos y ofertas favoritas en cuanto activemos las cuentas de usuario. Todavía no hay datos guardados."
+            />
+            <UtilityButton
+              icon={Bell}
+              label="Alertas"
+              message="Las alertas de precio llegarán en una fase posterior: te avisaremos cuando un producto baje al precio que elijas. Aún no está disponible."
+            />
+            <UtilityButton
+              icon={User}
+              label="Mi cuenta"
+              message="El registro y el inicio de sesión están en construcción. Cuando estén listos, podrás gestionar tu cuenta desde aquí."
+              withChevron
+            />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="ml-auto inline-flex items-center justify-center rounded-full p-2 text-ivory lg:hidden"
+            aria-expanded={open}
+            aria-controls="mobile-nav"
+            aria-label={open ? "Cerrar menú" : "Abrir menú"}
+          >
+            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
+        </div>
+
+        <div className="pb-3 md:hidden">
+          <SearchForm id="search-header-mobile" />
         </div>
       </Container>
 
       {open && (
-        <nav id="mobile-nav" aria-label="Navegación principal (móvil)" className="border-t border-border lg:hidden">
-          <Container>
-            <ul className="flex flex-col gap-1 py-3">
-              {navItems.map((item) => (
-                <li key={item.label}>
-                  {item.comingSoon ? (
-                    <span className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm text-navy-300">
-                      {item.label}
-                      <span className="rounded-full bg-beige px-2 py-0.5 text-xs font-medium text-navy-500">
-                        Próximamente
-                      </span>
-                    </span>
-                  ) : (
-                    <Link
-                      href={item.href}
+        <div id="mobile-nav" className="border-t border-white/10 bg-navy-900 lg:hidden">
+          <Container className="py-4">
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-navy-100">
+              Categorías
+            </p>
+            <ul className="mt-2 grid grid-cols-2 gap-1">
+              {demoCategories.map((category) => {
+                const Icon = (icons as unknown as Record<string, LucideIcon>)[category.icon] ?? icons.Tag;
+                return (
+                  <li key={category.id}>
+                    <a
+                      href={`/buscar?categoria=${category.slug}`}
                       onClick={() => setOpen(false)}
-                      className="block rounded-lg px-3 py-2.5 text-sm font-medium text-navy-700 hover:bg-beige"
+                      className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-ivory transition-colors hover:bg-white/10"
                     >
-                      {item.label}
-                    </Link>
-                  )}
-                </li>
-              ))}
-              <li>
-                <button
-                  type="button"
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-navy-800 px-4 py-2.5 text-sm font-medium text-navy-800"
-                >
-                  <LogIn className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
-                  Iniciar sesión
-                </button>
-              </li>
+                      <Icon className="h-4 w-4 shrink-0 text-crystal" aria-hidden="true" strokeWidth={1.75} />
+                      <span className="truncate">{category.name}</span>
+                    </a>
+                  </li>
+                );
+              })}
             </ul>
+
+            <div className="mt-4 flex flex-col gap-1 border-t border-white/10 pt-4">
+              <MobileUtilityDisclosure
+                icon={Heart}
+                label="Guardados"
+                message="Aquí podrás guardar tus productos y ofertas favoritas en cuanto activemos las cuentas de usuario. Todavía no hay datos guardados."
+              />
+              <MobileUtilityDisclosure
+                icon={Bell}
+                label="Alertas"
+                message="Las alertas de precio llegarán en una fase posterior: te avisaremos cuando un producto baje al precio que elijas. Aún no está disponible."
+              />
+              <MobileUtilityDisclosure
+                icon={User}
+                label="Mi cuenta"
+                message="El registro y el inicio de sesión están en construcción. Cuando estén listos, podrás gestionar tu cuenta desde aquí."
+              />
+            </div>
           </Container>
-        </nav>
+        </div>
       )}
     </header>
+  );
+}
+
+function MobileUtilityDisclosure({
+  icon: Icon,
+  label,
+  message,
+}: {
+  icon: LucideIcon;
+  label: string;
+  message: string;
+}) {
+  return (
+    <details className="group rounded-xl px-1 text-ivory open:bg-white/5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2.5 text-sm font-medium marker:content-none">
+        <Icon className="h-4 w-4 shrink-0 text-crystal" aria-hidden="true" strokeWidth={1.75} />
+        {label}
+      </summary>
+      <p className="px-2 pb-3 text-sm leading-relaxed text-navy-100">{message}</p>
+    </details>
   );
 }

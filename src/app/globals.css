@@ -1,38 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  /* Fondo cálido marfil / beige */
-  --color-ivory: #faf6ee;
-  --color-beige: #f1e8d6;
-  --color-beige-dark: #e7dcc4;
+  /* Marfil: color secundario (franjas, pie de página), ya no es el fondo principal */
+  --color-ivory: #f7f2e8;
+  --color-beige: #efe9db;
+  --color-beige-dark: #e3dcc9;
 
-  /* Azul marino: texto principal, marca */
-  --color-navy-900: #101d33;
-  --color-navy-800: #16273f;
-  --color-navy-700: #223252;
-  --color-navy-500: #4a5b7c;
-  --color-navy-300: #586a86;
+  /* Azul marino: texto principal, cabecera, marca */
+  --color-navy-900: #071a33;
+  --color-navy-800: #0f2a4a;
+  --color-navy-700: #17395f;
+  --color-navy-500: #3d4f6b;
+  --color-navy-300: #5b6b85;
+  /* Texto secundario legible sobre la cabecera navy */
+  --color-navy-100: #c7cedb;
 
-  /* Verde petróleo / teal: acciones, gráficos, estados positivos */
-  --color-teal-700: #0b4f4b;
-  --color-teal-600: #0f6b64;
-  --color-teal-500: #147f76;
+  /* Teal: acciones, CTA secundarias, gráficos, estados positivos */
+  --color-teal-700: #066159;
+  --color-teal-600: #087f78;
+  --color-teal-500: #0a9a91;
   --color-teal-100: #dcefe9;
   --color-teal-50: #eef6f3;
 
-  /* Coral suave: bajadas de precio, descuentos */
-  --color-coral-600: #a8442e;
-  --color-coral-500: #e97e63;
-  --color-coral-100: #fbe6de;
+  /* Azul cristal: acentos, franjas, iconografía (no usar como texto pequeño: bajo contraste) */
+  --color-crystal: #19a7ce;
+  --color-crystal-600: #0f7086;
+  --color-crystal-100: #dbeef5;
+
+  /* Coral: bajadas de precio, CTA principal. Como fondo, combinar con texto navy (no blanco). */
+  --color-coral-500: #f06449;
+  --color-coral-600: #ac351b;
+  --color-coral-100: #fbe0d8;
   --color-coral-50: #fdf1ec;
 
-  --color-border: #e5dbc4;
+  --color-border: #e4e1d8;
+  --color-border-navy: rgba(247, 242, 232, 0.14);
 
-  /* Azul cristal: faceta clara del logotipo, acentos puntuales */
-  --color-crystal: #6e9cc4;
-  --color-crystal-100: #dbe9f3;
-
-  --background: var(--color-ivory);
+  --background: #ffffff;
   --foreground: var(--color-navy-900);
 }
 
@@ -49,6 +53,7 @@
   --color-navy-700: var(--color-navy-700);
   --color-navy-500: var(--color-navy-500);
   --color-navy-300: var(--color-navy-300);
+  --color-navy-100: var(--color-navy-100);
 
   --color-teal-700: var(--color-teal-700);
   --color-teal-600: var(--color-teal-600);
@@ -56,15 +61,17 @@
   --color-teal-100: var(--color-teal-100);
   --color-teal-50: var(--color-teal-50);
 
-  --color-coral-600: var(--color-coral-600);
+  --color-crystal: var(--color-crystal);
+  --color-crystal-600: var(--color-crystal-600);
+  --color-crystal-100: var(--color-crystal-100);
+
   --color-coral-500: var(--color-coral-500);
+  --color-coral-600: var(--color-coral-600);
   --color-coral-100: var(--color-coral-100);
   --color-coral-50: var(--color-coral-50);
 
   --color-border: var(--color-border);
-
-  --color-crystal: var(--color-crystal);
-  --color-crystal-100: var(--color-crystal-100);
+  --color-border-navy: var(--color-border-navy);
 
   --font-serif: var(--font-fraunces);
   --font-sans: var(--font-jakarta);

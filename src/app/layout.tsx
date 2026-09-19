@@ -42,7 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es"
       className={`${fraunces.variable} ${jakarta.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-ivory text-navy-900">
+      <body className="flex min-h-full flex-col bg-white text-navy-900">
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />

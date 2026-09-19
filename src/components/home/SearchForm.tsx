@@ -1,32 +1,44 @@
 import { Search } from "lucide-react";
 
+type SearchFormProps = {
+  /** Único por instancia: el formulario puede aparecer varias veces en la página (cabecera de escritorio y móvil). */
+  id: string;
+  className?: string;
+  placeholder?: string;
+};
+
 /**
  * Formulario GET nativo: funciona sin JavaScript y envía a /buscar?q=...
+ * Normaliza tildes en el propio /buscar (ver COMBINING_MARKS en esa página).
  */
-export function SearchForm() {
+export function SearchForm({
+  id,
+  className,
+  placeholder = "¿Qué producto estás buscando?",
+}: SearchFormProps) {
   return (
     <form
       action="/buscar"
       method="GET"
       role="search"
-      className="flex w-full flex-col gap-2 rounded-2xl border border-border bg-white p-2 shadow-sm sm:flex-row sm:items-center"
+      className={`flex w-full items-center gap-2 rounded-full bg-white p-1.5 shadow-sm ${className ?? ""}`}
     >
-      <label htmlFor="search-q" className="sr-only">
+      <label htmlFor={id} className="sr-only">
         Qué producto quieres comparar
       </label>
-      <div className="flex flex-1 items-center gap-2 px-3 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5">
         <Search className="h-5 w-5 shrink-0 text-navy-300" aria-hidden="true" strokeWidth={1.75} />
         <input
-          id="search-q"
+          id={id}
           name="q"
           type="search"
-          placeholder="¿Qué producto quieres comparar?"
-          className="w-full bg-transparent text-base text-navy-900 placeholder:text-navy-300 focus:outline-none"
+          placeholder={placeholder}
+          className="w-full min-w-0 bg-transparent text-[15px] text-navy-900 placeholder:text-navy-300 focus:outline-none"
         />
       </div>
       <button
         type="submit"
-        className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-ivory transition-colors hover:bg-teal-700"
+        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
       >
         Buscar
       </button>

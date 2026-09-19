@@ -52,7 +52,7 @@ export default async function BuscarPage({
       </p>
 
       <div className="mt-6 max-w-xl">
-        <SearchForm />
+        <SearchForm id="search-buscar-page" />
       </div>
 
       {results.length === 0 ? (
