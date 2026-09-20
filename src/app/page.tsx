@@ -4,6 +4,7 @@ import { PromoBannerSecondary } from "@/components/home/PromoBannerSecondary";
 import { CategoryRow } from "@/components/home/CategoryRow";
 import { VerifiedDealsGrid } from "@/components/home/VerifiedDealsGrid";
 import { ComparisonPanel } from "@/components/home/ComparisonPanel";
+import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
 
 export default function Home() {
@@ -21,11 +22,13 @@ export default function Home() {
           <CategoryRow />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">
           <VerifiedDealsGrid />
           <ComparisonPanel />
         </div>
       </Container>
+
+      <MarqueeBand />
     </>
   );
 }

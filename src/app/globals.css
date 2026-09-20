@@ -161,3 +161,52 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Banda marquee de marca (antes del footer). El track contiene el mismo
+ * grupo de mensajes dos veces seguidas; al desplazarlo exactamente -50%
+ * de su propio ancho, el final enlaza sin salto con el inicio del
+ * segundo grupo (idéntico al primero), dando un bucle perfecto.
+ */
+.marquee-line {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation-name: marquee-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.marquee-track[data-dir="reverse"] {
+  animation-direction: reverse;
+}
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee-band:hover .marquee-track,
+.marquee-band:focus-within .marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none !important;
+    transform: none !important;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .marquee-track > * {
+    flex-wrap: wrap;
+  }
+  .marquee-dup {
+    display: none;
+  }
+}
