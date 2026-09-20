@@ -18,14 +18,17 @@ export type ProductWithOffers = Prisma.ProductGetPayload<typeof productWithOffer
  * Productos activos con al menos una oferta activa, con sus ofertas y el
  * comercio de cada una ya incluidos (una sola consulta, sin N+1). Se usan
  * para "destacados" y para la cuadrícula de bajadas: quien llama decide el
- * orden/recorte final.
+ * recorte final. Orden por `id` ascendente (orden de creación) a
+ * propósito: es estable y predecible (no cambia cada vez que se actualiza
+ * un precio, como pasaría con `updatedAt`), y coincide con el orden de
+ * `src/data/demo/products.ts` para los datos sembrados por el seed.
  */
 export async function getActiveProductsWithOffers(limit = 60): Promise<ProductWithOffers[] | null> {
   const result = await withDb((db) =>
     db.product.findMany({
       where: { isActive: true, offers: { some: { isActive: true, merchant: { isActive: true } } } },
       ...productWithOffers,
-      orderBy: { updatedAt: "desc" },
+      orderBy: { id: "asc" },
       take: limit,
     })
   );

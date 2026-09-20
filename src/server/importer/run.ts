@@ -102,13 +102,15 @@ export async function runCsvImport(params: {
         continue;
       }
       // Error inesperado (p. ej. fallo de conexión a mitad de importación):
-      // se registra la fila como rechazada y se sigue con las siguientes,
-      // pero también queda en el log del servidor para poder diagnosticarlo.
+      // se registra la fila como rechazada y se sigue con las siguientes. El
+      // detalle técnico completo (que podría incluir fragmentos de la
+      // consulta o de la cadena de conexión) solo va al log del servidor;
+      // el panel y el CSV de errores nunca muestran el mensaje crudo.
       console.error(`[importer] Error inesperado en la fila ${rowNumber}:`, error);
       errors.push({
         rowNumber,
         code: "UNEXPECTED_ERROR",
-        message: error instanceof Error ? error.message : "Error desconocido al procesar la fila.",
+        message: "Error inesperado al procesar esta fila. Revisa los logs del servidor para más detalle.",
         rowData: record,
       });
     }

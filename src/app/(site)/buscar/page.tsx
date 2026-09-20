@@ -1,26 +1,14 @@
 import type { Metadata } from "next";
 import { SearchX } from "lucide-react";
-import { demoProducts } from "@/data/demo/products";
-import { demoCategories } from "@/data/demo/categories";
-import { demoMerchants } from "@/data/demo/merchants";
 import { formatPrice } from "@/lib/format";
 import { Container } from "@/components/ui/Container";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { SearchForm } from "@/components/home/SearchForm";
+import { searchHomeProducts } from "@/server/dataSource/search";
 
 export const metadata: Metadata = {
   title: "Resultados de búsqueda",
 };
-
-// Marcas diacríticas combinantes (tildes, diéresis...) tras normalizar a NFD.
-const COMBINING_MARKS = new RegExp(
-  `[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`,
-  "g"
-);
-
-function normalize(value: string): string {
-  return value.normalize("NFD").replace(COMBINING_MARKS, "").toLowerCase();
-}
 
 export default async function BuscarPage({
   searchParams,
@@ -28,13 +16,10 @@ export default async function BuscarPage({
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q.trim() : "";
   const categoriaSlug = typeof params.categoria === "string" ? params.categoria : "";
-  const categoria = demoCategories.find((c) => c.slug === categoriaSlug);
 
-  const results = demoProducts.filter((product) => {
-    const matchesQuery = query ? normalize(product.name).includes(normalize(query)) : true;
-    const matchesCategory = categoria ? product.categoryId === categoria.id : true;
-    return matchesQuery && matchesCategory;
-  });
+  const { data, source } = await searchHomeProducts({ query, categorySlug: categoriaSlug });
+  const categoria = data.categories.find((c) => c.slug === categoriaSlug);
+  const results = data.products;
 
   return (
     <Container className="py-10">
@@ -46,8 +31,10 @@ export default async function BuscarPage({
           <>
             Resultados para <span className="font-medium text-navy-700">&ldquo;{query}&rdquo;</span>
           </>
-        ) : (
+        ) : source === "demo" ? (
           "Datos de demostración: aún no está conectado el catálogo real."
+        ) : (
+          "Explora el catálogo completo."
         )}
       </p>
 
@@ -58,13 +45,17 @@ export default async function BuscarPage({
       {results.length === 0 ? (
         <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-16 text-center">
           <SearchX className="h-8 w-8 text-navy-300" aria-hidden="true" strokeWidth={1.5} />
-          <p className="text-navy-500">No hemos encontrado productos de demostración con ese criterio.</p>
+          <p className="text-navy-500">
+            {source === "demo"
+              ? "No hemos encontrado productos de demostración con ese criterio."
+              : "No hemos encontrado productos con ese criterio."}
+          </p>
         </div>
       ) : (
         <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {results.map((product) => {
             const bestOffer = [...product.offers].sort((a, b) => a.price - b.price)[0];
-            const merchant = demoMerchants.find((m) => m.id === bestOffer?.merchantId);
+            const merchant = data.merchants.find((m) => m.id === bestOffer?.merchantId);
             return (
               <li
                 key={product.id}

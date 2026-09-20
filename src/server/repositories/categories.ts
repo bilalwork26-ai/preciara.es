@@ -7,12 +7,19 @@ export type CategoryRow = {
   description: string | null;
 };
 
-/** Categorías activas, ordenadas alfabéticamente. `null` = BD no disponible (configurar o error, ya registrado). */
+/**
+ * Categorías activas, en orden de creación (`id` ascendente). No se ordena
+ * por nombre a propósito: el orden de las categorías es una decisión de
+ * curación (la primera es la que la fila de categorías marca como activa
+ * por defecto), no alfabética, así que se respeta el orden en que se
+ * crearon (el seed las crea en el mismo orden que `src/data/demo/categories.ts`).
+ * `null` = BD no disponible (o error, ya registrado).
+ */
 export async function getActiveCategories(): Promise<CategoryRow[] | null> {
   const result = await withDb((db) =>
     db.category.findMany({
       where: { isActive: true },
-      orderBy: { name: "asc" },
+      orderBy: { id: "asc" },
       select: { id: true, slug: true, name: true, description: true },
     })
   );

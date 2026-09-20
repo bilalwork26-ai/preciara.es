@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { BarChart3, Bell } from "lucide-react";
-import { demoFeaturedProduct } from "@/data/demo/products";
-import { demoMerchants } from "@/data/demo/merchants";
+import type { Merchant, Product } from "@/types";
 import { formatPrice } from "@/lib/format";
 import { PriceHistoryChart } from "./PriceHistoryChart";
+import { isExternalHref } from "@/lib/url";
 
 const PERIODS = [
   { id: "1m", label: "1M", months: 2 },
@@ -14,18 +14,18 @@ const PERIODS = [
   { id: "1a", label: "1A", months: 12 },
 ] as const;
 
-export function ComparisonPanel() {
+export function ComparisonPanel({ product, merchants }: { product: Product; merchants: Merchant[] }) {
   const [periodId, setPeriodId] = useState<(typeof PERIODS)[number]["id"]>("6m");
   const period = PERIODS.find((p) => p.id === periodId) ?? PERIODS[2];
 
-  const history = demoFeaturedProduct.priceHistory;
+  const history = product.priceHistory;
   const visibleHistory = useMemo(
     () => history.slice(Math.max(history.length - period.months, 0)),
     [history, period.months]
   );
 
   const minPrice = Math.min(...history.map((p) => p.price));
-  const offers = [...demoFeaturedProduct.offers].sort((a, b) => a.price - b.price);
+  const offers = [...product.offers].sort((a, b) => a.price - b.price);
 
   return (
     <div
@@ -36,7 +36,7 @@ export function ComparisonPanel() {
         Compara. Ahorra. Compra mejor.
       </h2>
       <p className="mt-1 text-sm text-navy-500">
-        Descubre cómo evoluciona el precio de {demoFeaturedProduct.name.toLowerCase()} y en qué tienda está más barato.
+        Descubre cómo evoluciona el precio de {product.name.toLowerCase()} y en qué tienda está más barato.
       </p>
 
       <div className="mt-4 flex items-center justify-between gap-2">
@@ -70,7 +70,8 @@ export function ComparisonPanel() {
         <p className="text-xs font-semibold uppercase tracking-wide text-navy-300">Comparar tiendas</p>
         <ul className="mt-2 flex flex-col gap-2">
           {offers.map((offer, i) => {
-            const merchant = demoMerchants.find((m) => m.id === offer.merchantId);
+            const merchant = merchants.find((m) => m.id === offer.merchantId);
+            const external = isExternalHref(offer.url);
             return (
               <li
                 key={offer.id}
@@ -82,6 +83,8 @@ export function ComparisonPanel() {
                   {i === 0 ? (
                     <a
                       href={offer.url}
+                      target={external ? "_blank" : undefined}
+                      rel={external ? "nofollow sponsored noopener noreferrer" : undefined}
                       className="rounded-full bg-coral-500 px-3 py-1 text-xs font-semibold text-navy-900 transition-colors hover:bg-coral-600 hover:text-white"
                     >
                       Ver
@@ -89,6 +92,8 @@ export function ComparisonPanel() {
                   ) : (
                     <a
                       href={offer.url}
+                      target={external ? "_blank" : undefined}
+                      rel={external ? "nofollow sponsored noopener noreferrer" : undefined}
                       className="rounded-full border border-border px-3 py-1 text-xs font-medium text-navy-700 transition-colors hover:border-teal-600 hover:text-teal-700"
                     >
                       Ver

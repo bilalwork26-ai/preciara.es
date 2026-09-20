@@ -1,13 +1,13 @@
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { demoFeaturedProduct } from "@/data/demo/products";
+import type { Product } from "@/types";
 import { formatPrice, calcDiscountPercent } from "@/lib/format";
 import { MiniSparkline } from "@/components/ui/MiniSparkline";
 
-export function PromoBannerMain() {
-  const offer = demoFeaturedProduct.offers[0];
+export function PromoBannerMain({ product }: { product: Product }) {
+  const offer = product.offers[0];
   const percent = offer.previousPrice ? calcDiscountPercent(offer.price, offer.previousPrice) : 0;
-  const minPrice = Math.min(...demoFeaturedProduct.priceHistory.map((p) => p.price));
+  const minPrice = Math.min(...product.priceHistory.map((p) => p.price));
 
   return (
     <div className="overflow-hidden rounded-[2rem] bg-navy-900">
@@ -28,7 +28,7 @@ export function PromoBannerMain() {
               El mejor precio de hoy, aquí.
             </h1>
             <p className="mt-2 text-sm text-navy-100 sm:text-base">
-              {demoFeaturedProduct.name}. Sonido que te acompaña a todas partes.
+              {product.name}. Sonido que te acompaña a todas partes.
             </p>
           </div>
 
@@ -50,7 +50,7 @@ export function PromoBannerMain() {
                 Historial de precios (demo)
               </p>
               <MiniSparkline
-                points={demoFeaturedProduct.priceHistory.slice(-6)}
+                points={product.priceHistory.slice(-6)}
                 stroke="var(--color-teal-500)"
                 className="mt-1 h-8 w-full"
               />

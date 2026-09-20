@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ArrowRight, Tags } from "lucide-react";
-import { demoDealsGrid } from "@/data/demo/products";
+import type { Merchant, Product } from "@/types";
 import { ProductDealCard } from "./ProductDealCard";
 
-export function VerifiedDealsGrid() {
+export function VerifiedDealsGrid({ products, merchants }: { products: Product[]; merchants: Merchant[] }) {
   return (
     <section aria-labelledby="bajadas-heading">
       <div className="flex items-end justify-between gap-3">
@@ -33,9 +33,9 @@ export function VerifiedDealsGrid() {
         aria-label="Productos con bajada de precio hoy"
         tabIndex={0}
       >
-        {demoDealsGrid.map((product) => (
+        {products.map((product) => (
           <div key={product.id} className="w-[220px] shrink-0 snap-start sm:w-auto">
-            <ProductDealCard product={product} />
+            <ProductDealCard product={product} merchants={merchants} />
           </div>
         ))}
       </div>

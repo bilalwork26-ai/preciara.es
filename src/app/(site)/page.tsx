@@ -6,25 +6,49 @@ import { VerifiedDealsGrid } from "@/components/home/VerifiedDealsGrid";
 import { ComparisonPanel } from "@/components/home/ComparisonPanel";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
+import { getDealsGridBundle, getFeaturedBundle, getHomeCategories } from "@/server/dataSource/home";
 
-export default function Home() {
+/**
+ * Sin esto, Next intentaría prerenderizar la portada como HTML estático en
+ * el build (no detecta las consultas de Prisma como "dinámicas" igual que
+ * detecta cookies()/headers()) y serviría esa foto fija para siempre hasta
+ * el próximo despliegue. Con `force-dynamic`, cada visita vuelve a
+ * resolver BD-o-demo en el momento, y el build nunca llega a ejecutar
+ * estas consultas (la página dinámica no se renderiza durante `next build`).
+ */
+export const dynamic = "force-dynamic";
+
+/**
+ * Toda la portada dispara solo 3 llamadas a la capa de datos (categorías,
+ * producto destacado, cuadrícula de bajadas), en paralelo, cada una ya
+ * resuelta con BD-o-demo (ver src/server/dataSource). Los componentes
+ * visuales no cambian: solo reciben por props lo que antes importaban
+ * directamente de src/data/demo.
+ */
+export default async function Home() {
+  const [categories, featured, dealsGrid] = await Promise.all([
+    getHomeCategories(),
+    getFeaturedBundle(),
+    getDealsGridBundle(),
+  ]);
+
   return (
     <>
       <BrandCarousel />
 
       <Container className="pb-8 pt-4 sm:pt-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.7fr_1fr]">
-          <PromoBannerMain />
+          <PromoBannerMain product={featured.data.product} />
           <PromoBannerSecondary />
         </div>
 
         <div id="categorias" className="mt-5 scroll-mt-24">
-          <CategoryRow />
+          <CategoryRow categories={categories.data} />
         </div>
 
         <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">
-          <VerifiedDealsGrid />
-          <ComparisonPanel />
+          <VerifiedDealsGrid products={dealsGrid.data.products} merchants={dealsGrid.data.merchants} />
+          <ComparisonPanel product={featured.data.product} merchants={featured.data.merchants} />
         </div>
       </Container>
 

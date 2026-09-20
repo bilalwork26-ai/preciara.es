@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { demoCategories } from "@/data/demo/categories";
+import type { Category } from "@/types";
 
-export function CategoryRow() {
+export function CategoryRow({ categories }: { categories: Category[] }) {
   const scrollerRef = useRef<HTMLUListElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -45,7 +45,7 @@ export function CategoryRow() {
         aria-label="Categorías"
         tabIndex={0}
       >
-        {demoCategories.map((category, index) => {
+        {categories.map((category, index) => {
           const Icon = (icons as unknown as Record<string, LucideIcon>)[category.icon] ?? icons.Tag;
           const isDefaultActive = index === 0;
           return (

@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { Heart } from "lucide-react";
-import type { Product } from "@/types";
-import { demoMerchants } from "@/data/demo/merchants";
+import type { Merchant, Product } from "@/types";
 import { formatPrice, calcDiscountPercent } from "@/lib/format";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
-export function ProductDealCard({ product }: { product: Product }) {
+export function ProductDealCard({ product, merchants }: { product: Product; merchants: Merchant[] }) {
   const [saved, setSaved] = useState(false);
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
@@ -45,12 +44,12 @@ export function ProductDealCard({ product }: { product: Product }) {
         )}
       </div>
       <p className="text-xs text-navy-300">
-        Mejor precio en {demoMerchants.find((m) => m.id === best.merchantId)?.name}
+        Mejor precio en {merchants.find((m) => m.id === best.merchantId)?.name}
       </p>
 
       <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
         {offers.map((offer) => {
-          const merchant = demoMerchants.find((m) => m.id === offer.merchantId);
+          const merchant = merchants.find((m) => m.id === offer.merchantId);
           return (
             <li key={offer.id} className="flex items-center justify-between text-xs text-navy-500">
               <span>{merchant?.name}</span>

@@ -16,6 +16,37 @@ type ImportSummary = {
   errors: { rowNumber: number; code: string; message: string }[];
 };
 
+const STATUS_LABELS: Record<ImportSummary["status"], string> = {
+  SUCCESS: "Correcta",
+  PARTIAL: "Con avisos",
+  FAILED: "Fallida",
+};
+
+/** Frase en lenguaje llano, pensada para alguien sin conocimientos técnicos. */
+function plainLanguageSummary(result: ImportSummary): string {
+  const accion = result.dryRun ? "Si importaras este fichero de verdad" : "Se ha importado el fichero";
+  const productos = result.productsCreated + result.productsUpdated;
+  const ofertas = result.offersCreated + result.offersUpdated;
+
+  if (result.status === "FAILED") {
+    return `${accion}, pero ninguna fila se pudo aprovechar (${result.rowsRejected} de ${result.rowsRead} rechazadas). Revisa el detalle de abajo.`;
+  }
+
+  const partesProductos =
+    productos > 0
+      ? `${result.productsCreated} producto(s) nuevo(s) y ${result.productsUpdated} actualizado(s)`
+      : "ningún producto nuevo ni actualizado";
+  const partesOfertas =
+    ofertas > 0 ? `${result.offersCreated} oferta(s) nueva(s) y ${result.offersUpdated} actualizada(s)` : "ninguna oferta";
+
+  const rechazadas =
+    result.rowsRejected > 0
+      ? ` ${result.rowsRejected} fila(s) de ${result.rowsRead} no se pudieron usar (detalle abajo).`
+      : " Todas las filas se aprovecharon.";
+
+  return `${accion}: ${partesProductos}, y ${partesOfertas}.${rechazadas}`;
+}
+
 export function CsvImportForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"preview" | "import" | null>(null);
@@ -110,7 +141,7 @@ export function CsvImportForm() {
                     : "bg-coral-100 text-coral-600"
               }`}
             >
-              {result.status}
+              {STATUS_LABELS[result.status]}
             </span>
             {!result.dryRun && result.importRunId && (
               <Link href={`/admin/importaciones/${result.importRunId}`} className="text-xs font-medium text-teal-600 hover:text-teal-700">
@@ -118,6 +149,8 @@ export function CsvImportForm() {
               </Link>
             )}
           </div>
+
+          <p className="mt-3 text-sm text-navy-700">{plainLanguageSummary(result)}</p>
 
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
             <div>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ADMIN_SESSION_COOKIE, verifySessionToken } from "@/server/admin/auth";
 import { runCsvImport, ImportSetupError, MAX_CSV_BYTES } from "@/server/importer/run";
+import { releaseUploadLock, tryAcquireUploadLock } from "@/server/importer/uploadLock";
 
 /**
  * Importación de ofertas desde un CSV subido por el panel técnico.
@@ -35,6 +36,16 @@ export async function POST(request: NextRequest) {
   const safeFileName = file.name.replace(/[^\w.\- ]/g, "").slice(0, 80) || "sin-nombre.csv";
   const csvContent = await file.text();
 
+  // Solo se bloquea la importación real: "Simular" no escribe nada, así que
+  // varias simulaciones a la vez son inofensivas.
+  const lockAcquired = dryRun || tryAcquireUploadLock();
+  if (!lockAcquired) {
+    return NextResponse.json(
+      { error: "Ya hay una importación en curso desde el panel. Espera a que termine e inténtalo de nuevo." },
+      { status: 409 }
+    );
+  }
+
   try {
     const summary = await runCsvImport({
       csvContent,
@@ -49,5 +60,7 @@ export async function POST(request: NextRequest) {
     }
     console.error("[admin import] Error inesperado procesando la subida:", error);
     return NextResponse.json({ error: "Error inesperado al importar. Se ha registrado en el servidor." }, { status: 500 });
+  } finally {
+    if (!dryRun) releaseUploadLock();
   }
 }

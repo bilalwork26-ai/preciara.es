@@ -19,7 +19,16 @@ export default function AdminImportPage() {
       <CsvImportForm />
 
       <div className="rounded-xl border border-border bg-white p-4">
-        <h2 className="font-serif text-lg font-semibold text-navy-900">Columnas del CSV</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-serif text-lg font-semibold text-navy-900">Columnas del CSV</h2>
+          <a
+            href="/api/admin/import/template"
+            download
+            className="rounded-full border border-teal-600 px-3 py-1.5 text-xs font-semibold text-teal-700 transition-colors hover:bg-teal-50"
+          >
+            Descargar plantilla CSV (solo cabecera)
+          </a>
+        </div>
         <div className="mt-2 overflow-x-auto">
           <code className="block whitespace-pre text-xs text-navy-700">{CSV_COLUMNS.join(",\n")}</code>
         </div>

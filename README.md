@@ -4,12 +4,14 @@ Comparador de precios y afiliación para el mercado español. Este repositorio
 contiene el sitio web (Next.js), construido para desplegarse en Hostinger
 sobre Node.js.
 
-**Estado actual: Fase 2A** — motor interno completo (base de datos MySQL +
-Prisma, importador CSV, panel técnico privado) construido y probado, listo
-para conectarse en producción. La portada pública sigue usando los datos de
-demostración de `src/data/demo/*`, sin cambios visuales: la base de datos
-todavía no está conectada a los componentes públicos (ver [Cómo pasar de
-datos demo a datos reales](#cómo-pasar-de-datos-demo-a-datos-reales)).
+**Estado actual: Fase 2B** — motor interno completo (base de datos MySQL +
+Prisma, importador CSV, panel técnico privado) construido y probado, y la
+portada pública y el buscador ya leen de esa base de datos a través de
+`src/server/dataSource/*`, sin cambios visuales respecto al diseño
+aprobado. Sin `DATABASE_URL`, con la base vacía, o si la conexión falla, la
+web sigue funcionando automáticamente con los datos de demostración de
+`src/data/demo/*` (ver [Cómo funciona el respaldo a datos de
+demostración](#cómo-funciona-el-respaldo-a-datos-de-demostración)).
 
 ## Stack técnico
 
@@ -60,6 +62,7 @@ src/
                       (comparte layout con Header/Footer; las URLs no cambian)
     admin/            Panel técnico privado (/admin/**), layout propio
     api/admin/         Endpoints protegidos usados por el panel
+                      (import/ para subir CSV, import/template/ para la plantilla)
     robots.ts          Bloquea /admin y /api/ para buscadores
     layout.tsx          Layout raíz: fuentes, metadatos, globals.css
   proxy.ts             Protege /admin y /api/admin (ver "Panel técnico")
@@ -73,8 +76,13 @@ src/
     repositories/         Consultas tipadas (categorías, productos, ofertas,
                           historial, estado del sistema, panel técnico)
     importer/              Parser CSV, validación, orquestación de la
-                          importación, detección/desactivación de ofertas viejas
+                          importación, detección/desactivación de ofertas viejas,
+                          bloqueo contra ejecuciones simultáneas
+    dataSource/             Capa que decide BD vs. demostración para la portada
+                          pública y el buscador, y adapta los datos de Prisma
+                          a los tipos que ya esperan los componentes
     admin/auth.ts           Autenticación del panel técnico (sin tabla de usuarios)
+    admin/rateLimit.ts       Límite de intentos fallidos en /admin/login
   data/demo/            Datos de demostración, centralizados y fáciles de sustituir
   lib/                   Utilidades (formato de precios, etc.)
   types/                  Tipos del dominio usados por los componentes actuales
@@ -189,9 +197,47 @@ por el cliente compartido `src/server/db/client.ts`:
   sin dejar rastro.
 - Repositorios disponibles: categorías activas, productos con sus ofertas,
   búsqueda, ofertas recientes/viejas, historial de precios, estado general
-  del sistema, ejecuciones y errores del importador (usados hoy por el
-  panel técnico; listos para que la portada pública los adopte en un paso
-  posterior, ver más abajo).
+  del sistema, ejecuciones y errores del importador. Los usa tanto el panel
+  técnico como la portada pública (a través de `src/server/dataSource/*`,
+  ver abajo).
+
+### Cómo funciona el respaldo a datos de demostración
+
+`src/server/dataSource/*` es la única puerta por la que la portada pública
+y `/buscar` leen datos — ningún componente decide por su cuenta si usar BD
+o demostración. Cada función pasa por `resolveWithFallback()`
+(`withFallback.ts`), que centraliza la decisión:
+
+1. Sin `DATABASE_URL`, con conexión caída, o si la consulta lanza un error:
+   usa `src/data/demo/*` directamente. El error técnico real se registra
+   con `console.error` en el servidor; el visitante nunca ve un mensaje
+   técnico, una página en blanco ni un 500.
+2. Con base de datos disponible pero sin catálogo suficiente (p. ej. recién
+   migrada, sin importar nada todavía): también usa demostración. Una
+   *búsqueda* o *categoría* que no encuentra resultados en una base con
+   catálogo real no cuenta como "insuficiente" — ese resultado vacío es
+   real y se muestra tal cual, no se sustituye por demostración.
+3. Con catálogo real suficiente: usa la base de datos. Los datos de Prisma
+   se adaptan con `src/server/dataSource/transform.ts` (nunca conversiones
+   sueltas repartidas por los componentes) antes de llegar a la UI:
+   `affiliateUrl` tiene prioridad sobre `productUrl`, los enlaces externos
+   llevan `rel="nofollow sponsored noopener noreferrer"` y se abren en
+   pestaña nueva, y nunca se marca una oferta real como "verificada" ni se
+   inventan valoraciones, tiendas o descuentos.
+
+La portada (`src/app/(site)/page.tsx`) usa
+`export const dynamic = "force-dynamic"` a propósito: Next.js no detecta
+las llamadas a Prisma como una señal para renderizar en cada petición (a
+diferencia de `cookies()`/`headers()`), así que sin esta línea la página se
+generaría una sola vez en el build y quedaría congelada con esos datos para
+siempre. El build en sí **nunca** necesita `DATABASE_URL` — genera el
+cliente de Prisma a partir del esquema, no se conecta a ninguna base.
+
+Nunca se abre una conexión nueva por componente: `getFeaturedBundle()` y
+`getDealsGridBundle()` agrupan cada sección de la portada en un número
+pequeño y fijo de consultas (con `include`/`select` para traer relaciones
+sin problema N+1), y `src/app/(site)/page.tsx` las lanza en paralelo con
+`Promise.all`.
 
 ## Importador CSV
 
@@ -238,10 +284,15 @@ disponibilidad cambian respecto al último registro de esa oferta.
 
 ### Uso
 
-**Desde el panel técnico** (`/admin/importar`): sube el CSV, pulsa
-"Simular" para ver qué se crearía/actualizaría sin tocar la base de datos
-(no escribe nada, no deja rastro en el historial), y "Importar de verdad"
-cuando estés conforme.
+**Desde el panel técnico** (`/admin/importar`): descarga la plantilla CSV
+(solo cabecera) si no tienes un fichero todavía, súbelo, pulsa "Simular"
+para ver qué se crearía/actualizaría sin tocar la base de datos (no escribe
+nada, no deja rastro en el historial), y "Importar de verdad" cuando estés
+conforme. El resultado incluye un resumen en una frase pensado para
+alguien sin conocimientos técnicos, además de los contadores detallados.
+Dos importaciones reales a la vez desde el panel se rechazan con un aviso
+claro (bloqueo en memoria del propio proceso: basta para un panel de un
+único administrador).
 
 **Desde la línea de comandos** (para automatizar más adelante):
 
@@ -273,8 +324,13 @@ oficial más adelante.
   `middleware.ts`, renombrado en Next.js 16) y se repite dentro del
   endpoint de importación como defensa en profundidad.
 - **Sesión**: una cookie `httpOnly` firmada con HMAC-SHA256 (secreto
-  `ADMIN_SESSION_SECRET`), válida 12 horas. No hay tabla de usuarios ni
-  contraseña por defecto.
+  `ADMIN_SESSION_SECRET`), válida 12 horas, `secure` en producción y
+  `sameSite: "lax"`. No hay tabla de usuarios ni contraseña por defecto.
+- **Intentos de acceso limitados**: tras 5 contraseñas incorrectas seguidas
+  desde la misma IP en 10 minutos, `/admin/login` bloquea intentos nuevos
+  durante 10 minutos (`src/server/admin/rateLimit.ts`, en memoria — basta
+  para el proceso único de un panel de un solo administrador; no persiste
+  entre reinicios ni pretende sustituir un WAF).
 - **No indexable**: `robots.txt` bloquea `/admin` y `/api/`, y además cada
   respuesta de esas rutas lleva la cabecera `X-Robots-Tag: noindex,
   nofollow`.
@@ -329,10 +385,21 @@ npm run build
 ```
 
 Ninguno de estos pasos requiere `DATABASE_URL`: el build genera el cliente
-de Prisma a partir del esquema (no se conecta a ninguna base), y las
-páginas de `/admin` se sirven siempre en modo dinámico (usan `cookies()`
-para la sesión), así que tampoco intentan consultar la base durante el
-build.
+de Prisma a partir del esquema (no se conecta a ninguna base). Las páginas
+de `/admin` se sirven siempre en modo dinámico (usan `cookies()` para la
+sesión) y la portada pública y `/buscar` usan
+`export const dynamic = "force-dynamic"` a propósito (ver "Cómo funciona el
+respaldo a datos de demostración"), así que ninguna intenta consultar la
+base durante el build.
+
+Estos otros comandos sí necesitan una base de datos real y por eso quedan
+fuera de la lista anterior — solo tienen sentido al preparar o comprobar un
+entorno con `DATABASE_URL` configurada (ver "Despliegue en Hostinger"):
+
+```bash
+npm run db:check      # comprueba la conexión sin escribir nada
+npm run db:prepare    # aplica solo migraciones pendientes + resumen
+```
 
 ## Preparación para tareas programadas
 
@@ -345,45 +412,72 @@ borrar) ofertas más viejas que `OFFER_STALE_AFTER_HOURS`. Esta fase
 
 ## Despliegue en Hostinger
 
+No es posible usar `mcp.hostinger.com` desde este entorno (limitación
+conocida); todo lo de abajo se hace desde el panel web de Hostinger y la
+línea de comandos, sin depender de esa integración.
+
 1. Hostinger despliega automáticamente al recibir cambios en `main` (ya
-   configurado; no se ha tocado `mcp.hostinger.com`).
+   configurado).
 2. El build (`npm install && npm run build`) funciona sin `DATABASE_URL`:
    la web pública sigue sirviendo datos de demostración hasta que actives
-   la base de datos.
+   la base de datos. Si Hostinger permite configurar un comando posterior
+   al despliegue (*post-deploy*) ejecutado desde el repositorio, el
+   recomendado es `npm run db:prepare` (ver más abajo) — no se asume que
+   esté configurado; hazlo manualmente la primera vez si no lo está.
 3. Para activar la base de datos en Hostinger:
-   - Crea la base MySQL desde el panel de Hostinger.
+   - Crea la base MySQL desde el panel de Hostinger (no reutilices la base
+     de otro sitio ni la crees si ya existe una para Preciara).
    - Define `DATABASE_URL` en las variables de entorno del sitio (panel
      Hostinger → tu sitio → Variables de entorno; no la subas nunca al
-     repositorio).
-   - Ejecuta `npm run db:migrate:deploy` (aplica las migraciones ya
-     commiteadas, no genera ninguna nueva) y, si quieres cargar los datos
-     de demostración para verificar el circuito, `npm run db:seed`.
+     repositorio). Formato exacto:
+     `mysql://usuario:contraseña@host:puerto/nombre_base_de_datos`.
+   - Comprueba la conexión sin escribir nada: `npm run db:check` (confirma
+     que conecta y nunca imprime la contraseña).
+   - Aplica el esquema de forma segura: `npm run db:prepare` (valida las
+     variables, aplica solo las migraciones pendientes — nunca genera una
+     nueva, nunca borra tablas, nunca usa `--force-reset` — y muestra un
+     resumen). Añade `-- --seed` solo si quieres cargar los datos de
+     demostración en la base para verificar el circuito
+     (`npm run db:prepare -- --seed`); es opcional e idempotente.
 4. Para activar el panel técnico, define además `ADMIN_PASSWORD` y
-   `ADMIN_SESSION_SECRET` (valores propios, largos y aleatorios — nunca
-   los de este README) en las mismas variables de entorno del sitio.
+   `ADMIN_SESSION_SECRET` (valores propios, largos y aleatorios — nunca los
+   de este README) en las mismas variables de entorno del sitio. Genera
+   `ADMIN_SESSION_SECRET` localmente con `openssl rand -hex 32` (o
+   `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+   si no tienes `openssl` a mano) y pégalo directamente en el panel de
+   Hostinger — nunca lo escribas en un fichero que pueda subirse al
+   repositorio.
 5. Si falta `DATABASE_URL` en producción: la web pública sigue con el
    fallback de demostración y `/admin` permanece cerrado (404). No es un
    estado de error: es el comportamiento por defecto seguro.
 
-### Cómo pasar de datos demo a datos reales
+**Desarrollo vs. producción**: en local se usa `db:migrate:dev` (crea y
+aplica migraciones nuevas a partir de cambios en `schema.prisma`) contra
+una base de pruebas propia, nunca contra la de Hostinger. En producción se
+usa siempre `db:migrate:deploy` (dentro de `db:prepare`), que solo aplica
+migraciones ya commiteadas y probadas — nunca genera nada nuevo ni pide
+confirmación interactiva.
+
+### Cómo activar datos reales
 
 1. Confirma que `DATABASE_URL` apunta a la base de datos correcta de
-   Hostinger (nunca a la de otro sitio).
-2. `npm run db:migrate:deploy` para asegurarte de que el esquema está al
-   día.
+   Hostinger (nunca a la de otro sitio) — `npm run db:check` lo confirma
+   sin escribir nada.
+2. `npm run db:prepare` para asegurarte de que el esquema está al día (solo
+   aplica migraciones pendientes, nunca destructivo).
 3. Prepara un CSV real con el formato documentado arriba (nunca inventes
    comercios, precios ni disponibilidad: solo datos que tengas autorizados
-   para publicar) y súbelo desde `/admin/importar`, primero en modo
-   "Simular" y luego de verdad.
+   para publicar). Descarga la plantilla desde `/admin/importar` si no
+   tienes un fichero de partida, y súbelo primero en modo "Simular" y luego
+   de verdad.
 4. Revisa `/admin/ofertas` y `/admin/errores` para confirmar que todo se
    importó como esperabas.
-5. La portada pública **todavía no lee** de la base de datos en esta fase
-   (sigue mostrando `src/data/demo/*`, deliberadamente, para no tocar el
-   diseño aprobado sin permiso explícito). El siguiente paso natural —
-   fuera del alcance de esta fase — es adaptar los componentes de la
-   portada para recibir los datos ya transformados por
-   `src/server/repositories/*` en lugar de importar `src/data/demo/*`
-   directamente; los repositorios y el fallback ya están listos para eso.
+5. En cuanto haya al menos una oferta activa real, la portada pública y
+   `/buscar` empiezan a mostrarla automáticamente (mismo diseño, sin
+   redeploy adicional): `src/server/dataSource/*` deja de usar el fallback
+   de demostración en cuanto detecta catálogo suficiente. El panel técnico
+   (resumen, `/admin`) indica en todo momento si la portada está sirviendo
+   base de datos o el respaldo de demostración.
 
 ### Cómo volver atrás si el despliegue falla
 
@@ -391,27 +485,31 @@ borrar) ofertas más viejas que `OFFER_STALE_AFTER_HOURS`. Esta fase
   base de datos: el build no depende de ella, así que basta con revertir
   el commit problemático en GitHub (`git revert`) y dejar que Hostinger
   vuelva a desplegar.
-- Si una migración (`db:migrate:deploy`) diera problemas, Prisma no
-  ejecuta nada destructivo por sí solo: revisa `npm run db:migrate:status`
+- Si una migración (`db:prepare` / `db:migrate:deploy`) diera problemas,
+  Prisma no ejecuta nada destructivo por sí solo: `db:prepare` se detiene
+  en el primer error sin tocar nada más. Revisa `npm run db:migrate:status`
   para ver qué quedó aplicado antes de intentar nada más, y no ejecutes
   `prisma migrate reset` (borra todos los datos) contra una base con
   datos reales.
 - Si el panel técnico da problemas, basta con quitar `ADMIN_PASSWORD` /
   `ADMIN_SESSION_SECRET` de las variables de entorno para cerrarlo
   inmediatamente (404) sin afectar a la web pública.
+- Si la portada pública muestra algo inesperado tras conectar la base de
+  datos, quitar `DATABASE_URL` de las variables de entorno la devuelve de
+  inmediato a los datos de demostración conocidos, sin tocar código ni
+  revertir ningún commit.
 
 ## Hoja de ruta
 
 - **Fase 1**: estructura, sistema visual, página principal y páginas
   legales con datos de demostración. *(hecho)*
-- **Fase 2A** (este repositorio): esquema de base de datos (MySQL +
-  Prisma), migraciones, seed idempotente, capa de acceso a datos,
-  importador CSV con panel técnico privado, preparación para
-  automatización. *(hecho — ver estado arriba)*
-- **Fase 2B** (siguiente paso natural, no iniciado): adaptar la portada
-  pública para leer de la base de datos a través de
-  `src/server/repositories/*` cuando haya datos reales, manteniendo el
-  fallback de demostración.
+- **Fase 2A**: esquema de base de datos (MySQL + Prisma), migraciones, seed
+  idempotente, capa de acceso a datos, importador CSV con panel técnico
+  privado, preparación para automatización. *(hecho)*
+- **Fase 2B** (este repositorio): portada pública y `/buscar` conectados a
+  la base de datos a través de `src/server/dataSource/*`, con respaldo
+  automático y probado a datos de demostración, sin cambios visuales.
+  *(hecho — ver estado arriba)*
 - **Fase 3**: integración con una fuente de datos real y autorizada,
   automatización programada (cron/GitHub Actions) sobre
   `scripts/import-csv.ts`.

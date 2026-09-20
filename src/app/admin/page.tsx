@@ -48,9 +48,10 @@ export default async function AdminDashboardPage() {
           )}
         </div>
         <p className="mt-2 text-xs text-navy-300">
-          El panel técnico lee siempre de la base de datos cuando está disponible. La portada pública todavía usa
-          `src/data/demo/*` de forma independiente en esta fase; ver README (&ldquo;Cómo pasar de datos demo a datos
-          reales&rdquo;).
+          La portada pública y el buscador ya leen de esta misma base de datos a través de
+          <code className="mx-1">src/server/dataSource/*</code>
+          y usan datos de demostración solo como respaldo automático (sin BD configurada, sin conexión, o catálogo
+          insuficiente). Ver README (&ldquo;Cómo funciona el respaldo a datos de demostración&rdquo;).
         </p>
       </div>
 
