@@ -59,11 +59,13 @@ export async function getSystemStatus(): Promise<SystemStatus> {
   return {
     databaseConfigured: true,
     databaseReachable: true,
-    // "Vacía" = sin ninguna oferta activa (ni siquiera demo). En cuanto hay
-    // filas (aunque sean del seed de demostración) la portada ya lee de la
-    // base de datos: el contenido es idéntico al fallback, pero demuestra
-    // que el circuito BD -> repositorios -> componentes funciona de verdad.
-    usingFallback: result.data.activeOffers === 0,
+    // La portada y el buscador solo leen de la base cuando hay catálogo
+    // REAL suficiente (ver src/server/dataSource/*): una base con ofertas
+    // solo de demostración (p. ej. isDemo=true del seed, o de un CSV de
+    // ejemplo importado por error) cuenta como "sin catálogo real todavía"
+    // y debe mostrar el mismo fallback aprobado, nunca los datos demo como
+    // si fueran reales.
+    usingFallback: result.data.realOffers === 0,
     ...result.data,
   };
 }

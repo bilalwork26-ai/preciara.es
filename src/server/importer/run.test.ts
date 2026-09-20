@@ -3,7 +3,7 @@ import { runCsvImport } from "./run";
 import { prisma } from "@/server/db/client";
 
 const HEADER =
-  "category_slug,category_name,product_slug,product_name,brand,model,ean,image_url,merchant_slug,merchant_name,merchant_url,external_offer_id,price,previous_price,currency,availability,shipping_cost,product_url,affiliate_url,last_checked_at";
+  "category_slug,category_name,product_slug,product_name,brand,model,ean,image_url,merchant_slug,merchant_name,merchant_url,external_offer_id,price,previous_price,currency,availability,shipping_cost,product_url,affiliate_url,last_checked_at,is_demo";
 
 // Prefijo exclusivo de estas pruebas: permite limpiar sin tocar datos del
 // seed ni de otras ejecuciones manuales en la base de pruebas local.
@@ -35,6 +35,10 @@ function row(overrides: Record<string, string> = {}) {
     product_url: "https://comercio-prueba-a.example.invalid/producto",
     affiliate_url: "",
     last_checked_at: "2026-01-01T00:00:00Z",
+    // Estas pruebas simulan una importación REAL (feed de producción), no
+    // el CSV de ejemplo: is_demo=false explícito, como exige el README
+    // para cualquier fichero real.
+    is_demo: "false",
     ...overrides,
   };
   return [
@@ -58,6 +62,7 @@ function row(overrides: Record<string, string> = {}) {
     "product_url",
     "affiliate_url",
     "last_checked_at",
+    "is_demo",
   ]
     .map((key) => fields[key])
     .join(",");
@@ -182,5 +187,124 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport (integración, BD local
     expect(run).not.toBeNull();
     expect(run!.source).toBe("test-importrun-check");
     expect(run!.status).toBe("SUCCESS");
+  });
+
+  it("una importación real (is_demo=false) crea producto, comercio y oferta marcados isDemo=false", async () => {
+    const product = await prisma!.product.findUnique({ where: { slug: PRODUCT } });
+    const merchant = await prisma!.merchant.findUnique({ where: { slug: MERCHANT_A } });
+    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    expect(product!.isDemo).toBe(false);
+    expect(merchant!.isDemo).toBe(false);
+    expect(offer!.isDemo).toBe(false);
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: is_demo (integración, BD local de pruebas)", () => {
+  const DEMO_PREFIX = "test-importer-isdemo";
+  const DEMO_CATEGORY = `${DEMO_PREFIX}-categoria`;
+  const DEMO_PRODUCT = `${DEMO_PREFIX}-producto`;
+  const DEMO_MERCHANT = `${DEMO_PREFIX}-comercio`;
+
+  function demoRow(overrides: Record<string, string> = {}) {
+    return row({
+      category_slug: DEMO_CATEGORY,
+      product_slug: DEMO_PRODUCT,
+      merchant_slug: DEMO_MERCHANT,
+      merchant_name: "Comercio de prueba demo",
+      merchant_url: "https://comercio-prueba-demo.example.invalid",
+      product_url: "https://comercio-prueba-demo.example.invalid/producto",
+      ...overrides,
+    });
+  }
+
+  async function cleanupDemo() {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { slug: { startsWith: DEMO_PREFIX } } });
+    await prisma.merchant.deleteMany({ where: { slug: { startsWith: DEMO_PREFIX } } });
+    await prisma.category.deleteMany({ where: { slug: DEMO_CATEGORY } });
+  }
+
+  beforeAll(cleanupDemo);
+  afterAll(cleanupDemo);
+
+  it("una importación con is_demo=true crea producto, comercio y oferta marcados isDemo=true", async () => {
+    const csv = `${HEADER}\n${demoRow({ is_demo: "true" })}\n`;
+    const summary = await runCsvImport({ csvContent: csv, source: "test-isdemo-true" });
+    expect(summary.status).toBe("SUCCESS");
+
+    const product = await prisma!.product.findUnique({ where: { slug: DEMO_PRODUCT } });
+    const merchant = await prisma!.merchant.findUnique({ where: { slug: DEMO_MERCHANT } });
+    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    expect(product!.isDemo).toBe(true);
+    expect(merchant!.isDemo).toBe(true);
+    expect(offer!.isDemo).toBe(true);
+  });
+
+  it("sin columna is_demo en absoluto, el valor por defecto también es demo (nunca se asume real)", async () => {
+    const headerWithoutIsDemo = HEADER.replace(",is_demo", "");
+    const rowWithoutIsDemo = demoRow({ product_slug: `${DEMO_PRODUCT}-sin-columna` })
+      .split(",")
+      .slice(0, -1) // quita el último campo (is_demo) para que coincida con la cabecera sin esa columna
+      .join(",");
+    const csv = `${headerWithoutIsDemo}\n${rowWithoutIsDemo}\n`;
+    const summary = await runCsvImport({ csvContent: csv, source: "test-isdemo-missing-column" });
+    expect(summary.status).toBe("SUCCESS");
+
+    const product = await prisma!.product.findUnique({ where: { slug: `${DEMO_PRODUCT}-sin-columna` } });
+    expect(product!.isDemo).toBe(true);
+  });
+
+  it("una fila demo nunca degrada a demo un producto/comercio/oferta ya marcado como real (protección contra mezclar)", async () => {
+    // Primero, una importación real de verdad.
+    const realCsv = `${HEADER}\n${demoRow({ is_demo: "false", price: "10.00" })}\n`;
+    await runCsvImport({ csvContent: realCsv, source: "test-mix-real-first" });
+
+    // Después, una fila demo para el MISMO producto/comercio (p. ej. una resubida
+    // accidental de ofertas-ejemplo.csv): no debe poder ocultar el dato real.
+    const demoCsv = `${HEADER}\n${demoRow({ is_demo: "true", price: "12.00" })}\n`;
+    await runCsvImport({ csvContent: demoCsv, source: "test-mix-demo-second" });
+
+    const product = await prisma!.product.findUnique({ where: { slug: DEMO_PRODUCT } });
+    const merchant = await prisma!.merchant.findUnique({ where: { slug: DEMO_MERCHANT } });
+    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    expect(product!.isDemo).toBe(false);
+    expect(merchant!.isDemo).toBe(false);
+    expect(offer!.isDemo).toBe(false);
+    // El precio sí se actualiza con normalidad: solo se protege la etiqueta demo/real.
+    expect(offer!.currentPrice.toNumber()).toBe(12);
+  });
+
+  it("una fila real confirma como real un producto/comercio/oferta que hasta ahora solo se conocía por demo", async () => {
+    const upgradeProduct = `${DEMO_PREFIX}-upgrade-producto`;
+    const upgradeMerchant = `${DEMO_PREFIX}-upgrade-comercio`;
+
+    const demoCsv = `${HEADER}\n${row({
+      category_slug: DEMO_CATEGORY,
+      product_slug: upgradeProduct,
+      merchant_slug: upgradeMerchant,
+      merchant_name: "Comercio de prueba upgrade",
+      merchant_url: "https://comercio-prueba-upgrade.example.invalid",
+      product_url: "https://comercio-prueba-upgrade.example.invalid/producto",
+      is_demo: "true",
+    })}\n`;
+    await runCsvImport({ csvContent: demoCsv, source: "test-mix-upgrade-demo-first" });
+
+    const realCsv = `${HEADER}\n${row({
+      category_slug: DEMO_CATEGORY,
+      product_slug: upgradeProduct,
+      merchant_slug: upgradeMerchant,
+      merchant_name: "Comercio de prueba upgrade",
+      merchant_url: "https://comercio-prueba-upgrade.example.invalid",
+      product_url: "https://comercio-prueba-upgrade.example.invalid/producto",
+      is_demo: "false",
+    })}\n`;
+    await runCsvImport({ csvContent: realCsv, source: "test-mix-upgrade-real-second" });
+
+    const product = await prisma!.product.findUnique({ where: { slug: upgradeProduct } });
+    const merchant = await prisma!.merchant.findUnique({ where: { slug: upgradeMerchant } });
+    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    expect(product!.isDemo).toBe(false);
+    expect(merchant!.isDemo).toBe(false);
+    expect(offer!.isDemo).toBe(false);
   });
 });

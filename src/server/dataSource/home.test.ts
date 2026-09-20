@@ -3,6 +3,7 @@ import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 import { prisma } from "@/server/db/client";
 import { getActiveCategories } from "@/server/repositories/categories";
+import { getActiveProductsWithOffers } from "@/server/repositories/products";
 import { getHomeCategories, getDealsGridBundle, getFeaturedBundle } from "./home";
 
 const PREFIX = "test-home-datasource";
@@ -86,6 +87,19 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     // Al ser la última creada, debe quedar al final (o cerca), nunca reordenada al principio por el nombre.
     expect(index).toBe(rows!.length - 1);
   });
+
+  it("si en este entorno la base solo tiene catálogo demo, la cuadrícula de bajadas cae al fallback demo", async () => {
+    // Igual que en dataSource/search.test.ts: solo afirma algo cuando de
+    // verdad no hay catálogo real en este entorno, para no dar un falso
+    // negativo en un entorno con datos reales ya importados.
+    const realCatalogProbe = await getActiveProductsWithOffers(1);
+    const hasRealCatalog = (realCatalogProbe?.length ?? 0) > 0;
+    if (!hasRealCatalog) {
+      const bundle = await getDealsGridBundle();
+      expect(bundle.source).toBe("demo");
+      expect(bundle.data.products.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: destacado y cuadrícula (integración)", () => {
@@ -163,5 +177,33 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: destacado y cuadrí
     const bundle = await getFeaturedBundle();
     expect(bundle.data.product.offers.length).toBeGreaterThan(0);
     expect(bundle.data.product.priceHistory.length).toBeGreaterThan(0);
+  });
+
+  it("un producto marcado isDemo=true nunca aparece en la cuadrícula, aunque haya catálogo real junto a él", async () => {
+    const demoMerchant = await prisma!.merchant.create({
+      data: { slug: `${PREFIX}-comercio-demo`, name: "Comercio demo", websiteUrl: "https://example.invalid", isDemo: true },
+    });
+    const demoProduct = await prisma!.product.create({
+      data: { slug: `${PREFIX}-producto-demo-en-mezcla`, name: "Producto demo en mezcla", categoryId, isDemo: true },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: demoProduct.id,
+        merchantId: demoMerchant.id,
+        currentPrice: 1,
+        productUrl: "https://example.invalid/demo-en-mezcla",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+        isDemo: true,
+      },
+    });
+
+    const bundle = await getDealsGridBundle();
+    expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-producto-demo-en-mezcla`)).toBeUndefined();
+    // El producto real de este mismo bloque sigue apareciendo con normalidad.
+    if (bundle.source === "database") {
+      expect(bundle.data.products.find((p) => p.slug === productSlug)).toBeDefined();
+    }
   });
 });

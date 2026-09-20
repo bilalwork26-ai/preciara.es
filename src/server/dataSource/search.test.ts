@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
+import { prisma } from "@/server/db/client";
+import { getActiveProductsWithOffers } from "@/server/repositories/products";
 import { normalizeForSearch, sanitizeSearchQuery, searchHomeProducts } from "./search";
 
 describe("normalizeForSearch (tildes/mayúsculas, ruta demo)", () => {
@@ -106,5 +108,60 @@ describe.skipIf(!process.env.DATABASE_URL)("searchHomeProducts: ruta BD (integra
         withoutAccent.data.products.map((p) => p.slug).sort()
       );
     }
+  });
+
+  it("si en este entorno la base solo tiene catálogo demo, una búsqueda sin filtro cae al fallback demo", async () => {
+    // Comprueba el estado real de la base antes de afirmar nada: en un
+    // entorno con catálogo real ya importado, esta condición no se cumple
+    // y la prueba no afirma nada sobre el resultado (evita un falso
+    // negativo fuera de este entorno de pruebas).
+    const realCatalogProbe = await getActiveProductsWithOffers(1);
+    const hasRealCatalog = (realCatalogProbe?.length ?? 0) > 0;
+    if (!hasRealCatalog) {
+      const { source } = await searchHomeProducts({ query: "", categorySlug: "" });
+      expect(source).toBe("demo");
+    }
+  });
+});
+
+const ISDEMO_PREFIX = "test-search-isdemo-leak";
+
+describe.skipIf(!process.env.DATABASE_URL)("searchHomeProducts: un producto marcado isDemo nunca aparece en resultados públicos", () => {
+  const uniqueDemoName = `${ISDEMO_PREFIX}-producto-unico-XYZ99`;
+  let categoryId: number;
+
+  beforeAll(async () => {
+    const category = await prisma!.category.create({ data: { slug: `${ISDEMO_PREFIX}-cat`, name: "Categoría demo-leak" } });
+    categoryId = category.id;
+    const merchant = await prisma!.merchant.create({
+      data: { slug: `${ISDEMO_PREFIX}-comercio`, name: "Comercio demo-leak", websiteUrl: "https://example.invalid", isDemo: true },
+    });
+    const product = await prisma!.product.create({
+      data: { slug: `${ISDEMO_PREFIX}-producto`, name: uniqueDemoName, categoryId, isDemo: true },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: product.id,
+        merchantId: merchant.id,
+        currentPrice: 15,
+        productUrl: "https://example.invalid/demo-leak",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+        isDemo: true,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { slug: { startsWith: ISDEMO_PREFIX } } });
+    await prisma.merchant.deleteMany({ where: { slug: { startsWith: ISDEMO_PREFIX } } });
+    await prisma.category.deleteMany({ where: { slug: `${ISDEMO_PREFIX}-cat` } });
+  });
+
+  it("buscar por el nombre exacto del producto demo nunca lo devuelve, sea cual sea la fuente", async () => {
+    const { data } = await searchHomeProducts({ query: uniqueDemoName, categorySlug: "" });
+    expect(data.products.some((p) => p.name === uniqueDemoName)).toBe(false);
   });
 });

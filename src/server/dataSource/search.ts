@@ -10,7 +10,7 @@ import { demoProducts } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategories } from "@/server/repositories/categories";
-import { searchActiveProducts } from "@/server/repositories/products";
+import { getActiveProductsWithOffers, searchActiveProducts } from "@/server/repositories/products";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
 import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
@@ -31,6 +31,15 @@ export function normalizeForSearch(value: string): string {
 
 export type SearchBundle = { products: Product[]; categories: Category[]; merchants: Merchant[] };
 
+/**
+ * `hasRealCatalog` es un dato interno, solo para decidir el fallback: sin
+ * él, una base de datos que solo tiene catálogo de demostración (todo
+ * `isDemo: true`) podría "confirmar" un resultado filtrado vacío como si
+ * fuera un resultado real y válido, en vez de caer al fallback de
+ * demostración como exige el resto de la portada.
+ */
+type SearchDbBundle = SearchBundle & { hasRealCatalog: boolean };
+
 export async function searchHomeProducts(params: { query: string; categorySlug: string }): Promise<SourcedResult<SearchBundle>> {
   const query = sanitizeSearchQuery(params.query);
   const categorySlug = params.categorySlug.trim().slice(0, 100);
@@ -42,26 +51,35 @@ export async function searchHomeProducts(params: { query: string; categorySlug: 
     return matchesQuery && matchesCategory;
   });
 
-  return resolveWithFallback({
+  return resolveWithFallback<SearchDbBundle>({
     fetchFromDb: async () => {
-      const [categoryRows, productRows] = await Promise.all([
+      const [categoryRows, productRows, realCatalogProbe] = await Promise.all([
         getActiveCategories(),
         searchActiveProducts({ query: query || undefined, categorySlug: categorySlug || undefined, limit: SEARCH_RESULTS_LIMIT }),
+        // Consulta barata (LIMIT 1) ya filtrada a catálogo real (no demo):
+        // solo para saber si existe ALGÚN producto real en toda la base,
+        // independientemente de si esta búsqueda concreta encuentra algo.
+        getActiveProductsWithOffers(1),
       ]);
-      if (!categoryRows || !productRows) return null;
+      if (!categoryRows || !productRows || !realCatalogProbe) return null;
       return {
         products: productRows.map((p) => toLegacyProduct(p)),
         categories: categoryRows.map(toLegacyCategory),
         merchants: extractMerchants(productRows),
+        hasRealCatalog: realCatalogProbe.length > 0,
       };
     },
-    demoFallback: { products: demoResults, categories: demoCategories, merchants: demoMerchants },
+    demoFallback: { products: demoResults, categories: demoCategories, merchants: demoMerchants, hasRealCatalog: true },
     // "Suficiente" distingue dos vacíos muy distintos: (a) sin filtro y
     // catálogo real todavía vacío -> haría falta un listado en blanco, así
     // que se usa demo; (b) con filtro (query o categoría) y cero
     // coincidencias -> es un resultado real y válido, se respeta tal cual
-    // en lugar de sustituirlo por resultados de demostración.
+    // en lugar de sustituirlo por resultados de demostración. Pero ambos
+    // casos exigen primero que exista catálogo real en algún sitio de la
+    // base: si todo lo que hay es demostración, se cae al fallback igual
+    // que el resto de la portada, sin excepción por tener un filtro.
     isSufficient: (bundle) => {
+      if (!bundle.hasRealCatalog) return false;
       if (bundle.categories.length === 0) return false;
       const hasFilter = query.length > 0 || categorySlug.length > 0;
       if (!hasFilter && bundle.products.length === 0) return false;

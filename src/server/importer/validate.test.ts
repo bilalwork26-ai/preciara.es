@@ -125,3 +125,35 @@ describe("validateRow", () => {
     expect(row.lastCheckedAt.getTime()).toBeGreaterThanOrEqual(before);
   });
 });
+
+describe("validateRow: is_demo", () => {
+  it("por defecto es demo (true) cuando la columna falta por completo", () => {
+    const record = baseRecord();
+    delete (record as Record<string, string | undefined>).is_demo;
+    expect(validateRow(record).isDemo).toBe(true);
+  });
+
+  it("por defecto es demo (true) cuando la columna está vacía: nunca se asume real por falta de información", () => {
+    expect(validateRow(baseRecord({ is_demo: "" })).isDemo).toBe(true);
+  });
+
+  it("acepta 'true' explícito", () => {
+    expect(validateRow(baseRecord({ is_demo: "true" })).isDemo).toBe(true);
+  });
+
+  it("acepta 'false' explícito para un fichero real", () => {
+    expect(validateRow(baseRecord({ is_demo: "false" })).isDemo).toBe(false);
+  });
+
+  it("acepta sinónimos habituales (1/0, yes/no, si/sí)", () => {
+    expect(validateRow(baseRecord({ is_demo: "1" })).isDemo).toBe(true);
+    expect(validateRow(baseRecord({ is_demo: "0" })).isDemo).toBe(false);
+    expect(validateRow(baseRecord({ is_demo: "yes" })).isDemo).toBe(true);
+    expect(validateRow(baseRecord({ is_demo: "no" })).isDemo).toBe(false);
+    expect(validateRow(baseRecord({ is_demo: "SI" })).isDemo).toBe(true);
+  });
+
+  it("rechaza un valor no reconocido en vez de adivinar", () => {
+    expect(() => validateRow(baseRecord({ is_demo: "quizas" }))).toThrow(/is_demo.*no reconocido/);
+  });
+});

@@ -79,7 +79,40 @@ describe.skipIf(!process.env.DATABASE_URL)("repositorios: conversión BD -> obje
     const status = await getSystemStatus();
     expect(status.databaseConfigured).toBe(true);
     expect(status.databaseReachable).toBe(true);
-    expect(status.usingFallback).toBe(false); // hay al menos la oferta creada arriba
+    expect(status.usingFallback).toBe(false); // hay al menos la oferta REAL creada arriba (isDemo por defecto es false)
     expect(status.activeOffers).toBeGreaterThanOrEqual(1);
+    expect(status.realOffers).toBeGreaterThanOrEqual(1);
+  });
+
+  it("una oferta demo no cuenta como oferta real: usingFallback depende de realOffers, no de activeOffers", async () => {
+    const before = await getSystemStatus();
+
+    const demoMerchant = await prisma!.merchant.create({
+      data: { slug: `${PREFIX}-comercio-demo`, name: "Comercio demo", websiteUrl: "https://example.invalid", isDemo: true },
+    });
+    const demoProduct = await prisma!.product.create({
+      data: { slug: `${PREFIX}-producto-demo`, name: "Producto demo", categoryId: (await prisma!.category.findUniqueOrThrow({ where: { slug: `${PREFIX}-cat` } })).id, isDemo: true },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: demoProduct.id,
+        merchantId: demoMerchant.id,
+        currentPrice: 1,
+        productUrl: "https://example.invalid/demo",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+        isDemo: true,
+      },
+    });
+
+    const after = await getSystemStatus();
+    expect(after.activeOffers).toBe(before.activeOffers + 1);
+    expect(after.demoOffers).toBe(before.demoOffers + 1);
+    expect(after.realOffers).toBe(before.realOffers); // la oferta demo no debe sumar aquí
+    expect(after.usingFallback).toBe(after.realOffers === 0);
+
+    await prisma!.product.delete({ where: { id: demoProduct.id } });
+    await prisma!.merchant.delete({ where: { id: demoMerchant.id } });
   });
 });

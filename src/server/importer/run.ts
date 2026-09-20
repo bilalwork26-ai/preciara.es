@@ -176,6 +176,20 @@ function summarizeErrors(errors: ImportRowError[]): string {
 type RowOutcome = { product: "created" | "updated"; offer: "created" | "updated" };
 
 /**
+ * Un registro ya marcado como real (`isDemo: false`) nunca vuelve a
+ * convertirse en demo solo porque una fila de demostración lo toque de
+ * nuevo (p. ej. una resubida por error de `examples/ofertas-ejemplo.csv`):
+ * queda demo únicamente si YA lo era Y la fila actual también lo es. En
+ * cambio, una fila real siempre puede confirmar como real algo que hasta
+ * ahora solo se conocía por datos de demostración. Así una actualización
+ * nunca mezcla ambos mundos en el sentido peligroso (ocultar datos reales
+ * tras la etiqueta "demo").
+ */
+function resolveIsDemo(existingIsDemo: boolean, rowIsDemo: boolean): boolean {
+  return existingIsDemo && rowIsDemo;
+}
+
+/**
  * Aplica una fila ya validada: resuelve/crea categoría y comercio, crea o
  * actualiza el producto y la oferta, y añade un `PriceSnapshot` solo si el
  * precio o la disponibilidad cambiaron respecto al último registro. En modo
@@ -211,12 +225,12 @@ async function applyRow(
     merchantId = existingMerchant.id;
     await db.merchant.update({
       where: { id: existingMerchant.id },
-      data: { name: row.merchantName, websiteUrl: row.merchantUrl, isDemo: false },
+      data: { name: row.merchantName, websiteUrl: row.merchantUrl, isDemo: resolveIsDemo(existingMerchant.isDemo, row.isDemo) },
     });
   } else {
     merchantId = (
       await db.merchant.create({
-        data: { slug: row.merchantSlug, name: row.merchantName, websiteUrl: row.merchantUrl, isDemo: false },
+        data: { slug: row.merchantSlug, name: row.merchantName, websiteUrl: row.merchantUrl, isDemo: row.isDemo },
       })
     ).id;
   }
@@ -229,7 +243,6 @@ async function applyRow(
     ean: row.ean,
     imageUrl: row.imageUrl,
     categoryId,
-    isDemo: false,
   };
   let productId: number;
   let productOutcome: RowOutcome["product"];
@@ -238,10 +251,13 @@ async function applyRow(
     productOutcome = existingProduct ? "updated" : "created";
   } else if (existingProduct) {
     productId = existingProduct.id;
-    await db.product.update({ where: { id: existingProduct.id }, data: productData });
+    await db.product.update({
+      where: { id: existingProduct.id },
+      data: { ...productData, isDemo: resolveIsDemo(existingProduct.isDemo, row.isDemo) },
+    });
     productOutcome = "updated";
   } else {
-    productId = (await db.product.create({ data: { slug: row.productSlug, ...productData } })).id;
+    productId = (await db.product.create({ data: { slug: row.productSlug, ...productData, isDemo: row.isDemo } })).id;
     productOutcome = "created";
   }
 
@@ -262,7 +278,6 @@ async function applyRow(
     shippingCost: row.shippingCost,
     lastCheckedAt: row.lastCheckedAt,
     isActive: true,
-    isDemo: false,
   };
 
   let offerId: number;
@@ -272,10 +287,13 @@ async function applyRow(
     offerOutcome = existingOffer ? "updated" : "created";
   } else if (existingOffer) {
     offerId = existingOffer.id;
-    await db.offer.update({ where: { id: existingOffer.id }, data: offerData });
+    await db.offer.update({
+      where: { id: existingOffer.id },
+      data: { ...offerData, isDemo: resolveIsDemo(existingOffer.isDemo, row.isDemo) },
+    });
     offerOutcome = "updated";
   } else {
-    offerId = (await db.offer.create({ data: { productId, merchantId, ...offerData } })).id;
+    offerId = (await db.offer.create({ data: { productId, merchantId, ...offerData, isDemo: row.isDemo } })).id;
     offerOutcome = "created";
   }
 

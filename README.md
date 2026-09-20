@@ -165,10 +165,20 @@ npm run db:migrate:status   # qué migraciones están aplicadas
 
 `db:migrate:deploy` **nunca** borra datos ni genera migraciones nuevas: solo
 aplica las que ya existen en `prisma/migrations/` (comportamiento estándar
-de Prisma, seguro para producción). Las dos migraciones actuales
-(`20260920121646_init` y `20260920121948_add_is_demo_flags`) se generaron y
-se probaron contra un MySQL real (MariaDB 10.11 en local) antes de
-commitearse.
+de Prisma, seguro para producción). Todas las migraciones actuales
+(`20260920121646_init`, `20260920121948_add_is_demo_flags`,
+`20260920214103_mark_example_csv_as_demo`) se generaron y se probaron
+contra un MySQL real (MariaDB 10.11 en local) antes de commitearse.
+
+`20260920214103_mark_example_csv_as_demo` es una migración de **datos**,
+no de esquema: corrige productos/comercios/ofertas que se hubieran
+importado desde `examples/ofertas-ejemplo.csv` antes de que el importador
+exigiera `is_demo` (ver "Importador CSV"), marcándolos `isDemo = true`.
+Identifica esas filas solo por varias señales inequívocas del propio
+fichero de ejemplo a la vez (slugs conocidos + `MarcaFicticia` +
+dominios `.example.invalid`), nunca toca nada más, y es idempotente —
+segura de aplicar en cualquier entorno, incluso uno que nunca importó ese
+fichero.
 
 **Antes de tocar una base de datos ya existente**, inspecciónala primero
 (`npm run db:migrate:status` con el `DATABASE_URL` correspondiente) y
@@ -217,12 +227,25 @@ o demostración. Cada función pasa por `resolveWithFallback()`
    usa `src/data/demo/*` directamente. El error técnico real se registra
    con `console.error` en el servidor; el visitante nunca ve un mensaje
    técnico, una página en blanco ni un 500.
-2. Con base de datos disponible pero sin catálogo suficiente (p. ej. recién
-   migrada, sin importar nada todavía): también usa demostración. Una
-   *búsqueda* o *categoría* que no encuentra resultados en una base con
-   catálogo real no cuenta como "insuficiente" — ese resultado vacío es
-   real y se muestra tal cual, no se sustituye por demostración.
-3. Con catálogo real suficiente: usa la base de datos. Los datos de Prisma
+2. **Los registros marcados `isDemo: true` no cuentan como catálogo real,
+   nunca.** Todas las consultas públicas (`src/server/repositories/products.ts`)
+   excluyen explícitamente productos, comercios y ofertas con `isDemo:
+   true` — vengan del seed de demostración (`npm run db:seed`) o de un CSV
+   marcado como demo (`is_demo=true`, ver "Importador CSV"). Una base con
+   solo catálogo demo se trata exactamente igual que una base vacía: cae
+   al fallback aprobado. Esto es intencionado y es la protección directa
+   contra volver a mostrar por error un CSV de ejemplo como si fuera
+   catálogo real (ver la sección de Hostinger para el caso concreto que
+   motivó esta regla).
+3. Con base de datos disponible pero sin catálogo **real** suficiente
+   (p. ej. recién migrada, sin importar nada todavía, o con solo
+   `isDemo: true`): también usa demostración. Una *búsqueda* o *categoría*
+   que no encuentra resultados en una base con catálogo real ya existente
+   no cuenta como "insuficiente" — ese resultado vacío es real y se
+   muestra tal cual, no se sustituye por demostración; pero si no hay
+   ningún catálogo real en absoluto, el buscador también cae al fallback
+   en vez de devolver una búsqueda "real" vacía.
+4. Con catálogo real suficiente: usa la base de datos. Los datos de Prisma
    se adaptan con `src/server/dataSource/transform.ts` (nunca conversiones
    sueltas repartidas por los componentes) antes de llegar a la UI:
    `affiliateUrl` tiene prioridad sobre `productUrl`, los enlaces externos
@@ -255,7 +278,7 @@ CSV en UTF-8, cabecera obligatoria con estas columnas (ver
 category_slug, category_name, product_slug, product_name, brand, model,
 ean, image_url, merchant_slug, merchant_name, merchant_url,
 external_offer_id, price, previous_price, currency, availability,
-shipping_cost, product_url, affiliate_url, last_checked_at
+shipping_cost, product_url, affiliate_url, last_checked_at, is_demo
 ```
 
 Obligatorias por fila: `category_slug`, `product_slug`, `product_name`,
@@ -263,6 +286,22 @@ Obligatorias por fila: `category_slug`, `product_slug`, `product_name`,
 `product_url`. Si `category_slug` o `merchant_slug` no existen todavía,
 esa fila los crea (necesita `category_name`; `merchant_name` +
 `merchant_url` ya son obligatorios siempre).
+
+**`is_demo`** (columna opcional, pero con un valor por defecto que hay que
+conocer): `true`/`false` (o sinónimos: `1`/`0`, `yes`/`no`, `si`/`sí`/`no`).
+Si la columna falta por completo, o si la celda está vacía, el valor por
+defecto es **`true` (demo)** — el importador nunca asume que una fila es
+real solo porque falte este dato. **Un fichero de datos reales debe
+marcar `is_demo=false` explícitamente en cada fila.** Un valor que no sea
+ninguno de los reconocidos se rechaza (`INVALID_IS_DEMO`) en vez de
+adivinar. El producto, el comercio y la oferta creados por esa fila quedan
+marcados con el mismo `isDemo` (ver "Cómo funciona el respaldo a datos de
+demostración" para qué hace la portada pública con eso). Al **actualizar**
+un registro que ya existía, una fila demo nunca puede degradar a real→demo
+un producto/comercio/oferta ya marcado como real (protección contra
+mezclar datos reales con datos de ejemplo por una resubida accidental);
+una fila real sí puede confirmar como real algo que hasta ahora solo se
+conocía por datos de demostración.
 
 Reglas de validación (estrictas; una fila inválida se rechaza, el resto del
 CSV se sigue procesando):
@@ -339,11 +378,15 @@ oficial más adelante.
 - **No indexable**: `robots.txt` bloquea `/admin` y `/api/`, y además cada
   respuesta de esas rutas lleva la cabecera `X-Robots-Tag: noindex,
   nofollow`.
-- **Contenido**: resumen (productos/comercios/ofertas activos, última
-  importación, cambios de precio recientes, ofertas sin revisar, estado de
-  la BD y si la portada usa BD o el fallback demo), y listados de
-  productos, comercios, ofertas, historial de importaciones (con detalle
-  por ejecución) y errores.
+- **Contenido**: resumen (productos/comercios/ofertas activos — con el
+  desglose real/demo —, última importación, cambios de precio recientes,
+  ofertas sin revisar, estado de la BD y si la portada usa BD o el
+  fallback demo — esto último depende de `realOffers`, nunca cuenta las
+  ofertas demo como catálogo real), y listados de productos, comercios,
+  ofertas, historial de importaciones (con detalle por ejecución) y
+  errores. Los listados sí muestran también lo marcado como demo, siempre
+  con su insignia "Demo" bien visible — solo la portada pública y el
+  buscador lo excluyen.
 
 Acceso: entra en `/admin`, introduce la contraseña de `ADMIN_PASSWORD`.
 "Cerrar sesión" en la cabecera borra la cookie.
@@ -503,6 +546,25 @@ para que sea fácil de encontrar entre el resto del log de `npm run build`:
 En cualquiera de los dos casos de error, el build entero termina con código
 distinto de cero: Hostinger no llega a publicar esa versión y el sitio
 público sigue sirviendo el despliegue anterior sin cambios.
+
+**Para confirmar específicamente que se aplicó
+`20260920214103_mark_example_csv_as_demo`** (la migración que corrige el
+CSV de ejemplo marcado por error como catálogo real): busca en el mismo
+log, justo antes de `[db:migrate] Migraciones aplicadas correctamente`,
+la línea que imprime la propia CLI de Prisma:
+
+```
+Applying migration `20260920214103_mark_example_csv_as_demo`
+```
+
+Si no aparece esa línea (por ejemplo porque ya se aplicó en un despliegue
+anterior), `prisma migrate status` la seguirá listando como aplicada; no
+es un error, solo significa que no había nada pendiente esa vez. Para
+comprobar el resultado en los datos, entra en `/admin` tras el despliegue:
+el resumen debe mostrar la base conectada, la portada en fallback demo
+(si esas 4 ofertas de ejemplo eran el único catálogo), `0` ofertas reales
+y `4` ofertas demo; `/admin/ofertas` debe mostrar esas 4 filas con la
+insignia "Demo".
 
 ### Cómo activar datos reales
 

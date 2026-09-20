@@ -22,6 +22,7 @@ export const CSV_COLUMNS = [
   "product_url",
   "affiliate_url",
   "last_checked_at",
+  "is_demo",
 ] as const;
 
 const REQUIRED_COLUMNS: (typeof CSV_COLUMNS)[number][] = [
@@ -171,6 +172,27 @@ function parseCurrency(raw: string): string {
   return value;
 }
 
+const IS_DEMO_TRUE_VALUES = new Set(["true", "1", "yes", "si", "sí"]);
+const IS_DEMO_FALSE_VALUES = new Set(["false", "0", "no"]);
+
+/**
+ * "true"/"false" (y sinónimos habituales) estrictos: cualquier otro valor no
+ * vacío se rechaza en vez de interpretarse a la ligera. Vacío o columna
+ * ausente = `true` (demo) por defecto: un fichero real SIEMPRE debe marcar
+ * `is_demo=false` explícitamente. Nunca se asume "real" solo porque falta
+ * el dato — ver README, "Formato CSV".
+ */
+function parseIsDemo(raw: string): boolean {
+  const value = raw.trim().toLowerCase();
+  if (!value) return true;
+  if (IS_DEMO_TRUE_VALUES.has(value)) return true;
+  if (IS_DEMO_FALSE_VALUES.has(value)) return false;
+  throw new RowValidationError(
+    "INVALID_IS_DEMO",
+    `"is_demo" no reconocido: "${raw}". Usa "true" o "false" (deja la columna vacía solo si de verdad son datos de demostración).`
+  );
+}
+
 function parseDate(raw: string, fieldName: string): Date | null {
   const value = raw.trim();
   if (!value) return null;
@@ -202,6 +224,7 @@ export type NormalizedOfferRow = {
   productUrl: string;
   affiliateUrl: string | null;
   lastCheckedAt: Date;
+  isDemo: boolean;
 };
 
 /**
@@ -239,5 +262,6 @@ export function validateRow(record: Record<string, string>): NormalizedOfferRow 
     productUrl: parseUrl(record.product_url, "product_url", { required: true })!,
     affiliateUrl: parseUrl(record.affiliate_url ?? "", "affiliate_url", { required: false }),
     lastCheckedAt: parseDate(record.last_checked_at ?? "", "last_checked_at") ?? now,
+    isDemo: parseIsDemo(record.is_demo ?? ""),
   };
 }

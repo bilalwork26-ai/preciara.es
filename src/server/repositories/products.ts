@@ -1,11 +1,19 @@
 import { withDb } from "@/server/db/client";
 import { Prisma } from "@/generated/prisma";
 
+/**
+ * `isDemo: false` en la oferta y en el comercio: las funciones de este
+ * fichero alimentan exclusivamente la capa pública
+ * (`src/server/dataSource/*`), que nunca debe mostrar datos de
+ * demostración como si fueran catálogo real. El panel técnico usa sus
+ * propias consultas (`src/server/repositories/admin.ts`), sin este
+ * filtro, para poder listar también lo demo con su etiqueta.
+ */
 const productWithOffers = Prisma.validator<Prisma.ProductDefaultArgs>()({
   include: {
     category: { select: { id: true, slug: true, name: true } },
     offers: {
-      where: { isActive: true, merchant: { isActive: true } },
+      where: { isActive: true, isDemo: false, merchant: { isActive: true, isDemo: false } },
       include: { merchant: { select: { id: true, slug: true, name: true } } },
       orderBy: { currentPrice: "asc" },
     },
@@ -26,7 +34,11 @@ export type ProductWithOffers = Prisma.ProductGetPayload<typeof productWithOffer
 export async function getActiveProductsWithOffers(limit = 60): Promise<ProductWithOffers[] | null> {
   const result = await withDb((db) =>
     db.product.findMany({
-      where: { isActive: true, offers: { some: { isActive: true, merchant: { isActive: true } } } },
+      where: {
+        isActive: true,
+        isDemo: false,
+        offers: { some: { isActive: true, isDemo: false, merchant: { isActive: true, isDemo: false } } },
+      },
       ...productWithOffers,
       orderBy: { id: "asc" },
       take: limit,
@@ -58,6 +70,8 @@ export async function searchActiveProducts(params: {
     db.product.findMany({
       where: {
         isActive: true,
+        isDemo: false,
+        offers: { some: { isActive: true, isDemo: false, merchant: { isActive: true, isDemo: false } } },
         ...(query ? { name: { contains: query } } : {}),
         ...(categorySlug ? { category: { slug: categorySlug } } : {}),
       },

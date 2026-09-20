@@ -14,6 +14,11 @@ export default function AdminImportPage() {
           {MAX_CSV_ROWS} filas). Usa &ldquo;Simular&rdquo; primero para ver qué se crearía o actualizaría sin tocar la
           base de datos: no escribe nada ni deja rastro en el historial.
         </p>
+        <p className="mt-2 max-w-2xl rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-700">
+          <strong>Importante — columna <code>is_demo</code>:</strong> si la dejas vacía o la omites, esa fila se trata
+          como demostración por defecto (nunca se asume &ldquo;real&rdquo; por falta de dato). Para catálogo real,
+          escribe <code>is_demo=false</code> en cada fila.
+        </p>
       </div>
 
       <CsvImportForm />
