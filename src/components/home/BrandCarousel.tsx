@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
-import { Logo } from "@/components/icons/Logo";
 import { Container } from "@/components/ui/Container";
 import { brandCarouselSlides } from "@/data/brandCarousel";
 
@@ -95,22 +93,11 @@ export function BrandCarousel() {
 
       <Container>
         <div
-          className="relative flex h-[112px] items-center gap-3 sm:h-[100px] sm:gap-4 lg:h-24 lg:gap-6"
+          className="relative flex flex-col gap-1.5 py-2.5 sm:h-[88px] sm:flex-row sm:items-center sm:gap-5 sm:py-0 lg:h-[84px]"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          <Link href="/" className="flex shrink-0 items-center" aria-label="Preciara — Inicio">
-            <span className="sm:hidden">
-              <Logo theme="light" markOnly markClassName="h-7 w-7 shrink-0" />
-            </span>
-            <span className="hidden sm:inline-flex">
-              <Logo theme="light" markClassName="h-8 w-8 shrink-0" />
-            </span>
-          </Link>
-
-          <span aria-hidden="true" className="hidden h-9 w-px shrink-0 bg-white/15 sm:block" />
-
-          <div className="carousel-viewport relative h-9 min-w-0 flex-1 overflow-hidden sm:h-10 lg:h-11">
+          <div className="carousel-viewport relative h-[54px] min-w-0 shrink-0 overflow-hidden sm:h-10 sm:flex-1 sm:shrink lg:h-11">
             {brandCarouselSlides.map((slide, i) => {
               const state = slideState(i, active, total);
               return (
@@ -123,10 +110,12 @@ export function BrandCarousel() {
                   data-state={state}
                   className="carousel-slide pointer-events-none absolute inset-0 flex flex-col justify-center"
                 >
-                  <p className="truncate text-sm font-bold leading-tight text-white sm:text-base lg:text-lg">
+                  <p className="line-clamp-2 text-sm font-bold leading-tight text-white sm:line-clamp-1 sm:text-base lg:text-lg">
                     {slide.headline}
                   </p>
-                  <p className="mt-0.5 truncate text-xs leading-snug text-navy-100 sm:text-sm">{slide.text}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-navy-100 sm:line-clamp-1 sm:text-sm">
+                    {slide.text}
+                  </p>
                 </div>
               );
             })}
@@ -134,7 +123,7 @@ export function BrandCarousel() {
 
           <CarouselOrnament />
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
             <button
               type="button"
               onClick={prev}
