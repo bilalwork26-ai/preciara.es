@@ -1,4 +1,4 @@
-import { TrustStrip } from "@/components/home/TrustStrip";
+import { BrandCarousel } from "@/components/home/BrandCarousel";
 import { PromoBannerMain } from "@/components/home/PromoBannerMain";
 import { PromoBannerSecondary } from "@/components/home/PromoBannerSecondary";
 import { CategoryRow } from "@/components/home/CategoryRow";
@@ -9,7 +9,7 @@ import { Container } from "@/components/ui/Container";
 export default function Home() {
   return (
     <>
-      <TrustStrip />
+      <BrandCarousel />
 
       <Container className="pb-8 pt-4 sm:pt-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.7fr_1fr]">
