@@ -1,0 +1,194 @@
+// Esquema de datos de Preciara (Fase 2A).
+//
+// Motor: MySQL (Hostinger). El cliente de Prisma se genera en
+// `src/generated/prisma` (ver `generator client` más abajo) y se consume
+// siempre a través del singleton `src/lib/prisma.ts`, nunca directamente
+// desde componentes visuales.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// Categoría del catálogo (p. ej. "Tecnología", "Hogar").
+model Category {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique @db.VarChar(120)
+  name        String   @db.VarChar(120)
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@index([isActive])
+  @@map("categories")
+}
+
+/// Producto del catálogo. Un producto puede tener varias ofertas (una por comercio).
+model Product {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique @db.VarChar(160)
+  name        String   @db.VarChar(200)
+  description String?  @db.Text
+  brand       String?  @db.VarChar(100)
+  model       String?  @db.VarChar(100)
+  /// EAN/GTIN u otro identificador externo estable, si se conoce.
+  ean         String?  @db.VarChar(32)
+  imageUrl    String?  @db.VarChar(500)
+  categoryId  Int
+  isActive    Boolean  @default(true)
+  /// true = fila de datos de demostración (seed), nunca un producto real. Ver README.
+  isDemo      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  offers   Offer[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([categoryId, isActive])
+  @@index([ean])
+  @@map("products")
+}
+
+/// Comercio/tienda que publica ofertas.
+model Merchant {
+  id         Int      @id @default(autoincrement())
+  slug       String   @unique @db.VarChar(120)
+  name       String   @db.VarChar(120)
+  websiteUrl String   @db.VarChar(500)
+  logoUrl    String?  @db.VarChar(500)
+  isActive   Boolean  @default(true)
+  /// true = comercio ficticio de demostración (seed), nunca un comercio real. Ver README.
+  isDemo     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  offers Offer[]
+
+  @@index([isActive])
+  @@map("merchants")
+}
+
+/// Estado de disponibilidad de una oferta (y de cada instantánea de su historial).
+enum Availability {
+  IN_STOCK
+  OUT_OF_STOCK
+  PREORDER
+  DISCONTINUED
+  UNKNOWN
+}
+
+/// Oferta vigente de un producto en un comercio concreto. Como mucho una
+/// oferta activa por (producto, comercio): ver `@@unique` más abajo.
+model Offer {
+  id            Int      @id @default(autoincrement())
+  productId     Int
+  merchantId    Int
+  /// Identificador propio del comercio para esta oferta (SKU, id de listado...), si lo aporta la fuente.
+  externalId    String?  @db.VarChar(120)
+  currentPrice  Decimal  @db.Decimal(10, 2)
+  previousPrice Decimal? @db.Decimal(10, 2)
+  currency      String   @default("EUR") @db.VarChar(3)
+  productUrl    String   @db.VarChar(700)
+  affiliateUrl  String?  @db.VarChar(700)
+  availability  Availability @default(UNKNOWN)
+  shippingCost  Decimal? @db.Decimal(10, 2)
+  isActive      Boolean  @default(true)
+  /// true = oferta de demostración (seed), nunca un precio real. Ver README.
+  isDemo        Boolean  @default(false)
+  lastCheckedAt DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  merchant       Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  priceSnapshots PriceSnapshot[]
+
+  // Como mucho una oferta por combinación producto+comercio: evita que el
+  // importador (o cualquier otro origen) duplique la misma oferta.
+  @@unique([productId, merchantId])
+  @@index([merchantId])
+  @@index([isActive])
+  @@index([lastCheckedAt])
+  @@index([availability])
+  @@map("offers")
+}
+
+/// Punto histórico de precio/disponibilidad de una oferta. Solo se crea uno
+/// nuevo cuando algo relevante cambia respecto al último registro (ver
+/// capa de importación); no es una foto diaria automática.
+model PriceSnapshot {
+  id           Int          @id @default(autoincrement())
+  offerId      Int
+  price        Decimal      @db.Decimal(10, 2)
+  shippingCost Decimal?     @db.Decimal(10, 2)
+  availability Availability @default(UNKNOWN)
+  recordedAt   DateTime     @default(now())
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, recordedAt])
+  @@map("price_snapshots")
+}
+
+/// Estado de una ejecución del importador (CSV hoy; otras fuentes en el futuro).
+enum ImportStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+/// Registro de una ejecución del importador, con sus contadores y resumen.
+model ImportRun {
+  id               Int          @id @default(autoincrement())
+  /// Origen de los datos, p. ej. "csv:manual", "csv:cron/ofertas.csv".
+  source           String       @db.VarChar(160)
+  status           ImportStatus @default(RUNNING)
+  startedAt        DateTime     @default(now())
+  finishedAt       DateTime?
+  rowsRead         Int          @default(0)
+  productsCreated  Int          @default(0)
+  productsUpdated  Int          @default(0)
+  offersCreated    Int          @default(0)
+  offersUpdated    Int          @default(0)
+  rowsRejected     Int          @default(0)
+  /// Resumen corto del error si `status` es FAILED. Nunca contiene secretos.
+  errorSummary     String?      @db.VarChar(500)
+  /// Metadatos adicionales (nombre de fichero, modo dry-run, duración...). Nunca secretos.
+  metadata         Json?
+
+  errors ImportError[]
+
+  @@index([status])
+  @@index([startedAt])
+  @@map("import_runs")
+}
+
+/// Error de una fila concreta dentro de una ejecución del importador.
+model ImportError {
+  id          Int      @id @default(autoincrement())
+  importRunId Int
+  /// Número de fila del CSV (1 = primera fila de datos), si aplica.
+  rowNumber   Int?
+  /// Código corto y estable, p. ej. "INVALID_PRICE", "MISSING_MERCHANT_SLUG".
+  errorCode   String   @db.VarChar(60)
+  message     String   @db.VarChar(500)
+  /// Copia saneada de los campos de la fila (nunca cabeceras/credenciales), para depurar sin re-subir el CSV.
+  rowData     Json?
+  createdAt   DateTime @default(now())
+
+  importRun ImportRun @relation(fields: [importRunId], references: [id], onDelete: Cascade)
+
+  @@index([importRunId])
+  @@map("import_errors")
+}

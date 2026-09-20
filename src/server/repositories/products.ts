@@ -1,0 +1,67 @@
+import { withDb } from "@/server/db/client";
+import { Prisma } from "@/generated/prisma";
+
+const productWithOffers = Prisma.validator<Prisma.ProductDefaultArgs>()({
+  include: {
+    category: { select: { id: true, slug: true, name: true } },
+    offers: {
+      where: { isActive: true, merchant: { isActive: true } },
+      include: { merchant: { select: { id: true, slug: true, name: true } } },
+      orderBy: { currentPrice: "asc" },
+    },
+  },
+});
+
+export type ProductWithOffers = Prisma.ProductGetPayload<typeof productWithOffers>;
+
+/**
+ * Productos activos con al menos una oferta activa, con sus ofertas y el
+ * comercio de cada una ya incluidos (una sola consulta, sin N+1). Se usan
+ * para "destacados" y para la cuadrícula de bajadas: quien llama decide el
+ * orden/recorte final.
+ */
+export async function getActiveProductsWithOffers(limit = 60): Promise<ProductWithOffers[] | null> {
+  const result = await withDb((db) =>
+    db.product.findMany({
+      where: { isActive: true, offers: { some: { isActive: true, merchant: { isActive: true } } } },
+      ...productWithOffers,
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    })
+  );
+  return result.ok ? result.data : null;
+}
+
+/** Un producto por slug, con sus ofertas activas incluidas. `undefined` = no existe; `null` = BD no disponible. */
+export async function getProductBySlug(slug: string): Promise<ProductWithOffers | null | undefined> {
+  const result = await withDb((db) =>
+    db.product.findUnique({
+      where: { slug },
+      ...productWithOffers,
+    })
+  );
+  if (!result.ok) return null;
+  return result.data ?? undefined;
+}
+
+/** Búsqueda simple por nombre (contiene, insensible a mayúsculas) y/o categoría, para /buscar. */
+export async function searchActiveProducts(params: {
+  query?: string;
+  categorySlug?: string;
+  limit?: number;
+}): Promise<ProductWithOffers[] | null> {
+  const { query, categorySlug, limit = 60 } = params;
+  const result = await withDb((db) =>
+    db.product.findMany({
+      where: {
+        isActive: true,
+        ...(query ? { name: { contains: query } } : {}),
+        ...(categorySlug ? { category: { slug: categorySlug } } : {}),
+      },
+      ...productWithOffers,
+      orderBy: { name: "asc" },
+      take: limit,
+    })
+  );
+  return result.ok ? result.data : null;
+}
