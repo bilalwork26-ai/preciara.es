@@ -56,6 +56,11 @@ examples/
   ofertas-ejemplo.csv  CSV de ejemplo, totalmente ficticio
 scripts/
   import-csv.ts      Runner de importación por línea de comandos (cron-ready)
+  build-migrate.ts    Paso automático del build: migra la BD si hay DATABASE_URL
+  db-check.ts          CLI de `npm run db:check`
+  db-prepare.ts         CLI de `npm run db:prepare`
+  lib/dbConnection.ts    Comprobación de conexión compartida (build-migrate/db-check)
+  lib/sanitizeError.ts    Oculta credenciales de cualquier mensaje de error
 src/
   app/
     (site)/          Grupo de rutas públicas: portada, /buscar, legales
@@ -384,21 +389,30 @@ npm run db:generate
 npm run build
 ```
 
-Ninguno de estos pasos requiere `DATABASE_URL`: el build genera el cliente
-de Prisma a partir del esquema (no se conecta a ninguna base). Las páginas
-de `/admin` se sirven siempre en modo dinámico (usan `cookies()` para la
+Ninguno de estos pasos **requiere** `DATABASE_URL` para funcionar: sin ella,
+`npm run build` genera el cliente de Prisma a partir del esquema (no se
+conecta a ninguna base) y omite la migración sin más. Las páginas de
+`/admin` se sirven siempre en modo dinámico (usan `cookies()` para la
 sesión) y la portada pública y `/buscar` usan
 `export const dynamic = "force-dynamic"` a propósito (ver "Cómo funciona el
 respaldo a datos de demostración"), así que ninguna intenta consultar la
-base durante el build.
+base durante el build en sí (Next no ejecuta esas páginas al compilar).
 
-Estos otros comandos sí necesitan una base de datos real y por eso quedan
-fuera de la lista anterior — solo tienen sentido al preparar o comprobar un
-entorno con `DATABASE_URL` configurada (ver "Despliegue en Hostinger"):
+Si `DATABASE_URL` **sí** está definida (como en Hostinger una vez
+configurada), `npm run build` comprueba la conexión y aplica las
+migraciones pendientes automáticamente como parte del propio build — ver
+"Qué buscar en los logs de compilación de Hostinger" en la sección de
+despliegue. Sigue siendo seguro ejecutar `npm run build` en local sin
+tocar nada real: solo aplica migraciones ya commiteadas, nunca las genera
+ni borra datos.
+
+Estos otros comandos también necesitan una base de datos real y quedan
+fuera de la lista anterior — para comprobar o preparar un entorno con
+`DATABASE_URL` a mano, sin esperar a un build completo:
 
 ```bash
 npm run db:check      # comprueba la conexión sin escribir nada
-npm run db:prepare    # aplica solo migraciones pendientes + resumen
+npm run db:prepare    # aplica solo migraciones pendientes + resumen (--seed opcional)
 ```
 
 ## Preparación para tareas programadas
@@ -418,27 +432,41 @@ línea de comandos, sin depender de esa integración.
 
 1. Hostinger despliega automáticamente al recibir cambios en `main` (ya
    configurado).
-2. El build (`npm install && npm run build`) funciona sin `DATABASE_URL`:
-   la web pública sigue sirviendo datos de demostración hasta que actives
-   la base de datos. Si Hostinger permite configurar un comando posterior
-   al despliegue (*post-deploy*) ejecutado desde el repositorio, el
-   recomendado es `npm run db:prepare` (ver más abajo) — no se asume que
-   esté configurado; hazlo manualmente la primera vez si no lo está.
+2. El propio `npm run build` (`prisma generate && tsx scripts/build-migrate.ts
+   && next build`) ya prepara la base de datos automáticamente en cada
+   despliegue — no hace falta ningún comando manual aparte ni un *post-deploy*
+   configurado en Hostinger:
+   - **Sin `DATABASE_URL`**: el paso se omite sin más y el build continúa
+     normalmente; la web pública sigue sirviendo datos de demostración.
+   - **Con `DATABASE_URL`**: comprueba la conexión primero (sin escribir
+     nada) y, si conecta, aplica **solo** `prisma migrate deploy` — nunca
+     `db push`, nunca `migrate reset`, nunca `--force-reset`, y nunca
+     ejecuta el seed. Ver "Qué buscar en los logs de compilación" abajo
+     para el texto exacto que confirma cada resultado.
+   - **Si la conexión o la migración fallan**: el paso termina con error y
+     `npm run build` se detiene ahí mismo — `next build` ni siquiera llega
+     a ejecutarse, así que Hostinger no sustituye la versión ya publicada;
+     el sitio en producción sigue funcionando tal cual estaba.
 3. Para activar la base de datos en Hostinger:
    - Crea la base MySQL desde el panel de Hostinger (no reutilices la base
      de otro sitio ni la crees si ya existe una para Preciara).
    - Define `DATABASE_URL` en las variables de entorno del sitio (panel
      Hostinger → tu sitio → Variables de entorno; no la subas nunca al
      repositorio). Formato exacto:
-     `mysql://usuario:contraseña@host:puerto/nombre_base_de_datos`.
-   - Comprueba la conexión sin escribir nada: `npm run db:check` (confirma
-     que conecta y nunca imprime la contraseña).
-   - Aplica el esquema de forma segura: `npm run db:prepare` (valida las
-     variables, aplica solo las migraciones pendientes — nunca genera una
-     nueva, nunca borra tablas, nunca usa `--force-reset` — y muestra un
-     resumen). Añade `-- --seed` solo si quieres cargar los datos de
-     demostración en la base para verificar el circuito
-     (`npm run db:prepare -- --seed`); es opcional e idempotente.
+     `mysql://usuario:contraseña@host:puerto/nombre_base_de_datos` — el host
+     casi nunca es `localhost` en Hostinger (ver la sección de logs abajo
+     para el mensaje exacto si te equivocas de host).
+   - El siguiente despliegue (el propio `npm run build`) ya aplica las
+     migraciones automáticamente. Si prefieres comprobarlo o aplicarlo tú
+     mismo antes de esperar al despliegue: `npm run db:check` (solo
+     comprueba la conexión, no escribe nada) y `npm run db:prepare`
+     (valida variables, aplica solo migraciones pendientes, resumen final;
+     `db:prepare` y el paso del build comparten la misma lógica de
+     conexión — `scripts/lib/dbConnection.ts` — para no duplicarla). Añade
+     `-- --seed` a `db:prepare` solo si quieres cargar los datos de
+     demostración para verificar el circuito
+     (`npm run db:prepare -- --seed`); el build **nunca** hace esto por su
+     cuenta.
 4. Para activar el panel técnico, define además `ADMIN_PASSWORD` y
    `ADMIN_SESSION_SECRET` (valores propios, largos y aleatorios — nunca los
    de este README) en las mismas variables de entorno del sitio. Genera
@@ -454,9 +482,27 @@ línea de comandos, sin depender de esa integración.
 **Desarrollo vs. producción**: en local se usa `db:migrate:dev` (crea y
 aplica migraciones nuevas a partir de cambios en `schema.prisma`) contra
 una base de pruebas propia, nunca contra la de Hostinger. En producción se
-usa siempre `db:migrate:deploy` (dentro de `db:prepare`), que solo aplica
+usa siempre `db:migrate:deploy` (dentro del paso automático del build, y
+también dentro de `db:prepare` si lo ejecutas a mano), que solo aplica
 migraciones ya commiteadas y probadas — nunca genera nada nuevo ni pide
 confirmación interactiva.
+
+### Qué buscar en los logs de compilación de Hostinger
+
+Cada línea del paso de migración del build empieza por `[db:migrate]`,
+para que sea fácil de encontrar entre el resto del log de `npm run build`:
+
+| Situación | Texto exacto a buscar | Qué significa |
+|---|---|---|
+| Sin `DATABASE_URL` | `[db:migrate] Sin DATABASE_URL` | No hay base de datos configurada todavía; el build ha continuado igualmente con el fallback de demostración. Nada que revisar. |
+| Conexión correcta | `[db:migrate] Conexión a MySQL verificada` | `DATABASE_URL` conecta correctamente. |
+| Migraciones aplicadas | `[db:migrate] Migraciones aplicadas correctamente` | `prisma migrate deploy` terminó sin errores; el esquema está al día. |
+| Fallo de conexión | `[db:migrate] ERROR: no se pudo conectar a la base de datos` | La línea siguiente trae el motivo ya saneado (nunca la contraseña ni la URL completa). Si el host no es el correcto — por ejemplo, si `DATABASE_URL` se dejó apuntando a `localhost` en vez del host real de MySQL en Hostinger — el mensaje es del estilo `Can't reach database server at` seguido del host configurado: revisa el host y el puerto de `DATABASE_URL` en las variables de entorno del sitio. |
+| Fallo de migración | `[db:migrate] ERROR: fallo al aplicar las migraciones` | La conexión funcionaba pero `prisma migrate deploy` falló (p. ej. una migración incompatible con el estado actual de la base); revisa las líneas de Prisma justo encima — no incluyen la contraseña — y `npm run db:migrate:status` antes de reintentar. |
+
+En cualquiera de los dos casos de error, el build entero termina con código
+distinto de cero: Hostinger no llega a publicar esa versión y el sitio
+público sigue sirviendo el despliegue anterior sin cambios.
 
 ### Cómo activar datos reales
 

@@ -18,6 +18,7 @@
 import { execFileSync } from "node:child_process";
 import { PrismaClient } from "../src/generated/prisma";
 import { sanitizeErrorMessage } from "./lib/sanitizeError";
+import { isMigrationApplicable } from "./lib/dbConnection";
 
 function run(command: string, args: string[]): void {
   execFileSync(command, args, { stdio: "inherit" });
@@ -25,7 +26,7 @@ function run(command: string, args: string[]): void {
 
 async function main() {
   console.log("== 1/4: variables de entorno ==");
-  if (!process.env.DATABASE_URL) {
+  if (!isMigrationApplicable()) {
     console.error("Falta DATABASE_URL. Defínela en las variables de entorno del sitio (nunca en el repositorio) y repite.");
     process.exitCode = 1;
     return;
