@@ -43,6 +43,7 @@
  */
 import { createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
+import { normalizeEbayPublicKey, EbayPublicKeyFormatError } from "./publicKeyFormat";
 
 const EBAY_OAUTH_TOKEN_ENDPOINT = "https://api.ebay.com/identity/v1/oauth2/token";
 const EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope";
@@ -68,19 +69,27 @@ function isFresh<T>(entry: CachedValue<T> | undefined, now: number): entry is Ca
 }
 
 /** Motivo específico de un fallo al obtener el token OAuth o la clave pública — ver `SignatureVerificationResult`. */
-type EbayFetchErrorReason = "oauth_http_error" | "oauth_invalid_response" | "public_key_http_error" | "public_key_invalid_response";
+type EbayFetchErrorReason =
+  | "oauth_http_error"
+  | "oauth_invalid_response"
+  | "public_key_http_error"
+  | "public_key_invalid_response"
+  | "public_key_normalization_error";
 
 /**
- * Error interno con el motivo ya clasificado y, si lo hay, el status HTTP
- * (nunca la URL, cabeceras, cuerpo ni credenciales) — permite a
- * `verifyEbaySignature` devolver un `reason` preciso sin tener que
- * inspeccionar el error genérico que lanzaría `fetch`/`response.json()`.
+ * Error interno con el motivo ya clasificado y, si los hay, el status HTTP
+ * y/o el `error.code` de Node/OpenSSL (nunca la URL, cabeceras, cuerpo,
+ * credenciales, clave ni el mensaje completo de una excepción de
+ * `crypto`) — permite a `verifyEbaySignature` devolver un `reason` preciso
+ * sin tener que inspeccionar el error genérico que lanzaría
+ * `fetch`/`response.json()`/`crypto.createPublicKey`.
  */
 class EbayFetchError extends Error {
   constructor(
     public readonly reason: EbayFetchErrorReason,
     message: string,
-    public readonly httpStatus?: number
+    public readonly httpStatus?: number,
+    public readonly nodeErrorCode?: string
   ) {
     super(message);
   }
@@ -139,14 +148,6 @@ async function fetchApplicationAccessToken(credentials: EbayOAuthCredentials): P
   return accessToken;
 }
 
-/** Envuelve la clave en bruto que devuelve eBay (sin cabeceras PEM) con el formato PEM estándar que espera Node `crypto`. */
-function formatPublicKeyAsPem(rawKey: string): string {
-  const trimmed = rawKey.trim();
-  if (trimmed.includes("BEGIN PUBLIC KEY")) return trimmed; // ya viene en PEM completo
-  const body = trimmed.match(/.{1,64}/g)?.join("\n") ?? trimmed;
-  return `-----BEGIN PUBLIC KEY-----\n${body}\n-----END PUBLIC KEY-----`;
-}
-
 async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<string> {
   const now = Date.now();
   const cached = publicKeyCache.get(kid);
@@ -182,7 +183,16 @@ async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): P
     throw new EbayFetchError("public_key_invalid_response", 'La respuesta de la clave pública de eBay no incluye "key".');
   }
 
-  const pem = formatPublicKeyAsPem(key);
+  let pem: string;
+  try {
+    pem = normalizeEbayPublicKey(key);
+  } catch (error) {
+    if (error instanceof EbayPublicKeyFormatError) {
+      throw new EbayFetchError("public_key_normalization_error", error.message, undefined, error.nodeErrorCode);
+    }
+    throw error;
+  }
+
   publicKeyCache.set(kid, { value: pem, expiresAt: now + PUBLIC_KEY_CACHE_TTL_MS });
   return pem;
 }
@@ -210,6 +220,8 @@ export type SignatureVerificationResult =
       reason: "missing_header" | "malformed_header" | "oauth_not_configured" | EbayFetchErrorReason | "signature_mismatch" | "verify_error";
       /** Solo presente en los motivos `*_http_error`: el status HTTP devuelto por eBay. Nunca va acompañado de la URL, cabeceras ni cuerpo de la respuesta. */
       httpStatus?: number;
+      /** Solo presente en `public_key_normalization_error`/`verify_error` cuando `crypto` lanza con un `.code`: el código de error de Node/OpenSSL (p. ej. "ERR_OSSL_UNSUPPORTED"). Nunca el mensaje completo de la excepción, ni la clave, firma o cuerpo. */
+      nodeErrorCode?: string;
     };
 
 /**
@@ -236,7 +248,12 @@ export async function verifyEbaySignature(params: {
     publicKeyPem = await fetchPublicKey(parsed.kid, oauthCredentials);
   } catch (error) {
     if (error instanceof EbayFetchError) {
-      return { verified: false, reason: error.reason, ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}) };
+      return {
+        verified: false,
+        reason: error.reason,
+        ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}),
+        ...(error.nodeErrorCode !== undefined ? { nodeErrorCode: error.nodeErrorCode } : {}),
+      };
     }
     // No debería ocurrir (fetchPublicKey solo lanza EbayFetchError), pero
     // ante cualquier excepción no prevista se falla cerrado igualmente.
@@ -248,7 +265,8 @@ export async function verifyEbaySignature(params: {
     verifier.update(rawBody);
     const isValid = verifier.verify(publicKeyPem, parsed.signature, "base64");
     return isValid ? { verified: true } : { verified: false, reason: "signature_mismatch" };
-  } catch {
-    return { verified: false, reason: "verify_error" };
+  } catch (error) {
+    const nodeErrorCode = error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string" ? (error as { code: string }).code : undefined;
+    return { verified: false, reason: "verify_error", ...(nodeErrorCode !== undefined ? { nodeErrorCode } : {}) };
   }
 }

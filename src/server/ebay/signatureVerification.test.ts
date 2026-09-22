@@ -160,6 +160,80 @@ describe("verifyEbaySignature", () => {
       const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
       expect(result).toEqual({ verified: true });
     });
+
+    it("REGRESIÓN del fallo real en producción: clave EC con cabeceras PEM pero saltos de línea 'escapados' literalmente (texto backslash+n, no saltos reales) ahora verifica correctamente", async () => {
+      // Antes de esta rama, `formatPublicKeyAsPem` devolvía la clave TAL
+      // CUAL en cuanto detectaba "BEGIN PUBLIC KEY" en el texto, sin
+      // limpiar el formato — Node/OpenSSL rechazaba ese PEM al verificar
+      // (ERR_OSSL_UNSUPPORTED), lo que producía exactamente el fallo real
+      // reportado: reason "verify_error". Esta prueba reproduce esa forma
+      // exacta de clave y confirma que `normalizeEbayPublicKey` la corrige.
+      const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-regresion", data: {} } });
+      const signature = signBody(rawBody, ecPrivateKey);
+      const header = buildSignatureHeader("kid-ec-literal-newline-regresion", signature);
+      const keyWithLiteralNewlines = ecPublicKey.replace(/\n/g, "\\n");
+      expect(keyWithLiteralNewlines.includes("\n")).toBe(false); // confirma que de verdad no hay saltos reales
+
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: keyWithLiteralNewlines } } });
+      const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: true });
+    });
+
+    it("REGRESIÓN: clave EC con cabeceras PEM pero CRLF en vez de LF también verifica correctamente", async () => {
+      const rawBody = "cuerpo de prueba con clave EC en CRLF";
+      const signature = signBody(rawBody, ecPrivateKey);
+      const header = buildSignatureHeader("kid-ec-crlf-regresion", signature);
+      const keyWithCrlf = ecPublicKey.replace(/\n/g, "\r\n");
+
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: keyWithCrlf } } });
+      const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: true });
+    });
+
+    it("clave pública realmente inválida (no es una clave DER real): verified: false, reason: public_key_normalization_error, con nodeErrorCode", async () => {
+      const header = buildSignatureHeader("kid-ec-invalid-key", signBody("cuerpo"));
+      const bogusBase64 = Buffer.alloc(32, 0).toString("base64");
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: bogusBase64 } } });
+
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result.verified).toBe(false);
+      if (!result.verified) {
+        expect(result.reason).toBe("public_key_normalization_error");
+        expect(result.nodeErrorCode).toBeDefined();
+        expect(typeof result.nodeErrorCode).toBe("string");
+      }
+    });
+
+    describe("investigación del punto 9: ¿necesita el campo 'signature' de la cabecera normalización base64/base64url?", () => {
+      it("una firma real codificada en base64url (sin relleno, '-'/'_' en vez de '+'/'/') verifica igual de bien que en base64 estándar — Node decodifica ambas con 'base64' sin cambios de código", async () => {
+        const rawBody = "cuerpo de prueba para investigar base64url";
+        // ECDSA firma con un nonce aleatorio en cada llamada: se reintenta
+        // sobre el MISMO cuerpo (todas las firmas resultantes son
+        // igualmente válidas) hasta obtener una que de verdad contenga
+        // algún carácter especial de base64 estándar (+, / o relleno =)
+        // — si no, la transformación a base64url sería un no-op y la
+        // prueba no demostraría nada. Con ~96 caracteres de firma, la
+        // probabilidad de necesitar más de un intento es baja, pero no
+        // nula: sin este reintento la prueba era intermitente.
+        let standardBase64Signature = signBody(rawBody, ecPrivateKey);
+        for (let attempts = 0; !/[+/=]/.test(standardBase64Signature) && attempts < 20; attempts++) {
+          standardBase64Signature = signBody(rawBody, ecPrivateKey);
+        }
+        expect(standardBase64Signature).toMatch(/[+/=]/); // si esto falla, algo va realmente mal (extremadamente improbable)
+
+        const base64UrlSignature = standardBase64Signature.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        expect(base64UrlSignature).not.toBe(standardBase64Signature); // confirma que de verdad son formas distintas del mismo valor
+
+        const header = buildSignatureHeader("kid-base64url-investigacion", base64UrlSignature);
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        // Conclusión de la investigación (punto 9): NO se justifica tocar
+        // el análisis de `signature` — Node ya la acepta en ambos
+        // formatos sin ningún cambio de código, así que no se modifica.
+        expect(result).toEqual({ verified: true });
+      });
+    });
   });
 
   it("sin cabecera X-EBAY-SIGNATURE: verified: false, reason: missing_header (nunca intenta red)", async () => {
