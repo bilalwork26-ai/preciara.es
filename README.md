@@ -345,10 +345,12 @@ npm run db:import -- ruta/al/fichero.csv [--dry-run] [--source=etiqueta]
 npm run db:import -- --deactivate-stale [--stale-hours=72]
 ```
 
-Usa un bloqueo distribuido con `GET_LOCK` de MySQL (impide dos
+Usa un bloqueo distribuido por lease con caducidad (impide dos
 importaciones simultáneas, incluso desde máquinas distintas, y se libera
-solo si el proceso muere), emite logs estructurados en JSON (una línea por
-evento, con un `runId` propio) y usa códigos de salida:
+solo o expira si el proceso muere — ver
+`src/server/importer/distributedLock.ts`), emite logs estructurados en
+JSON (una línea por evento, con un `runId` propio) y usa códigos de
+salida:
 
 - `0` = correcta o parcial (revisa `/admin/errores` si hubo rechazos)
 - `1` = fallida (nada aprovechable, o error de configuración)

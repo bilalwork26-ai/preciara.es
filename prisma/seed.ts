@@ -93,31 +93,30 @@ async function main() {
         throw new Error(`[seed] Comercio desconocido para la oferta demo "${offer.id}": ${offer.merchantId}`);
       }
 
-      const offerRow = await prisma.offer.upsert({
-        where: { productId_merchantId: { productId: productRow.id, merchantId } },
-        update: {
-          currentPrice: offer.price,
-          previousPrice: offer.previousPrice ?? null,
-          currency: offer.currency,
-          productUrl: offer.url,
-          availability: offer.inStock ? Availability.IN_STOCK : Availability.OUT_OF_STOCK,
-          lastCheckedAt: parseRelativeLabel(offer.lastCheckedLabel, now),
-          isActive: true,
-          isDemo: true,
-        },
-        create: {
-          productId: productRow.id,
-          merchantId,
-          currentPrice: offer.price,
-          previousPrice: offer.previousPrice ?? null,
-          currency: offer.currency,
-          productUrl: offer.url,
-          availability: offer.inStock ? Availability.IN_STOCK : Availability.OUT_OF_STOCK,
-          lastCheckedAt: parseRelativeLabel(offer.lastCheckedLabel, now),
-          isActive: true,
-          isDemo: true,
-        },
+      // La identidad única de una oferta ya no es (producto, comercio) sino
+      // (fuente, comercio, id externo) — ver "núcleo de sincronización de
+      // catálogos". El seed no aporta id externo (no viene de ninguna
+      // fuente sincronizada), así que localiza la oferta ya creada de la
+      // misma forma que el importador CSV histórico: por producto +
+      // comercio + fuente, con externalId ausente.
+      const existingOffer = await prisma.offer.findFirst({
+        where: { productId: productRow.id, merchantId, source: "CSV", externalId: null },
       });
+      const offerData = {
+        currentPrice: offer.price,
+        previousPrice: offer.previousPrice ?? null,
+        currency: offer.currency,
+        productUrl: offer.url,
+        availability: offer.inStock ? Availability.IN_STOCK : Availability.OUT_OF_STOCK,
+        lastCheckedAt: parseRelativeLabel(offer.lastCheckedLabel, now),
+        isActive: true,
+        isDemo: true,
+      };
+      const offerRow = existingOffer
+        ? await prisma.offer.update({ where: { id: existingOffer.id }, data: offerData })
+        : await prisma.offer.create({
+            data: { productId: productRow.id, merchantId, source: "CSV", ...offerData },
+          });
       offersCreatedOrUpdated += 1;
 
       // Historial de precios: solo se siembra la primera vez (si la oferta

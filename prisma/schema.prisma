@@ -31,7 +31,10 @@ model Category {
   @@map("categories")
 }
 
-/// Producto del catálogo. Un producto puede tener varias ofertas (una por comercio).
+/// Producto del catálogo. Un mismo producto puede tener varias ofertas: de
+/// comercios distintos, y también varias del mismo origen/comercio cuando
+/// son anuncios/listados distintos (p. ej. dos listados de eBay del mismo
+/// producto con `externalId` distinto) — ver `Offer`.
 model Product {
   id          Int      @id @default(autoincrement())
   slug        String   @unique @db.VarChar(160)
@@ -39,13 +42,33 @@ model Product {
   description String?  @db.Text
   brand       String?  @db.VarChar(100)
   model       String?  @db.VarChar(100)
-  /// EAN/GTIN u otro identificador externo estable, si se conoce.
+  /// GTIN mostrado/heredado del importador CSV histórico: texto libre, sin
+  /// validar ni normalizar (comportamiento previo, sin cambios) — nunca se
+  /// usa para relacionar ofertas entre fuentes. Ver `canonicalGtin`.
   ean         String?  @db.VarChar(32)
+  /// GTIN normalizado a 14 dígitos (dígito de control ya validado; ver
+  /// src/server/catalogSync/gtin.ts), escrito SOLO por el núcleo de
+  /// sincronización de catálogos. Es la clave real de coincidencia entre
+  /// ofertas de distintas fuentes para el mismo producto físico (ver
+  /// applyOffer.ts) — columna nueva y propia, `@unique` desde el principio,
+  /// para no arriesgar la migración a datos históricos de `ean` que nunca
+  /// se validaron ni normalizaron y podrían tener duplicados o formatos
+  /// distintos para el mismo código. La unicidad es lo que impide que dos
+  /// sincronizaciones concurrentes (p. ej. Awin y eBay a la vez) creen dos
+  /// productos para el mismo GTIN — ver "resolución atómica" en
+  /// applyOffer.ts.
+  canonicalGtin String? @unique @db.VarChar(14)
   imageUrl    String?  @db.VarChar(500)
   categoryId  Int
   isActive    Boolean  @default(true)
   /// true = fila de datos de demostración (seed), nunca un producto real. Ver README.
   isDemo      Boolean  @default(false)
+  /// Fuente cuyos datos "poseen" actualmente name/brand/model/imageUrl (ver
+  /// src/server/catalogSync/metadataPolicy.ts): evita que sincronizaciones
+  /// de fuentes de menor prioridad hagan oscilar estos campos en cada
+  /// ejecución. `null` = todavía sin sincronizar por el núcleo nuevo (p. ej.
+  /// productos creados solo por el importador CSV histórico o el seed).
+  metadataSource OfferSource?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -87,13 +110,35 @@ enum Availability {
   UNKNOWN
 }
 
-/// Oferta vigente de un producto en un comercio concreto. Como mucho una
-/// oferta activa por (producto, comercio): ver `@@unique` más abajo.
+/// Origen de una oferta: qué sistema la trajo. `CSV` es el importador manual
+/// ya existente (valor por defecto, incluido para todas las filas creadas
+/// antes de que este campo existiera). `AWIN`/`EBAY` son las fuentes
+/// previstas para el núcleo de sincronización — todavía sin conectar, ver
+/// src/server/catalogSync/*. Lista pensada para crecer (nuevo valor =
+/// migración aditiva, nunca rompe las filas existentes).
+enum OfferSource {
+  CSV
+  AWIN
+  EBAY
+}
+
+/// Oferta de un producto en un comercio concreto, proveniente de una fuente.
+/// La identidad estable de una oferta es (source, merchant, externalId) —
+/// ver `@@unique` más abajo y src/server/catalogSync/applyOffer.ts — no
+/// (producto, comercio): un mismo producto puede tener varias ofertas del
+/// mismo comercio/fuente cuando son anuncios distintos (p. ej. dos listados
+/// de eBay del mismo producto con `externalId` distinto).
 model Offer {
   id            Int      @id @default(autoincrement())
   productId     Int
   merchantId    Int
-  /// Identificador propio del comercio para esta oferta (SKU, id de listado...), si lo aporta la fuente.
+  /// Fuente de esta oferta. Ver `OfferSource`.
+  source        OfferSource @default(CSV)
+  /// Identificador propio de la fuente para esta oferta concreta (SKU, id
+  /// de listado de Awin/eBay...). Opcional solo por compatibilidad con el
+  /// importador CSV histórico, donde nunca formó parte de la identidad de
+  /// la oferta; las fuentes nuevas (Awin/eBay) deben aportarlo siempre —
+  /// ver NormalizedOfferRow en src/server/catalogSync/types.ts.
   externalId    String?  @db.VarChar(120)
   currentPrice  Decimal  @db.Decimal(10, 2)
   previousPrice Decimal? @db.Decimal(10, 2)
@@ -113,10 +158,18 @@ model Offer {
   merchant       Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   priceSnapshots PriceSnapshot[]
 
-  // Como mucho una oferta por combinación producto+comercio: evita que el
-  // importador (o cualquier otro origen) duplique la misma oferta.
-  @@unique([productId, merchantId])
+  // Identidad estable de la oferta: fuente + comercio + id externo. NO
+  // incluye productId a propósito (una oferta conserva su identidad aunque
+  // se corrija a qué producto está enlazada). Para el importador CSV
+  // histórico (externalId casi siempre ausente), la resolución sigue
+  // acotándose también por producto a nivel de aplicación — ver applyRow en
+  // src/server/importer/run.ts — porque MySQL trata cada NULL de
+  // `externalId` como distinto y esta restricción por sí sola no lo
+  // deduplicaría.
+  @@unique([source, merchantId, externalId])
+  @@index([productId])
   @@index([merchantId])
+  @@index([source, merchantId])
   @@index([isActive])
   @@index([lastCheckedAt])
   @@index([availability])
@@ -191,4 +244,55 @@ model ImportError {
 
   @@index([importRunId])
   @@map("import_errors")
+}
+
+/// Configuración de cadencia por fuente de sincronización (Awin, eBay...).
+/// Deliberadamente sin valores de cadencia reales todavía: `enabled` empieza
+/// en `false` y `intervalMinutes` en un valor genérico, hasta que se conecte
+/// cada fuente y se decida su frecuencia real según sus condiciones de uso.
+/// Editable sin desplegar código (panel técnico, fase posterior) en cuanto
+/// exista una pantalla para ello; hoy solo se lee/escribe desde
+/// src/server/catalogSync/*.
+model SyncSourceConfig {
+  id              Int         @id @default(autoincrement())
+  source          OfferSource @unique
+  /// Minutos entre ejecuciones. Valor por defecto genérico (24h): no es una
+  /// recomendación para Awin ni para eBay, solo un valor de arranque seguro.
+  intervalMinutes Int         @default(1440)
+  /// false por defecto: nada se ejecuta automáticamente hasta activarlo a
+  /// propósito, una vez la fuente esté realmente conectada.
+  enabled         Boolean     @default(false)
+  lastRunAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("sync_source_configs")
+}
+
+/// Bloqueo distribuido por "lease" (concesión con caducidad), en sustitución
+/// de GET_LOCK/RELEASE_LOCK de MySQL para el núcleo de sincronización de
+/// catálogos: GET_LOCK/RELEASE_LOCK exigen ejecutarse sobre la MISMA
+/// conexión física, algo que el pool de conexiones de Prisma no garantiza
+/// entre dos llamadas `$queryRawUnsafe` seguidas (comprobado de forma
+/// empírica: un test quedó con el bloqueo retenido de forma intermitente).
+/// Un lease no depende de qué conexión lo pidió: es una fila con una
+/// caducidad (`expiresAt`) que cualquier conexión puede leer/actualizar de
+/// forma atómica (`UPDATE ... WHERE expiresAt < NOW()`), así que nunca
+/// puede quedar retenido para siempre — como mucho, hasta que expire.
+/// Ver src/server/importer/distributedLock.ts.
+model SyncLock {
+  /// Nombre del bloqueo (p. ej. "preciara_catalog_sync:AWIN").
+  name       String   @id @db.VarChar(190)
+  /// Identificador aleatorio de quien sostiene el lease ahora mismo: solo
+  /// su propio titular puede liberarlo o renovarlo, para no interferir con
+  /// quien lo haya tomado después de que el titular anterior caducara.
+  holderId   String   @db.VarChar(64)
+  /// A partir de este instante, cualquiera puede tomar el bloqueo aunque la
+  /// fila siga existiendo (el titular anterior no lo liberó — proceso
+  /// caído, excepción no controlada, etc.).
+  expiresAt  DateTime
+  acquiredAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("sync_locks")
 }
