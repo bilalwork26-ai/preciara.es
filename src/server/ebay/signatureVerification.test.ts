@@ -30,19 +30,38 @@ function buildSignatureHeader(kid: string, signatureBase64: string): string {
   return Buffer.from(JSON.stringify({ kid, signature: signatureBase64 })).toString("base64");
 }
 
-/** Cuenta llamadas por URL para distinguir el POST del token OAuth del GET de la clave pública. */
-function mockFetchSequence(params: { tokenResponse?: { status: number; body: unknown }; keyResponse?: { status: number; body: unknown } }) {
-  const calls: string[] = [];
-  const fetchMock = vi.fn(async (input: string | URL | Request) => {
+type RecordedCall = { url: string; method: string; headers: Record<string, string>; body?: string };
+
+/**
+ * Registra CADA petición saliente (URL, método, cabeceras y cuerpo exactos)
+ * para poder comprobar la forma exacta de la petición OAuth y de la
+ * petición de clave pública — no solo el resultado final. `tokenResponse`/
+ * `keyResponse` aceptan `rawBody` para simular una respuesta que NO es
+ * JSON válido (p. ej. una página de error de un proxy/WAF intermedio).
+ * `networkFailure` simula un fallo de red (fetch rechaza la promesa) antes
+ * de recibir ninguna respuesta.
+ */
+function mockFetchSequence(params: {
+  tokenResponse?: { status: number; body?: unknown; rawBody?: string };
+  keyResponse?: { status: number; body?: unknown; rawBody?: string };
+  networkFailureOn?: "oauth" | "public_key";
+}) {
+  const calls: RecordedCall[] = [];
+  const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
-    calls.push(url);
+    const headers: Record<string, string> = {};
+    if (init?.headers) new Headers(init.headers).forEach((value, key) => (headers[key] = value));
+    calls.push({ url, method: init?.method ?? "GET", headers, body: typeof init?.body === "string" ? init.body : undefined });
+
     if (url.includes("/oauth2/token")) {
-      const { status = 200, body = { access_token: "fake-app-token", expires_in: 7200 } } = params.tokenResponse ?? {};
-      return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+      if (params.networkFailureOn === "oauth") throw new TypeError("fetch failed (simulado)");
+      const { status = 200, body = { access_token: "fake-app-token", expires_in: 7200 }, rawBody } = params.tokenResponse ?? {};
+      return new Response(rawBody ?? JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/public_key/")) {
-      const { status = 200, body = { key: publicKey } } = params.keyResponse ?? {};
-      return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+      if (params.networkFailureOn === "public_key") throw new TypeError("fetch failed (simulado)");
+      const { status = 200, body = { key: publicKey }, rawBody } = params.keyResponse ?? {};
+      return new Response(rawBody ?? JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     }
     throw new Error(`URL inesperada en la prueba: ${url}`);
   });
@@ -172,18 +191,97 @@ describe("verifyEbaySignature", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("fallo al obtener el token OAuth de eBay: verified: false, reason: public_key_fetch_failed", async () => {
-    const header = buildSignatureHeader("kid-oauth-fail", signBody("cuerpo"));
-    mockFetchSequence({ tokenResponse: { status: 401, body: { error: "invalid_client" } } });
-    const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
-    expect(result).toEqual({ verified: false, reason: "public_key_fetch_failed" });
-  });
+  describe("obtención OAuth / clave pública: forma exacta de las peticiones y motivos específicos de fallo", () => {
+    it("la petición OAuth es exactamente POST .../identity/v1/oauth2/token con Basic auth, form-urlencoded y el body correctamente codificado", async () => {
+      const credentials = freshCredentials();
+      const header = buildSignatureHeader("kid-oauth-shape", signBody("cuerpo"));
+      const { calls } = mockFetchSequence({});
 
-  it("fallo al obtener la clave pública de eBay: verified: false, reason: public_key_fetch_failed", async () => {
-    const header = buildSignatureHeader("kid-key-fail", signBody("cuerpo"));
-    mockFetchSequence({ keyResponse: { status: 404, body: { error: "not found" } } });
-    const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
-    expect(result).toEqual({ verified: false, reason: "public_key_fetch_failed" });
+      await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: credentials });
+
+      const tokenCall = calls.find((c) => c.url.includes("/oauth2/token"));
+      expect(tokenCall).toBeDefined();
+      expect(tokenCall!.url).toBe("https://api.ebay.com/identity/v1/oauth2/token");
+      expect(tokenCall!.method).toBe("POST");
+      expect(tokenCall!.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+      const expectedBasicAuth = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString("base64");
+      expect(tokenCall!.headers.authorization).toBe(`Basic ${expectedBasicAuth}`);
+      // scope=https://api.ebay.com/oauth/api_scope correctamente codificado
+      // (":" -> "%3A", "/" -> "%2F"), idéntico a querystring.stringify del
+      // SDK OAuth oficial de eBay (verificado por separado).
+      expect(tokenCall!.body).toBe("grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope");
+    });
+
+    it("la petición de clave pública es exactamente GET .../public_key/{kid} con Bearer auth y el kid codificado de forma segura", async () => {
+      const kidWithSpecialChars = "kid with spaces/slashes?and=query&chars";
+      const header = buildSignatureHeader(kidWithSpecialChars, signBody("cuerpo"));
+      const { calls } = mockFetchSequence({ tokenResponse: { status: 200, body: { access_token: "el-token-de-aplicacion", expires_in: 7200 } } });
+
+      await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+
+      const keyCall = calls.find((c) => c.url.includes("/public_key/"));
+      expect(keyCall).toBeDefined();
+      expect(keyCall!.url).toBe(`https://api.ebay.com/commerce/notification/v1/public_key/${encodeURIComponent(kidWithSpecialChars)}`);
+      expect(keyCall!.url).not.toContain(" "); // nunca un espacio literal sin codificar en la URL
+      expect(keyCall!.method).toBe("GET");
+      expect(keyCall!.headers.authorization).toBe("Bearer el-token-de-aplicacion");
+    });
+
+    it.each([401, 403, 404, 500])("fallo HTTP %i al obtener el token OAuth: verified: false, reason: oauth_http_error, httpStatus: %i", async (status) => {
+      const header = buildSignatureHeader(`kid-oauth-http-${status}`, signBody("cuerpo"));
+      mockFetchSequence({ tokenResponse: { status, body: { error: "simulado" } } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "oauth_http_error", httpStatus: status });
+    });
+
+    it.each([401, 403, 404, 500])("fallo HTTP %i al obtener la clave pública: verified: false, reason: public_key_http_error, httpStatus: %i", async (status) => {
+      const header = buildSignatureHeader(`kid-key-http-${status}`, signBody("cuerpo"));
+      mockFetchSequence({ keyResponse: { status, body: { error: "simulado" } } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "public_key_http_error", httpStatus: status });
+    });
+
+    it("respuesta OAuth 200 pero no es JSON válido (p. ej. una página de error de un proxy intermedio): reason oauth_invalid_response, sin httpStatus", async () => {
+      const header = buildSignatureHeader("kid-oauth-malformed", signBody("cuerpo"));
+      mockFetchSequence({ tokenResponse: { status: 200, rawBody: "<html>502 Bad Gateway</html>" } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "oauth_invalid_response" });
+    });
+
+    it("respuesta OAuth 200 con JSON válido pero sin access_token: reason oauth_invalid_response", async () => {
+      const header = buildSignatureHeader("kid-oauth-no-token", signBody("cuerpo"));
+      mockFetchSequence({ tokenResponse: { status: 200, body: { token_type: "Application Access Token", expires_in: 7200 } } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "oauth_invalid_response" });
+    });
+
+    it("respuesta de clave pública 200 pero no es JSON válido: reason public_key_invalid_response, sin httpStatus", async () => {
+      const header = buildSignatureHeader("kid-key-malformed", signBody("cuerpo"));
+      mockFetchSequence({ keyResponse: { status: 200, rawBody: "<html>502 Bad Gateway</html>" } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "public_key_invalid_response" });
+    });
+
+    it("respuesta de clave pública 200 con JSON válido pero sin el campo key: reason public_key_invalid_response", async () => {
+      const header = buildSignatureHeader("kid-key-no-field", signBody("cuerpo"));
+      mockFetchSequence({ keyResponse: { status: 200, body: { algorithm: "ECDSA", digest: "SHA1" } } });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "public_key_invalid_response" });
+    });
+
+    it("fallo de red (sin respuesta HTTP) al pedir el token OAuth: reason oauth_http_error, sin httpStatus", async () => {
+      const header = buildSignatureHeader("kid-oauth-network-fail", signBody("cuerpo"));
+      mockFetchSequence({ networkFailureOn: "oauth" });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "oauth_http_error" });
+    });
+
+    it("fallo de red (sin respuesta HTTP) al pedir la clave pública: reason public_key_http_error, sin httpStatus", async () => {
+      const header = buildSignatureHeader("kid-key-network-fail", signBody("cuerpo"));
+      mockFetchSequence({ networkFailureOn: "public_key" });
+      const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: false, reason: "public_key_http_error" });
+    });
   });
 
   it("cachea el token OAuth y la clave pública: dos verificaciones con el mismo kid solo llaman a la red una vez cada una", async () => {
@@ -201,8 +299,8 @@ describe("verifyEbaySignature", () => {
 
     expect(resultA).toEqual({ verified: true });
     expect(resultB).toEqual({ verified: true });
-    expect(calls.filter((u) => u.includes("/oauth2/token"))).toHaveLength(1); // token cacheado: solo se pide una vez
-    expect(calls.filter((u) => u.includes("/public_key/"))).toHaveLength(1); // clave cacheada: solo se pide una vez
+    expect(calls.filter((c) => c.url.includes("/oauth2/token"))).toHaveLength(1); // token cacheado: solo se pide una vez
+    expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(1); // clave cacheada: solo se pide una vez
     expect(fetchMock).toHaveBeenCalledTimes(2); // 1 token + 1 clave, nunca más pese a 2 verificaciones
   });
 
@@ -225,7 +323,7 @@ describe("verifyEbaySignature", () => {
 
       expect(resultA).toEqual({ verified: true });
       expect(resultB).toEqual({ verified: true });
-      expect(calls.filter((u) => u.includes("/public_key/"))).toHaveLength(1); // sigue sin volver a pedirla
+      expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(1); // sigue sin volver a pedirla
     });
 
     it("pide una clave pública nueva cuando ha pasado más de 1 hora desde que se cacheó", async () => {
@@ -242,10 +340,10 @@ describe("verifyEbaySignature", () => {
 
       expect(resultA).toEqual({ verified: true });
       expect(resultB).toEqual({ verified: true });
-      expect(calls.filter((u) => u.includes("/public_key/"))).toHaveLength(2); // caducó -> se pidió de nuevo
+      expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2); // caducó -> se pidió de nuevo
       // El token OAuth de aplicación se mockea con expires_in: 7200s (2h):
       // a los 61 minutos sigue vigente, así que solo la clave se repite.
-      expect(calls.filter((u) => u.includes("/oauth2/token"))).toHaveLength(1);
+      expect(calls.filter((c) => c.url.includes("/oauth2/token"))).toHaveLength(1);
     });
   });
 });

@@ -30,6 +30,16 @@
  * de red al pedir la clave, firma que no verifica), el resultado es
  * SIEMPRE `verified: false` — quien llama responde 412 en todos esos
  * casos, nunca 204.
+ *
+ * El paso OAuth (obtener el token de aplicación) y el paso de clave
+ * pública (usar ese token para pedir la clave de `kid`) distinguen su
+ * motivo de fallo con precisión (`oauth_http_error`/`oauth_invalid_response`
+ * frente a `public_key_http_error`/`public_key_invalid_response`) para que
+ * un fallo real en producción sea diagnosticable desde los logs del
+ * servidor sin necesidad de credenciales ni de reproducirlo: el status
+ * HTTP se registra cuando lo hay, pero NUNCA la URL completa (que incluiría
+ * `kid`), cabeceras, tokens, credenciales, cuerpos de respuesta ni el
+ * payload de la notificación.
  */
 import { createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
@@ -57,33 +67,76 @@ function isFresh<T>(entry: CachedValue<T> | undefined, now: number): entry is Ca
   return !!entry && entry.expiresAt > now;
 }
 
+/** Motivo específico de un fallo al obtener el token OAuth o la clave pública — ver `SignatureVerificationResult`. */
+type EbayFetchErrorReason = "oauth_http_error" | "oauth_invalid_response" | "public_key_http_error" | "public_key_invalid_response";
+
+/**
+ * Error interno con el motivo ya clasificado y, si lo hay, el status HTTP
+ * (nunca la URL, cabeceras, cuerpo ni credenciales) — permite a
+ * `verifyEbaySignature` devolver un `reason` preciso sin tener que
+ * inspeccionar el error genérico que lanzaría `fetch`/`response.json()`.
+ */
+class EbayFetchError extends Error {
+  constructor(
+    public readonly reason: EbayFetchErrorReason,
+    message: string,
+    public readonly httpStatus?: number
+  ) {
+    super(message);
+  }
+}
+
 async function fetchApplicationAccessToken(credentials: EbayOAuthCredentials): Promise<string> {
   const now = Date.now();
   const cached = appTokenCache.get(credentials.clientId);
   if (isFresh(cached, now)) return cached.value;
 
   const basicAuth = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString("base64");
-  const response = await fetch(EBAY_OAUTH_TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basicAuth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "client_credentials", scope: EBAY_OAUTH_SCOPE }).toString(),
-  });
+  // application/x-www-form-urlencoded: URLSearchParams aplica el
+  // porcentaje-escape estándar (":" -> "%3A", "/" -> "%2F"...) — produce
+  // exactamente la misma cadena que `querystring.stringify` del SDK
+  // OAuth oficial de eBay (`ebay-oauth-nodejs-client`), verificado byte a
+  // byte al diagnosticar este fallo.
+  const body = new URLSearchParams({ grant_type: "client_credentials", scope: EBAY_OAUTH_SCOPE }).toString();
+
+  let response: Response;
+  try {
+    response = await fetch(EBAY_OAUTH_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+  } catch {
+    // Fallo de red/DNS/TLS antes de recibir ninguna respuesta: no hay status HTTP que registrar.
+    throw new EbayFetchError("oauth_http_error", "Fallo de red al pedir el token OAuth de aplicación de eBay.");
+  }
+
   if (!response.ok) {
-    throw new Error(`No se pudo obtener el token OAuth de aplicación de eBay (HTTP ${response.status}).`);
+    throw new EbayFetchError("oauth_http_error", `Token OAuth de eBay: respuesta no exitosa (HTTP ${response.status}).`, response.status);
   }
-  const data = (await response.json()) as { access_token?: string; expires_in?: number };
-  if (!data.access_token) {
-    throw new Error("La respuesta OAuth de eBay no incluye access_token.");
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new EbayFetchError("oauth_invalid_response", "La respuesta OAuth de eBay no es JSON válido.");
   }
-  const ttlMs = (data.expires_in ?? 0) * 1000;
+
+  const accessToken = (data as { access_token?: unknown } | null)?.access_token;
+  const expiresIn = (data as { expires_in?: unknown } | null)?.expires_in;
+  if (typeof accessToken !== "string" || !accessToken) {
+    throw new EbayFetchError("oauth_invalid_response", "La respuesta OAuth de eBay no incluye access_token.");
+  }
+
+  const ttlMs = (typeof expiresIn === "number" ? expiresIn : 0) * 1000;
   appTokenCache.set(credentials.clientId, {
-    value: data.access_token,
+    value: accessToken,
     expiresAt: now + Math.max(ttlMs - EXPIRY_SAFETY_MARGIN_MS, EXPIRY_SAFETY_MARGIN_MS),
   });
-  return data.access_token;
+  return accessToken;
 }
 
 /** Envuelve la clave en bruto que devuelve eBay (sin cabeceras PEM) con el formato PEM estándar que espera Node `crypto`. */
@@ -99,19 +152,37 @@ async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): P
   const cached = publicKeyCache.get(kid);
   if (isFresh(cached, now)) return cached.value;
 
+  // Puede lanzar EbayFetchError con reason "oauth_http_error"/"oauth_invalid_response":
+  // se deja propagar tal cual, sin envolverlo en un motivo distinto.
   const accessToken = await fetchApplicationAccessToken(credentials);
-  const response = await fetch(`${EBAY_PUBLIC_KEY_ENDPOINT}${encodeURIComponent(kid)}`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${EBAY_PUBLIC_KEY_ENDPOINT}${encodeURIComponent(kid)}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch {
+    throw new EbayFetchError("public_key_http_error", "Fallo de red al pedir la clave pública de eBay.");
+  }
+
   if (!response.ok) {
-    throw new Error(`No se pudo obtener la clave pública de eBay para kid="${kid}" (HTTP ${response.status}).`);
+    throw new EbayFetchError("public_key_http_error", `Clave pública de eBay: respuesta no exitosa (HTTP ${response.status}).`, response.status);
   }
-  const data = (await response.json()) as { key?: string };
-  if (!data.key) {
-    throw new Error(`La respuesta de eBay para kid="${kid}" no incluye "key".`);
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new EbayFetchError("public_key_invalid_response", "La respuesta de la clave pública de eBay no es JSON válido.");
   }
-  const pem = formatPublicKeyAsPem(data.key);
+
+  const key = (data as { key?: unknown } | null)?.key;
+  if (typeof key !== "string" || !key) {
+    throw new EbayFetchError("public_key_invalid_response", 'La respuesta de la clave pública de eBay no incluye "key".');
+  }
+
+  const pem = formatPublicKeyAsPem(key);
   publicKeyCache.set(kid, { value: pem, expiresAt: now + PUBLIC_KEY_CACHE_TTL_MS });
   return pem;
 }
@@ -136,7 +207,9 @@ export type SignatureVerificationResult =
   | {
       verified: false;
       /** Motivo técnico, SOLO para logs del servidor — nunca se expone al cliente ni contiene datos del cuerpo. */
-      reason: "missing_header" | "malformed_header" | "oauth_not_configured" | "public_key_fetch_failed" | "signature_mismatch" | "verify_error";
+      reason: "missing_header" | "malformed_header" | "oauth_not_configured" | EbayFetchErrorReason | "signature_mismatch" | "verify_error";
+      /** Solo presente en los motivos `*_http_error`: el status HTTP devuelto por eBay. Nunca va acompañado de la URL, cabeceras ni cuerpo de la respuesta. */
+      httpStatus?: number;
     };
 
 /**
@@ -161,8 +234,13 @@ export async function verifyEbaySignature(params: {
   let publicKeyPem: string;
   try {
     publicKeyPem = await fetchPublicKey(parsed.kid, oauthCredentials);
-  } catch {
-    return { verified: false, reason: "public_key_fetch_failed" };
+  } catch (error) {
+    if (error instanceof EbayFetchError) {
+      return { verified: false, reason: error.reason, ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}) };
+    }
+    // No debería ocurrir (fetchPublicKey solo lanza EbayFetchError), pero
+    // ante cualquier excepción no prevista se falla cerrado igualmente.
+    return { verified: false, reason: "public_key_http_error" };
   }
 
   try {
