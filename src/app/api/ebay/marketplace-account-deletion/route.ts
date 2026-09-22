@@ -90,9 +90,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (!result.verified) {
-    // Solo el motivo técnico (un código corto), nunca el cuerpo de la
-    // notificación ni la cabecera de firma en sí.
-    console.warn(`[ebay:marketplace-account-deletion] Firma no verificada (${result.reason}). Notificación rechazada.`);
+    // Solo el motivo técnico (un código corto) y, si lo hay, el status
+    // HTTP devuelto por eBay — nunca la URL, cabeceras, tokens,
+    // credenciales, el cuerpo de la respuesta de eBay ni el cuerpo de la
+    // notificación.
+    const statusSuffix = result.httpStatus !== undefined ? ` [HTTP ${result.httpStatus}]` : "";
+    console.warn(`[ebay:marketplace-account-deletion] Firma no verificada (${result.reason}${statusSuffix}). Notificación rechazada.`);
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
   }
 
