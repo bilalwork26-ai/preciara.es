@@ -20,8 +20,8 @@ const { publicKey: ecPublicKey, privateKey: ecPrivateKey } = generateKeyPairSync
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
-function signBody(body: string, key: string = privateKey): string {
-  const signer = createSign("sha1");
+function signBody(body: string, key: string = privateKey, digest: string = "sha1"): string {
+  const signer = createSign(digest);
   signer.update(body);
   return signer.sign(key, "base64");
 }
@@ -362,6 +362,91 @@ describe("verifyEbaySignature", () => {
       it("diagnostics NUNCA está presente para otros motivos de fallo (p. ej. missing_header)", async () => {
         const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: null, oauthCredentials: freshCredentials() });
         expect(result).toEqual({ verified: false, reason: "missing_header" }); // sin diagnostics: confirma que es exclusivo de signature_mismatch
+      });
+    });
+
+    describe("Sonda de algoritmo (SHA-256): diagnóstico ADICIONAL tras un signature_mismatch real, nunca una segunda vía de aceptación (rama diagnose/ebay-signature-algorithm)", () => {
+      it("firma ECDSA con SHA-256 sobre el cuerpo crudo (no SHA-1): sigue rechazada (signature_mismatch/412), pero diagnostics.sha256RawBodyMatched: true", async () => {
+        const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-sha256-raw", data: {} } });
+        const signature = signBody(rawBody, ecPrivateKey, "sha256"); // firma real EC+SHA-256, no SHA-1
+        const header = buildSignatureHeader("kid-ec-sha256-raw", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+
+        // SHA-1 (el único algoritmo aceptado) no verifica esta firma: sigue siendo un rechazo real.
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.reason).toBe("signature_mismatch");
+        expect(result.diagnostics?.sha256RawBodyMatched).toBe(true);
+      });
+
+      it("firma ECDSA con SHA-256 sobre la representación canónica (formato distinto del cuerpo crudo): sigue rechazada, pero diagnostics.sha256CanonicalBodyMatched: true", async () => {
+        const payload = { metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-sha256-canonical", data: {} } };
+        const canonicalBody = JSON.stringify(payload);
+        const signature = signBody(canonicalBody, ecPrivateKey, "sha256"); // SHA-256 sobre la representación canónica
+        const header = buildSignatureHeader("kid-ec-sha256-canonical", signature);
+        const rawBody = JSON.stringify(payload, null, 2) + "\n"; // cuerpo crudo con formato distinto del canónico
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.reason).toBe("signature_mismatch");
+        expect(result.diagnostics?.sha256CanonicalBodyMatched).toBe(true);
+        expect(result.diagnostics?.sha256RawBodyMatched).toBe(false); // el cuerpo crudo nunca se firmó, ni con SHA-1 ni con SHA-256
+      });
+
+      it("una firma SHA-1 válida sigue aceptándose con normalidad (verified: true) — la sonda SHA-256 no afecta al camino normal", async () => {
+        const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-sha1-normal", data: {} } });
+        const signature = signBody(rawBody, ecPrivateKey); // SHA-1, como siempre
+        const header = buildSignatureHeader("kid-ec-sha1-normal", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: true }); // ni siquiera se llega a construir diagnostics: la sonda SHA-256 no se ejecuta
+      });
+
+      it("firma inválida (no corresponde ni a SHA-1 ni a SHA-256 de ninguna representación): ambos diagnósticos SHA-256 quedan en false", async () => {
+        const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-sha256-ninguno", data: {} } });
+        const signature = signBody("un cuerpo que nadie firmó nunca, ni con SHA-1 ni con SHA-256", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-sha256-ninguno", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.reason).toBe("signature_mismatch");
+        expect(result.diagnostics?.sha256RawBodyMatched).toBe(false);
+        expect(result.diagnostics?.sha256CanonicalBodyMatched).toBe(false);
+      });
+
+      it("el log sigue sin datos sensibles aunque la sonda SHA-256 coincida: solo booleanos, nunca la clave/firma/payload/kid", async () => {
+        const rawBody = JSON.stringify({
+          metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+          notification: { notificationId: "n-sha256-log", data: { username: "usuario-sha256-secreto", eiasToken: "TOKEN-SHA256-SECRETO" } },
+        });
+        const signature = signBody(rawBody, ecPrivateKey, "sha256");
+        const header = buildSignatureHeader("kid-ec-sha256-log-muy-especifico", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+
+        const serializedDiagnostics = JSON.stringify(result.diagnostics);
+        // Solo metadatos estructurales: booleanos, longitudes, tipo/curva.
+        expect(serializedDiagnostics).toContain("sha256RawBodyMatched");
+        expect(serializedDiagnostics).toContain("true");
+        // Nunca el contenido real.
+        expect(serializedDiagnostics).not.toContain("usuario-sha256-secreto");
+        expect(serializedDiagnostics).not.toContain("TOKEN-SHA256-SECRETO");
+        expect(serializedDiagnostics).not.toContain("n-sha256-log");
+        expect(serializedDiagnostics).not.toContain("kid-ec-sha256-log-muy-especifico");
+        expect(serializedDiagnostics).not.toContain(signature);
+        expect(serializedDiagnostics).not.toContain(ecPublicKey);
       });
     });
 

@@ -74,6 +74,20 @@
  * tipo/curva de clave) adjunta SOLO al motivo `signature_mismatch`, para
  * que el próximo fallo real deje evidencia estructural sin exponer nunca
  * valores, payload, firma, clave, `kid`, tokens ni credenciales.
+ *
+ * Sonda de algoritmo (rama `diagnose/ebay-signature-algorithm`): con un
+ * diagnóstico real de producción que ya descarta diferencias de
+ * formato/canonicalización, claves con enteros, pérdida de precisión y
+ * tipo/curva de clave incorrectos, se añadió una comprobación de
+ * diagnóstico ADICIONAL — nunca decide el resultado de verificación, que
+ * sigue siendo EXCLUSIVAMENTE SHA-1 (ver `SIGNATURE_DIGEST` más abajo):
+ * solo después de que SHA-1 ya falló contra el cuerpo bruto Y contra la
+ * representación canónica, se prueba (únicamente con fines de registro)
+ * si ECDSA con SHA-256 habría verificado contra esas mismas dos
+ * representaciones (`SignatureMismatchDiagnostics.sha256RawBodyMatched`/
+ * `sha256CanonicalBodyMatched`). Esta rama sigue devolviendo
+ * `signature_mismatch`/412 aunque SHA-256 coincida — es pura
+ * instrumentación, no una segunda vía de aceptación.
  */
 import { createPublicKey, createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
@@ -83,8 +97,10 @@ const EBAY_OAUTH_TOKEN_ENDPOINT = "https://api.ebay.com/identity/v1/oauth2/token
 const EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const EBAY_PUBLIC_KEY_ENDPOINT = "https://api.ebay.com/commerce/notification/v1/public_key/";
 
-/** Algoritmo de firma usado por eBay para estas notificaciones. */
+/** Algoritmo de firma usado por eBay para estas notificaciones — el ÚNICO que puede producir `verified: true`. */
 const SIGNATURE_DIGEST = "sha1";
+/** DIAGNÓSTICO ÚNICAMENTE (ver comentario de cabecera, "Sonda de algoritmo"): nunca se usa para aceptar una firma, solo para poblar `SignatureMismatchDiagnostics` tras un `signature_mismatch` real. */
+const DIAGNOSTIC_ONLY_SHA256_DIGEST = "sha256";
 
 /** Margen de seguridad para no seguir usando un token/clave justo cuando está a punto de caducar. */
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
@@ -242,9 +258,9 @@ function extractNodeErrorCode(error: unknown): string | undefined {
 /** Resultado de UN intento de verificación criptográfica contra una representación concreta del cuerpo. */
 type VerifyAttempt = { threw: false; matched: boolean } | { threw: true; nodeErrorCode?: string };
 
-function attemptVerify(body: string, publicKeyPem: string, signatureBase64: string): VerifyAttempt {
+function attemptVerify(body: string, publicKeyPem: string, signatureBase64: string, digest: string = SIGNATURE_DIGEST): VerifyAttempt {
   try {
-    const verifier = createVerify(SIGNATURE_DIGEST);
+    const verifier = createVerify(digest);
     verifier.update(body);
     return { threw: false, matched: verifier.verify(publicKeyPem, signatureBase64, "base64") };
   } catch (error) {
@@ -278,6 +294,10 @@ export type SignatureMismatchDiagnostics = {
   publicKeyType: string | null;
   /** Curva de la clave pública cuando es EC (p. ej. "prime256v1"), nunca su contenido. `null` si no aplica o no se pudo determinar. */
   publicKeyCurve: string | null;
+  /** DIAGNÓSTICO ÚNICAMENTE — nunca decide el resultado de verificación (que sigue siendo EXCLUSIVAMENTE SHA-1): si una firma ECDSA con SHA-256 habría verificado contra el cuerpo bruto. */
+  sha256RawBodyMatched: boolean;
+  /** DIAGNÓSTICO ÚNICAMENTE — igual que `sha256RawBodyMatched`, pero contra la representación canónica `JSON.stringify(JSON.parse(rawBody))`. `false` si esa representación ni siquiera se pudo construir (JSON inválido). */
+  sha256CanonicalBodyMatched: boolean;
 };
 
 function containsIntegerLikeKeys(value: unknown, seen: Set<unknown> = new Set()): boolean {
@@ -328,6 +348,19 @@ function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: str
     // No debería ocurrir aquí (la clave ya se usó para verificar sin lanzar antes de llegar a este punto).
   }
 
+  // DIAGNÓSTICO ÚNICAMENTE ("Sonda de algoritmo", ver comentario de
+  // cabecera del fichero): esta función solo se invoca desde el `return`
+  // de `signature_mismatch`, es decir, DESPUÉS de que SHA-1 ya falló
+  // contra el cuerpo bruto y contra la representación canónica — se
+  // prueba aquí, solo para informar (nunca para decidir), si ECDSA con
+  // SHA-256 habría verificado contra esas mismas dos representaciones.
+  // El resultado de esta función nunca influye en `verified`.
+  const sha256RawBodyAttempt = attemptVerify(rawBody, publicKeyPem, signatureBase64, DIAGNOSTIC_ONLY_SHA256_DIGEST);
+  const sha256RawBodyMatched = !sha256RawBodyAttempt.threw && sha256RawBodyAttempt.matched;
+
+  const sha256CanonicalAttempt = canonicalBody !== undefined ? attemptVerify(canonicalBody, publicKeyPem, signatureBase64, DIAGNOSTIC_ONLY_SHA256_DIGEST) : undefined;
+  const sha256CanonicalBodyMatched = sha256CanonicalAttempt !== undefined && !sha256CanonicalAttempt.threw && sha256CanonicalAttempt.matched;
+
   return {
     rawBodyLength: rawBody.length,
     rawBodyIsValidJson,
@@ -338,6 +371,8 @@ function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: str
     signatureByteLength,
     publicKeyType,
     publicKeyCurve,
+    sha256RawBodyMatched,
+    sha256CanonicalBodyMatched,
   };
 }
 
