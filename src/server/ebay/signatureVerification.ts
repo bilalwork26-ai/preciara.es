@@ -49,8 +49,33 @@
  * HTTP se registra cuando lo hay, pero NUNCA la URL completa (que incluiría
  * `kid`), cabeceras, tokens, credenciales, cuerpos de respuesta ni el
  * payload de la notificación.
+ *
+ * Diagnóstico de `signature_mismatch` (rama `diagnose/ebay-signature-mismatch`):
+ * tras un fallo real en producción con `signature_mismatch` (ya con OAuth,
+ * clave pública y el fallback canónico de más arriba funcionando), se
+ * comparó línea por línea esta implementación contra el código FUENTE real
+ * de `event-notification-nodejs-sdk@1.0.3` (vendido con `npm pack`, no como
+ * dependencia) y se construyó una prueba diferencial que ejecuta el SDK
+ * oficial SIN MODIFICAR (solo mockeando la llamada de red que obtiene la
+ * clave pública) contra los mismos `(rawBody, cabecera, clave)` para varios
+ * escenarios: cuerpo crudo exacto, formato inocuo distinto, cabecera de
+ * clave "pegada" sin separador, firma en base64url, claves con enteros en
+ * sus nombres (que `JSON.parse`→`JSON.stringify` reordena de forma nativa
+ * en JS), y firma manipulada. En TODOS los casos en los que ambas
+ * implementaciones pudieron siquiera interpretar la clave, coincidieron
+ * exactamente en el resultado — sin ninguna divergencia demostrable de
+ * lógica. (Se descubrió además que el propio `formatKey` del SDK de
+ * referencia es más frágil que nuestra normalización: solo funciona si las
+ * cabeceras PEM llegan pegadas al cuerpo sin ningún separador — un detalle
+ * ajeno a esta causa, documentado aquí solo por transparencia.) Al no
+ * encontrarse una causa demostrable en el código, NO se cambió la lógica de
+ * verificación: se añadió en su lugar `SignatureMismatchDiagnostics`, una
+ * instrumentación segura y puramente estructural (longitudes, booleanos,
+ * tipo/curva de clave) adjunta SOLO al motivo `signature_mismatch`, para
+ * que el próximo fallo real deje evidencia estructural sin exponer nunca
+ * valores, payload, firma, clave, `kid`, tokens ni credenciales.
  */
-import { createVerify } from "node:crypto";
+import { createPublicKey, createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
 import { normalizeEbayPublicKey, EbayPublicKeyFormatError } from "./publicKeyFormat";
 
@@ -227,6 +252,95 @@ function attemptVerify(body: string, publicKeyPem: string, signatureBase64: stri
   }
 }
 
+/**
+ * Metadatos PURAMENTE ESTRUCTURALES de un `signature_mismatch` real —
+ * longitudes, booleanos y nombres de tipo/curva de clave — para poder
+ * diagnosticar la próxima vez sin registrar jamás valores, payload, firma,
+ * clave, `kid`, tokens ni credenciales. Ver comentario de cabecera del
+ * fichero (sección "Diagnóstico de signature_mismatch").
+ */
+export type SignatureMismatchDiagnostics = {
+  /** Longitud en caracteres del cuerpo bruto recibido. */
+  rawBodyLength: number;
+  /** Si `rawBody` es JSON válido (si no, el fallback canónico ni se intenta). */
+  rawBodyIsValidJson: boolean;
+  /** Si se llegó a construir la representación canónica `JSON.stringify(JSON.parse(rawBody))`. */
+  canonicalFallbackAttempted: boolean;
+  /** Si el cuerpo bruto y la representación canónica son, de hecho, la MISMA cadena (ninguna diferencia de formato entre ambas). */
+  rawBodyEqualsCanonicalBody: boolean;
+  /** Si el cuerpo parseado contiene, en cualquier nivel, alguna clave con forma de entero (p. ej. "2", "10") — JS reordena esas claves de forma nativa en un JSON.parse→JSON.stringify, lo que podría romper la fidelidad de la representación canónica frente a lo que eBay firmó realmente. */
+  containsIntegerLikeKeys: boolean;
+  /** Si el cuerpo bruto contiene algún literal numérico JSON de 16+ dígitos — puede perder precisión al pasar por JSON.parse (IEEE-754), alterando la representación canónica. */
+  containsLargeIntegerLiteral: boolean;
+  /** Longitud en bytes de la firma, ya decodificada de base64 (ayuda a distinguir, p. ej., firmas de tamaño RSA frente a EC). `null` si no se pudo decodificar. */
+  signatureByteLength: number | null;
+  /** Tipo de la clave pública usada para verificar (p. ej. "ec", "rsa"), nunca su contenido. `null` si no se pudo determinar. */
+  publicKeyType: string | null;
+  /** Curva de la clave pública cuando es EC (p. ej. "prime256v1"), nunca su contenido. `null` si no aplica o no se pudo determinar. */
+  publicKeyCurve: string | null;
+};
+
+function containsIntegerLikeKeys(value: unknown, seen: Set<unknown> = new Set()): boolean {
+  if (value === null || typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((item) => containsIntegerLikeKeys(item, seen));
+  }
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    if (/^(0|[1-9]\d*)$/.test(key)) return true;
+    if (containsIntegerLikeKeys((value as Record<string, unknown>)[key], seen)) return true;
+  }
+  return false;
+}
+
+/** Literal numérico JSON (no dentro de una cadena) de 16 o más dígitos — umbral de posible pérdida de precisión IEEE-754 en JSON.parse. */
+const LARGE_INTEGER_LITERAL_PATTERN = /[:,[]\s*-?\d{16,}(?:\.\d+)?\s*(?=[,}\]])/;
+
+function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: string, publicKeyPem: string): SignatureMismatchDiagnostics {
+  let rawBodyIsValidJson = false;
+  let canonicalBody: string | undefined;
+  let containsIntegerLike = false;
+  try {
+    const parsedForDiagnostics: unknown = JSON.parse(rawBody);
+    rawBodyIsValidJson = true;
+    canonicalBody = JSON.stringify(parsedForDiagnostics);
+    containsIntegerLike = containsIntegerLikeKeys(parsedForDiagnostics);
+  } catch {
+    // rawBody no es JSON válido: se dejan los valores por defecto.
+  }
+
+  let signatureByteLength: number | null;
+  try {
+    signatureByteLength = Buffer.from(signatureBase64, "base64").length;
+  } catch {
+    signatureByteLength = null;
+  }
+
+  let publicKeyType: string | null = null;
+  let publicKeyCurve: string | null = null;
+  try {
+    const keyObject = createPublicKey(publicKeyPem);
+    publicKeyType = keyObject.asymmetricKeyType ?? null;
+    const details = keyObject.asymmetricKeyDetails as { namedCurve?: string } | undefined;
+    publicKeyCurve = details?.namedCurve ?? null;
+  } catch {
+    // No debería ocurrir aquí (la clave ya se usó para verificar sin lanzar antes de llegar a este punto).
+  }
+
+  return {
+    rawBodyLength: rawBody.length,
+    rawBodyIsValidJson,
+    canonicalFallbackAttempted: canonicalBody !== undefined,
+    rawBodyEqualsCanonicalBody: canonicalBody !== undefined && rawBody === canonicalBody,
+    containsIntegerLikeKeys: containsIntegerLike,
+    containsLargeIntegerLiteral: LARGE_INTEGER_LITERAL_PATTERN.test(rawBody),
+    signatureByteLength,
+    publicKeyType,
+    publicKeyCurve,
+  };
+}
+
 type ParsedSignatureHeader = { kid: string; signature: string };
 
 function parseSignatureHeader(signatureHeader: string): ParsedSignatureHeader | null {
@@ -252,6 +366,8 @@ export type SignatureVerificationResult =
       httpStatus?: number;
       /** Solo presente en `public_key_normalization_error`/`verify_error` cuando `crypto` lanza con un `.code`: el código de error de Node/OpenSSL (p. ej. "ERR_OSSL_UNSUPPORTED"). Nunca el mensaje completo de la excepción, ni la clave, firma o cuerpo. */
       nodeErrorCode?: string;
+      /** Solo presente en `signature_mismatch`: metadatos puramente estructurales (longitudes, booleanos, tipo/curva de clave) para diagnosticar sin exponer nunca valores, payload, firma, clave, `kid`, tokens ni credenciales. */
+      diagnostics?: SignatureMismatchDiagnostics;
     };
 
 /**
@@ -320,5 +436,5 @@ export async function verifyEbaySignature(params: {
     if (canonicalAttempt.matched) return { verified: true };
   }
 
-  return { verified: false, reason: "signature_mismatch" };
+  return { verified: false, reason: "signature_mismatch", diagnostics: buildSignatureMismatchDiagnostics(rawBody, parsed.signature, publicKeyPem) };
 }

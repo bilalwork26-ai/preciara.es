@@ -90,14 +90,18 @@ export async function POST(request: NextRequest) {
   }
 
   if (!result.verified) {
-    // Solo el motivo técnico (un código corto) y, si los hay, el status
-    // HTTP devuelto por eBay y/o el código de error de Node/OpenSSL —
-    // nunca la URL, cabeceras, tokens, credenciales, la clave, la firma,
-    // el cuerpo de la respuesta de eBay, el mensaje completo de una
-    // excepción de `crypto`, ni el cuerpo de la notificación.
+    // Solo el motivo técnico (un código corto), si los hay, el status HTTP
+    // devuelto por eBay y/o el código de error de Node/OpenSSL, y — SOLO
+    // para "signature_mismatch" — metadatos puramente estructurales
+    // (longitudes, booleanos, tipo/curva de clave; ver
+    // `SignatureMismatchDiagnostics` en signatureVerification.ts) — nunca
+    // la URL, cabeceras, tokens, credenciales, la clave, la firma, el
+    // cuerpo de la respuesta de eBay, el mensaje completo de una excepción
+    // de `crypto`, ni el cuerpo de la notificación.
     const statusSuffix = result.httpStatus !== undefined ? ` [HTTP ${result.httpStatus}]` : "";
     const nodeErrorSuffix = result.nodeErrorCode !== undefined ? ` [${result.nodeErrorCode}]` : "";
-    console.warn(`[ebay:marketplace-account-deletion] Firma no verificada (${result.reason}${statusSuffix}${nodeErrorSuffix}). Notificación rechazada.`);
+    const diagnosticsSuffix = result.diagnostics !== undefined ? ` diagnostics=${JSON.stringify(result.diagnostics)}` : "";
+    console.warn(`[ebay:marketplace-account-deletion] Firma no verificada (${result.reason}${statusSuffix}${nodeErrorSuffix}). Notificación rechazada.${diagnosticsSuffix}`);
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
   }
 

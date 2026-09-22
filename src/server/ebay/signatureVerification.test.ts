@@ -113,7 +113,7 @@ describe("verifyEbaySignature", () => {
     mockFetchSequence({});
 
     const result = await verifyEbaySignature({ rawBody: tamperedBody, signatureHeader: header, oauthCredentials: freshCredentials() });
-    expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+    expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
   });
 
   describe("clave EC (prime256v1 / P-256, ECDSA) — el tipo de clave que usan las notificaciones ACTUALES de eBay", () => {
@@ -147,7 +147,7 @@ describe("verifyEbaySignature", () => {
 
       mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
       const result = await verifyEbaySignature({ rawBody: tamperedBody, signatureHeader: header, oauthCredentials: freshCredentials() });
-      expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+      expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
     });
 
     it("también funciona con la clave pública EC 'en bruto' (sin cabeceras PEM, como la envía eBay de verdad)", async () => {
@@ -250,7 +250,7 @@ describe("verifyEbaySignature", () => {
 
         mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
         const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
-        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+        expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
       });
 
       it("cuerpo HTTP crudo que no es JSON válido: no hay segunda representación que probar, falla cerrado con reason: signature_mismatch (nunca lanza ni verifica igual)", async () => {
@@ -260,7 +260,7 @@ describe("verifyEbaySignature", () => {
 
         mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
         const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
-        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+        expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
       });
 
       it("no se acepta una TERCERA representación distinta (ni el cuerpo crudo ni JSON.stringify(JSON.parse(rawBody))): verified: false, reason: signature_mismatch", async () => {
@@ -280,7 +280,88 @@ describe("verifyEbaySignature", () => {
 
         mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
         const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
-        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+        expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
+      });
+    });
+
+    describe("SignatureMismatchDiagnostics: metadatos puramente estructurales adjuntos a signature_mismatch (rama diagnose/ebay-signature-mismatch)", () => {
+      it("firma que no corresponde a ninguna representación: diagnostics refleja longitudes/booleanos correctos, sin canonicalFallback porque rawBody YA es JSON válido y distinto del canónico", async () => {
+        const payload = { metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-diag-1", data: {} } };
+        const rawBody = JSON.stringify(payload, null, 2); // formato "bonito": distinto de JSON.stringify(payload) compacto
+        const signature = signBody("un cuerpo que nadie recibió nunca", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-diag-1", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.reason).toBe("signature_mismatch");
+        expect(result.diagnostics).toBeDefined();
+        const diagnostics = result.diagnostics!;
+        expect(diagnostics.rawBodyLength).toBe(rawBody.length);
+        expect(diagnostics.rawBodyIsValidJson).toBe(true);
+        expect(diagnostics.canonicalFallbackAttempted).toBe(true);
+        expect(diagnostics.rawBodyEqualsCanonicalBody).toBe(false); // pretty-printed vs. compacto: distintos
+        expect(diagnostics.containsIntegerLikeKeys).toBe(false);
+        expect(diagnostics.containsLargeIntegerLiteral).toBe(false);
+        expect(diagnostics.signatureByteLength).toBeGreaterThan(0);
+        expect(diagnostics.publicKeyType).toBe("ec");
+        expect(diagnostics.publicKeyCurve).toBe("prime256v1");
+        // Nunca expone el contenido real: ni el rawBody, ni la firma, ni la clave.
+        expect(JSON.stringify(diagnostics)).not.toContain("n-diag-1");
+      });
+
+      it("cuerpo con claves de forma entera anidadas: diagnostics.containsIntegerLikeKeys: true (aviso del reordenamiento nativo de JS en JSON.parse→JSON.stringify)", async () => {
+        const rawBody = '{"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION"},"notification":{"notificationId":"n-diag-2","data":{"10":"b","2":"a"}}}';
+        const signature = signBody("un cuerpo que nadie recibió nunca", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-diag-2", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.diagnostics?.containsIntegerLikeKeys).toBe(true);
+      });
+
+      it("cuerpo con un literal numérico de 16+ dígitos: diagnostics.containsLargeIntegerLiteral: true (aviso de posible pérdida de precisión IEEE-754)", async () => {
+        const rawBody = '{"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION"},"notification":{"publishAttemptCount":9007199254740993,"data":{}}}';
+        const signature = signBody("un cuerpo que nadie recibió nunca", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-diag-3", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.diagnostics?.containsLargeIntegerLiteral).toBe(true);
+      });
+
+      it("cuerpo que no es JSON válido: diagnostics.rawBodyIsValidJson: false, canonicalFallbackAttempted: false", async () => {
+        const rawBody = "esto no es JSON válido {{{";
+        const signature = signBody("un cuerpo que nadie recibió nunca", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-diag-4", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.diagnostics?.rawBodyIsValidJson).toBe(false);
+        expect(result.diagnostics?.canonicalFallbackAttempted).toBe(false);
+        expect(result.diagnostics?.rawBodyEqualsCanonicalBody).toBe(false);
+      });
+
+      it("diagnostics NUNCA está presente cuando la firma SÍ verifica (verified: true)", async () => {
+        const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-diag-5", data: {} } });
+        const signature = signBody(rawBody, ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-diag-5", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: true }); // sin campo diagnostics: toEqual exacto sigue siendo válido aquí
+      });
+
+      it("diagnostics NUNCA está presente para otros motivos de fallo (p. ej. missing_header)", async () => {
+        const result = await verifyEbaySignature({ rawBody: "cuerpo", signatureHeader: null, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: false, reason: "missing_header" }); // sin diagnostics: confirma que es exclusivo de signature_mismatch
       });
     });
 
