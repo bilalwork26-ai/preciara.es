@@ -221,6 +221,43 @@ describe("POST /api/ebay/marketplace-account-deletion (notificaciones)", () => {
     }
   });
 
+  it("registra los diagnostics de signature_mismatch (metadatos estructurales) pero nunca su contenido sensible, sea cual sea", async () => {
+    verifyEbaySignatureMock.mockResolvedValue({
+      verified: false,
+      reason: "signature_mismatch",
+      diagnostics: {
+        rawBodyLength: 123,
+        rawBodyIsValidJson: true,
+        canonicalFallbackAttempted: true,
+        rawBodyEqualsCanonicalBody: false,
+        containsIntegerLikeKeys: true,
+        containsLargeIntegerLiteral: false,
+        signatureByteLength: 72,
+        publicKeyType: "ec",
+        publicKeyCurve: "prime256v1",
+      },
+    });
+    const sensitiveBody = JSON.stringify({ notification: { data: { username: "diag-usuario-secreto", eiasToken: "DIAG-TOKEN-SECRETO" } } });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const request = new NextRequest(ENDPOINT, { method: "POST", headers: { "x-ebay-signature": "x" }, body: sensitiveBody });
+      const response = await POST(request);
+      expect(response.status).toBe(412);
+
+      const loggedText = warnSpy.mock.calls.map((args) => args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")).join("\n");
+      // Los diagnostics estructurales SÍ deben llegar al log (para que sean útiles).
+      expect(loggedText).toContain("rawBodyLength");
+      expect(loggedText).toContain("publicKeyCurve");
+      expect(loggedText).toContain("prime256v1");
+      // Pero nunca el cuerpo real ni datos personales.
+      expect(loggedText).not.toContain("diag-usuario-secreto");
+      expect(loggedText).not.toContain("DIAG-TOKEN-SECRETO");
+      expect(loggedText).not.toContain(sensitiveBody);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("nunca registra el cuerpo ni datos personales cuando la firma es válida pero el payload se rechaza (topic distinto)", async () => {
     verifyEbaySignatureMock.mockResolvedValue({ verified: true });
     const sensitiveBody = JSON.stringify({
