@@ -19,11 +19,20 @@
  *      forma temporal (con caducidad), para no repetir estas llamadas en
  *      cada notificación — las claves de eBay rotan con poca frecuencia.
  *   3. Se verifica la firma con el algoritmo de eBay (SHA-1, válido tanto
- *      para claves RSA como EC) contra el CUERPO BRUTO de la petición, tal
- *      cual se recibió — nunca contra una versión reserializada tras un
- *      `JSON.parse`/`JSON.stringify` (a diferencia del SDK de referencia,
- *      que sí reserializa: aquí se sigue al pie de la letra "leer el
- *      cuerpo sin alterarlo para validar la firma").
+ *      para claves RSA como EC), primero contra el CUERPO BRUTO de la
+ *      petición tal cual se recibió. Solo si esa verificación devuelve
+ *      "no coincide" (nunca si lanza una excepción), se prueba una
+ *      SEGUNDA Y ÚLTIMA representación: `JSON.stringify(JSON.parse(rawBody))`
+ *      — el cuerpo reserializado tras haberlo parseado como JSON, que es
+ *      EXACTAMENTE lo que verifica el SDK oficial de eBay
+ *      (`event-notification-nodejs-sdk`, `lib/validator.js`:
+ *      `verifier.update(JSON.stringify(message))`, donde `message` es el
+ *      cuerpo ya parseado por `express.json()` antes de llegar al SDK —
+ *      confirmado leyendo su código fuente). Notificaciones reales pueden
+ *      llegar con diferencias de formato inocuas (espacios, indentado)
+ *      entre el cuerpo tal cual lo recibe este endpoint y el cuerpo sobre
+ *      el que eBay calculó la firma, sin que el contenido cambie. Nunca se
+ *      prueba una tercera representación ni se reordenan claves.
  *
  * Nunca hay un atajo inseguro: si algo impide completar la verificación
  * (cabecera ausente/malformada, credenciales OAuth no configuradas, fallo
@@ -197,6 +206,27 @@ async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): P
   return pem;
 }
 
+function extractNodeErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return undefined;
+}
+
+/** Resultado de UN intento de verificación criptográfica contra una representación concreta del cuerpo. */
+type VerifyAttempt = { threw: false; matched: boolean } | { threw: true; nodeErrorCode?: string };
+
+function attemptVerify(body: string, publicKeyPem: string, signatureBase64: string): VerifyAttempt {
+  try {
+    const verifier = createVerify(SIGNATURE_DIGEST);
+    verifier.update(body);
+    return { threw: false, matched: verifier.verify(publicKeyPem, signatureBase64, "base64") };
+  } catch (error) {
+    return { threw: true, nodeErrorCode: extractNodeErrorCode(error) };
+  }
+}
+
 type ParsedSignatureHeader = { kid: string; signature: string };
 
 function parseSignatureHeader(signatureHeader: string): ParsedSignatureHeader | null {
@@ -226,8 +256,12 @@ export type SignatureVerificationResult =
 
 /**
  * Verifica la firma de una notificación de eBay. `rawBody` debe ser el
- * cuerpo EXACTO recibido (sin volver a serializar tras un `JSON.parse`) —
- * es lo único sobre lo que se calcula el hash de la firma.
+ * cuerpo EXACTO recibido, sin ninguna transformación previa — es la
+ * primera representación que se intenta, y si el emisor firmó exactamente
+ * esos bytes (caso normal), es la única que se necesita. Solo si esa
+ * verificación devuelve "no coincide" se intenta, como único fallback,
+ * `JSON.stringify(JSON.parse(rawBody))` (ver comentario de cabecera del
+ * fichero).
  */
 export async function verifyEbaySignature(params: {
   rawBody: string;
@@ -260,13 +294,31 @@ export async function verifyEbaySignature(params: {
     return { verified: false, reason: "public_key_http_error" };
   }
 
-  try {
-    const verifier = createVerify(SIGNATURE_DIGEST);
-    verifier.update(rawBody);
-    const isValid = verifier.verify(publicKeyPem, parsed.signature, "base64");
-    return isValid ? { verified: true } : { verified: false, reason: "signature_mismatch" };
-  } catch (error) {
-    const nodeErrorCode = error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string" ? (error as { code: string }).code : undefined;
-    return { verified: false, reason: "verify_error", ...(nodeErrorCode !== undefined ? { nodeErrorCode } : {}) };
+  // 1º intento: el cuerpo bruto tal cual se recibió.
+  const rawBodyAttempt = attemptVerify(rawBody, publicKeyPem, parsed.signature);
+  if (rawBodyAttempt.threw) {
+    return { verified: false, reason: "verify_error", ...(rawBodyAttempt.nodeErrorCode !== undefined ? { nodeErrorCode: rawBodyAttempt.nodeErrorCode } : {}) };
   }
+  if (rawBodyAttempt.matched) return { verified: true };
+
+  // 2º y ÚLTIMO intento — SOLO porque el 1º devolvió "no coincide" (nunca
+  // si lanzó una excepción): la representación que usa el SDK oficial de
+  // eBay, `JSON.stringify(JSON.parse(rawBody))`. Ningún JSON válido ->
+  // no hay segunda representación que probar, se falla cerrado más abajo.
+  let canonicalBody: string | undefined;
+  try {
+    canonicalBody = JSON.stringify(JSON.parse(rawBody));
+  } catch {
+    canonicalBody = undefined;
+  }
+
+  if (canonicalBody !== undefined) {
+    const canonicalAttempt = attemptVerify(canonicalBody, publicKeyPem, parsed.signature);
+    if (canonicalAttempt.threw) {
+      return { verified: false, reason: "verify_error", ...(canonicalAttempt.nodeErrorCode !== undefined ? { nodeErrorCode: canonicalAttempt.nodeErrorCode } : {}) };
+    }
+    if (canonicalAttempt.matched) return { verified: true };
+  }
+
+  return { verified: false, reason: "signature_mismatch" };
 }

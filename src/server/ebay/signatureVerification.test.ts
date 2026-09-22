@@ -204,6 +204,86 @@ describe("verifyEbaySignature", () => {
       }
     });
 
+    describe("canonicalización del payload firmado: fallback a JSON.stringify(JSON.parse(rawBody)) — el SDK oficial de eBay firma sobre el cuerpo YA PARSEADO, no sobre los bytes crudos", () => {
+      it("REGRESIÓN: firma calculada sobre JSON.stringify(payload) (como hace el SDK oficial), pero el cuerpo HTTP crudo llega con diferencias de formato inocuas (indentado, espacios, salto final) — verifica correctamente mediante el fallback", async () => {
+        const payload = {
+          metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+          notification: { notificationId: "n-canonicalizacion", eventDate: "2026-09-22T00:00:00.000Z", data: {} },
+        };
+        // Esto es EXACTAMENTE lo que firma el SDK oficial de eBay
+        // (`event-notification-nodejs-sdk`, `lib/validator.js`:
+        // `verifier.update(JSON.stringify(message))`, con `message` ya
+        // parseado por `express.json()` antes de llegar al SDK).
+        const canonicalBody = JSON.stringify(payload);
+        const signature = signBody(canonicalBody, ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-canonicalizacion", signature);
+
+        // El cuerpo HTTP crudo que de verdad recibe este endpoint: el
+        // MISMO JSON (mismo contenido, mismo orden de claves — nunca se
+        // reordenan), pero con formato distinto (indentado bonito + salto
+        // de línea final) — una diferencia de formato inocua y realista.
+        const rawBody = JSON.stringify(payload, null, 2) + "\n";
+        expect(rawBody).not.toBe(canonicalBody); // confirma que de verdad son cadenas distintas
+        expect(JSON.parse(rawBody)).toEqual(JSON.parse(canonicalBody)); // mismo contenido
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: true });
+      });
+
+      it("una firma calculada directamente sobre el cuerpo crudo (sin diferencias de formato) se sigue aceptando en el primer intento, sin necesidad del fallback", async () => {
+        const payload = { metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-cuerpo-crudo", data: {} } };
+        const rawBody = JSON.stringify(payload);
+        const signature = signBody(rawBody, ecPrivateKey); // firma directamente sobre rawBody, como el caso normal ya cubierto arriba
+        const header = buildSignatureHeader("kid-ec-cuerpo-crudo-directo", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: true });
+      });
+
+      it("firma que no corresponde a NINGUNA de las dos representaciones (ni al cuerpo crudo ni a JSON.stringify(JSON.parse(rawBody))): verified: false, reason: signature_mismatch", async () => {
+        const payload = { metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-firma-incorrecta", data: {} } };
+        const rawBody = JSON.stringify(payload, null, 2) + "\n\n"; // cuerpo crudo con formato distinto al canónico
+        const signature = signBody("un cuerpo totalmente distinto que nadie recibió nunca", ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-firma-incorrecta", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+      });
+
+      it("cuerpo HTTP crudo que no es JSON válido: no hay segunda representación que probar, falla cerrado con reason: signature_mismatch (nunca lanza ni verifica igual)", async () => {
+        const rawBody = "esto no es JSON válido {{{";
+        const signature = signBody("un cuerpo completamente distinto, no el rawBody real", ecPrivateKey); // no coincide con el cuerpo crudo real
+        const header = buildSignatureHeader("kid-ec-json-invalido", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+      });
+
+      it("no se acepta una TERCERA representación distinta (ni el cuerpo crudo ni JSON.stringify(JSON.parse(rawBody))): verified: false, reason: signature_mismatch", async () => {
+        const payload = { metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-tercera-representacion", data: {} } };
+        // Cuerpo crudo real: indentado con 2 espacios.
+        const rawBody = JSON.stringify(payload, null, 2);
+        // Representación canónica que SÍ se prueba como fallback: compacta.
+        const canonicalBody = JSON.stringify(payload);
+        // Una TERCERA representación (indentado con 4 espacios) que nunca
+        // debería probarse — ni coincide con rawBody ni con canonicalBody.
+        const thirdRepresentation = JSON.stringify(payload, null, 4);
+        expect(thirdRepresentation).not.toBe(rawBody);
+        expect(thirdRepresentation).not.toBe(canonicalBody);
+
+        const signature = signBody(thirdRepresentation, ecPrivateKey);
+        const header = buildSignatureHeader("kid-ec-tercera-representacion", signature);
+
+        mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+        expect(result).toEqual({ verified: false, reason: "signature_mismatch" });
+      });
+    });
+
     describe("investigación del punto 9: ¿necesita el campo 'signature' de la cabecera normalización base64/base64url?", () => {
       it("una firma real codificada en base64url (sin relleno, '-'/'_' en vez de '+'/'/') verifica igual de bien que en base64 estándar — Node decodifica ambas con 'base64' sin cambios de código", async () => {
         const rawBody = "cuerpo de prueba para investigar base64url";
