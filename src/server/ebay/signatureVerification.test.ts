@@ -20,6 +20,15 @@ const { publicKey: ecPublicKey, privateKey: ecPrivateKey } = generateKeyPairSync
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
+// Segundo par de claves EC, distinto del anterior — usado ÚNICAMENTE en
+// las pruebas de la sonda "kid→clave" para simular que la clave fresca de
+// red difiere de la que ya estaba en caché (ver describe más abajo).
+const { publicKey: otherEcPublicKey, privateKey: otherEcPrivateKey } = generateKeyPairSync("ec", {
+  namedCurve: "prime256v1",
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
+
 function signBody(body: string, key: string = privateKey, digest: string = "sha1"): string {
   const signer = createSign(digest);
   signer.update(body);
@@ -44,9 +53,20 @@ type RecordedCall = { url: string; method: string; headers: Record<string, strin
 function mockFetchSequence(params: {
   tokenResponse?: { status: number; body?: unknown; rawBody?: string };
   keyResponse?: { status: number; body?: unknown; rawBody?: string };
+  /**
+   * Respuestas sucesivas para llamadas sucesivas a `/public_key/` (0 = 1ª
+   * llamada, 1 = 2ª...) — útil para simular una recarga forzada de
+   * diagnóstico que devuelve una clave DISTINTA de la que ya estaba en
+   * caché. La última entrada se repite si hay más llamadas que entradas.
+   * Tiene prioridad sobre `keyResponse` cuando se indica.
+   */
+  keyResponseSequence?: Array<{ status: number; body?: unknown; rawBody?: string }>;
   networkFailureOn?: "oauth" | "public_key";
+  /** Índice (0 = 1ª llamada a /public_key/) en el que simular un fallo de red SOLO en esa llamada — el resto se sirven con normalidad. */
+  networkFailureOnKeyCallIndex?: number;
 }) {
   const calls: RecordedCall[] = [];
+  let publicKeyCallIndex = 0;
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const headers: Record<string, string> = {};
@@ -59,8 +79,16 @@ function mockFetchSequence(params: {
       return new Response(rawBody ?? JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/public_key/")) {
-      if (params.networkFailureOn === "public_key") throw new TypeError("fetch failed (simulado)");
-      const { status = 200, body = { key: publicKey }, rawBody } = params.keyResponse ?? {};
+      const currentKeyCallIndex = publicKeyCallIndex;
+      publicKeyCallIndex += 1;
+      if (params.networkFailureOn === "public_key" || params.networkFailureOnKeyCallIndex === currentKeyCallIndex) {
+        throw new TypeError("fetch failed (simulado)");
+      }
+      const responseConfig =
+        params.keyResponseSequence && params.keyResponseSequence.length > 0
+          ? params.keyResponseSequence[Math.min(currentKeyCallIndex, params.keyResponseSequence.length - 1)]
+          : (params.keyResponse ?? { status: 200, body: { key: publicKey } });
+      const { status, body, rawBody } = responseConfig;
       return new Response(rawBody ?? JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     }
     throw new Error(`URL inesperada en la prueba: ${url}`);
@@ -447,6 +475,180 @@ describe("verifyEbaySignature", () => {
         expect(serializedDiagnostics).not.toContain("kid-ec-sha256-log-muy-especifico");
         expect(serializedDiagnostics).not.toContain(signature);
         expect(serializedDiagnostics).not.toContain(ecPublicKey);
+      });
+    });
+
+    describe("Vinculación kid→clave: recarga forzada de diagnóstico tras un signature_mismatch real cuyo intento usó una clave de caché (rama diagnose/ebay-public-key-binding)", () => {
+      it("caché acertada: la clave fresca coincide con la usada (freshPublicKeyMatchesUsedKey: true), ninguna sonda SHA-1 adicional se activa", async () => {
+        const kid = "kid-binding-cache-hit";
+        const credentials = freshCredentials();
+        const { calls } = mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+
+        // 1ª notificación: cachea la clave para este kid (firma válida).
+        const bodyA = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-hit-a", data: {} } });
+        const resultA = await verifyEbaySignature({ rawBody: bodyA, signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)), oauthCredentials: credentials });
+        expect(resultA).toEqual({ verified: true });
+
+        // 2ª notificación, MISMO kid, firma que no verifica: la clave usada viene de caché.
+        const bodyB = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-hit-b", data: {} } });
+        const badSignature = signBody("un cuerpo que nadie firmó nunca", ecPrivateKey);
+        const resultB = await verifyEbaySignature({ rawBody: bodyB, signatureHeader: buildSignatureHeader(kid, badSignature), oauthCredentials: credentials });
+
+        expect(resultB.verified).toBe(false);
+        if (resultB.verified) return;
+        const diag = resultB.diagnostics!;
+        expect(diag.publicKeyCacheHit).toBe(true);
+        expect(diag.freshPublicKeyFetchAttempted).toBe(true);
+        expect(diag.freshPublicKeyFetchSucceeded).toBe(true);
+        expect(diag.freshPublicKeyMatchesUsedKey).toBe(true);
+        // La clave fresca es la MISMA que la usada: la sonda SHA-1 adicional ni se activa.
+        expect(diag.freshPublicKeyRawBodyMatched).toBe(false);
+        expect(diag.freshPublicKeyCanonicalBodyMatched).toBe(false);
+
+        // Exactamente 2 llamadas a /public_key/: la de la 1ª notificación (cachea) + la recarga forzada de la 2ª.
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2);
+      });
+
+      it("caché con clave DISTINTA de la fresca: freshPublicKeyMatchesUsedKey: false, y la sonda SHA-1 con la clave fresca SÍ verifica (evidencia de vinculación kid→clave incorrecta)", async () => {
+        const kid = "kid-binding-mismatch";
+        const credentials = freshCredentials();
+
+        // 1ª notificación: cachea la clave "A" para este kid.
+        const bodyA = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-mismatch-a", data: {} } });
+        const { calls } = mockFetchSequence({ keyResponseSequence: [{ status: 200, body: { key: ecPublicKey } }, { status: 200, body: { key: otherEcPublicKey } }] });
+        const resultA = await verifyEbaySignature({ rawBody: bodyA, signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)), oauthCredentials: credentials });
+        expect(resultA).toEqual({ verified: true });
+
+        // 2ª notificación, MISMO kid, pero firmada con la OTRA clave privada
+        // ("B") — la caché sigue teniendo "A": simula que la clave real de
+        // eBay para este kid ya no es la que se cacheó.
+        const bodyB = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-mismatch-b", data: {} } });
+        const resultB = await verifyEbaySignature({ rawBody: bodyB, signatureHeader: buildSignatureHeader(kid, signBody(bodyB, otherEcPrivateKey)), oauthCredentials: credentials });
+
+        expect(resultB.verified).toBe(false); // sigue 412 aunque la clave fresca verifique
+        if (resultB.verified) return;
+        expect(resultB.reason).toBe("signature_mismatch");
+        const diag = resultB.diagnostics!;
+        expect(diag.publicKeyCacheHit).toBe(true);
+        expect(diag.freshPublicKeyFetchAttempted).toBe(true);
+        expect(diag.freshPublicKeyFetchSucceeded).toBe(true);
+        expect(diag.freshPublicKeyMatchesUsedKey).toBe(false);
+        expect(diag.freshPublicKeyRawBodyMatched).toBe(true); // bodyB SÍ está firmado con la clave fresca "B"
+        expect(diag.freshPublicKeyCanonicalBodyMatched).toBe(true); // bodyB ya es JSON compacto: coincide con su propia forma canónica
+
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2);
+      });
+
+      it("límite de una recarga forzada por kid y por proceso cada hora: una 3ª notificación con el mismo kid dentro de la misma hora NO repite la llamada de red", async () => {
+        const kid = "kid-binding-rate-limit";
+        const credentials = freshCredentials();
+        const { calls } = mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+
+        const bodyA = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-rate-a", data: {} } });
+        await verifyEbaySignature({ rawBody: bodyA, signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)), oauthCredentials: credentials });
+
+        // 2ª notificación con firma inválida: dispara la 1ª recarga forzada (2ª llamada a /public_key/).
+        const badSignature = signBody("cuerpo no firmado", ecPrivateKey);
+        const result2 = await verifyEbaySignature({ rawBody: "cuerpo B", signatureHeader: buildSignatureHeader(kid, badSignature), oauthCredentials: credentials });
+        expect(result2.verified).toBe(false);
+        if (!result2.verified) expect(result2.diagnostics?.freshPublicKeyFetchAttempted).toBe(true);
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2);
+
+        // 3ª notificación, mismo kid, también con firma inválida: la clave
+        // sigue viniendo de caché, pero el límite de una recarga forzada
+        // por hora ya se agotó -> NO se repite la llamada de red.
+        const result3 = await verifyEbaySignature({ rawBody: "cuerpo C", signatureHeader: buildSignatureHeader(kid, badSignature), oauthCredentials: credentials });
+        expect(result3.verified).toBe(false);
+        if (!result3.verified) {
+          expect(result3.diagnostics?.publicKeyCacheHit).toBe(true);
+          expect(result3.diagnostics?.freshPublicKeyFetchAttempted).toBe(false);
+          expect(result3.diagnostics?.freshPublicKeyFetchSucceeded).toBe(false);
+          expect(result3.diagnostics?.freshPublicKeyMatchesUsedKey).toBe(false);
+        }
+        // Sigue habiendo exactamente 2 llamadas a /public_key/: ninguna 3ª.
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2);
+      });
+
+      it("fallo al recargar la clave fresca (red caída en esa 2ª llamada): freshPublicKeyFetchAttempted: true, freshPublicKeyFetchSucceeded: false, sin lanzar y sin afectar al 412", async () => {
+        const kid = "kid-binding-refetch-fails";
+        const credentials = freshCredentials();
+        // La 1ª llamada a /public_key/ (índice 0) funciona con normalidad;
+        // la 2ª (índice 1, la recarga forzada) falla de red.
+        const { calls } = mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } }, networkFailureOnKeyCallIndex: 1 });
+
+        const bodyA = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { notificationId: "n-binding-fail-a", data: {} } });
+        const resultA = await verifyEbaySignature({ rawBody: bodyA, signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)), oauthCredentials: credentials });
+        expect(resultA).toEqual({ verified: true });
+
+        const badSignature = signBody("cuerpo no firmado", ecPrivateKey);
+        const resultB = await verifyEbaySignature({ rawBody: "cuerpo B", signatureHeader: buildSignatureHeader(kid, badSignature), oauthCredentials: credentials });
+
+        expect(resultB.verified).toBe(false);
+        if (resultB.verified) return;
+        expect(resultB.reason).toBe("signature_mismatch"); // el fallo de la recarga nunca cambia el motivo ya decidido
+        const diag = resultB.diagnostics!;
+        expect(diag.publicKeyCacheHit).toBe(true);
+        expect(diag.freshPublicKeyFetchAttempted).toBe(true);
+        expect(diag.freshPublicKeyFetchSucceeded).toBe(false);
+        expect(diag.freshPublicKeyMatchesUsedKey).toBe(false);
+        expect(diag.freshPublicKeyRawBodyMatched).toBe(false);
+        expect(diag.freshPublicKeyCanonicalBodyMatched).toBe(false);
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(2);
+      });
+
+      it("clave usada YA fresca de red (sin caché): publicKeyCacheHit: false, y NO se hace ninguna llamada de recarga adicional", async () => {
+        const kid = "kid-binding-already-fresh";
+        const { fetchMock, calls } = mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+
+        // Única notificación con este kid: la clave se pide fresca de red
+        // (nunca estuvo en caché), y la firma no verifica.
+        const badSignature = signBody("cuerpo no firmado", ecPrivateKey);
+        const result = await verifyEbaySignature({ rawBody: "cuerpo único", signatureHeader: buildSignatureHeader(kid, badSignature), oauthCredentials: freshCredentials() });
+
+        expect(result.verified).toBe(false);
+        if (result.verified) return;
+        expect(result.diagnostics?.publicKeyCacheHit).toBe(false);
+        expect(result.diagnostics?.freshPublicKeyFetchAttempted).toBe(false);
+        expect(result.diagnostics?.freshPublicKeyFetchSucceeded).toBe(false);
+        expect(result.diagnostics?.freshPublicKeyMatchesUsedKey).toBe(false);
+        // Solo 1 llamada a /public_key/ en total: ninguna recarga innecesaria.
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(1);
+        expect(fetchMock).toHaveBeenCalledTimes(2); // 1 token + 1 clave, nunca más
+      });
+
+      it("ausencia absoluta de datos sensibles: ni siquiera con la recarga forzada activa y una clave distinta se registra kid, firma, clave o payload", async () => {
+        const kid = "kid-binding-no-datos-sensibles-muy-especifico";
+        const credentials = freshCredentials();
+        mockFetchSequence({ keyResponseSequence: [{ status: 200, body: { key: ecPublicKey } }, { status: 200, body: { key: otherEcPublicKey } }] });
+
+        const bodyA = JSON.stringify({
+          metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+          notification: { notificationId: "n-binding-secreto-a", data: { username: "usuario-binding-secreto", eiasToken: "TOKEN-BINDING-SECRETO" } },
+        });
+        const resultA = await verifyEbaySignature({ rawBody: bodyA, signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)), oauthCredentials: credentials });
+        expect(resultA).toEqual({ verified: true });
+
+        const bodyB = JSON.stringify({
+          metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+          notification: { notificationId: "n-binding-secreto-b", data: { username: "otro-usuario-binding-secreto", eiasToken: "OTRO-TOKEN-BINDING-SECRETO" } },
+        });
+        const resultB = await verifyEbaySignature({ rawBody: bodyB, signatureHeader: buildSignatureHeader(kid, signBody(bodyB, otherEcPrivateKey)), oauthCredentials: credentials });
+
+        expect(resultB.verified).toBe(false);
+        if (resultB.verified) return;
+        expect(resultB.diagnostics?.freshPublicKeyMatchesUsedKey).toBe(false); // confirma que de verdad se activó la comparación
+
+        const serialized = JSON.stringify(resultB.diagnostics);
+        expect(serialized).not.toContain(kid);
+        expect(serialized).not.toContain("usuario-binding-secreto");
+        expect(serialized).not.toContain("otro-usuario-binding-secreto");
+        expect(serialized).not.toContain("TOKEN-BINDING-SECRETO");
+        expect(serialized).not.toContain("OTRO-TOKEN-BINDING-SECRETO");
+        expect(serialized).not.toContain("n-binding-secreto-a");
+        expect(serialized).not.toContain("n-binding-secreto-b");
+        expect(serialized).not.toContain(ecPublicKey);
+        expect(serialized).not.toContain(otherEcPublicKey);
+        expect(serialized).not.toContain(credentials.clientSecret);
       });
     });
 

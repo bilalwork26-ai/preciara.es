@@ -88,6 +88,28 @@
  * `sha256CanonicalBodyMatched`). Esta rama sigue devolviendo
  * `signature_mismatch`/412 aunque SHA-256 coincida — es pura
  * instrumentación, no una segunda vía de aceptación.
+ *
+ * Vinculación kid→clave (rama `diagnose/ebay-public-key-binding`): con SHA-1
+ * y SHA-256 ya descartados para ambas representaciones, se auditó línea por
+ * línea el recorrido `kid` -> URL de `getPublicKey` -> respuesta -> `normalizeEbayPublicKey`
+ * -> `publicKeyCache` -> clave usada. No se encontró ningún error estático
+ * demostrable: `kid` se decodifica una sola vez del header y se usa tal
+ * cual (nunca se vuelve a decodificar); `encodeURIComponent(kid)` se aplica
+ * exactamente una vez, solo para construir la URL; la caché es un
+ * `Map<string, CachedValue<string>>` indexada por ese mismo `kid` (nunca una
+ * clave global ni un slot compartido); el campo leído de la respuesta es
+ * `data.key`, el mismo que usa el SDK oficial. Como no hay causa estática
+ * demostrable, se añade en su lugar una instrumentación diagnóstica que
+ * SOLO se ejecuta tras un `signature_mismatch` real cuyo intento usó una
+ * clave de caché: como máximo UNA recarga forzada por `kid` y por proceso
+ * cada hora (ver `forcedRefetchAttemptedAt`), ignorando la caché, para
+ * comparar en memoria (por DER exportado, nunca por hash/huella) si la
+ * clave fresca de red coincide con la usada, y si no coincide, probar SHA-1
+ * (el único algoritmo de aceptación real) contra esa clave fresca — TODO
+ * ello puramente informativo: el resultado nunca puede producir
+ * `verified: true` ni cambiar el 412, porque esta instrumentación solo
+ * rellena `diagnostics` sobre un `signature_mismatch` que el llamador ya
+ * decidió antes de invocarla.
  */
 import { createPublicKey, createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
@@ -198,11 +220,15 @@ async function fetchApplicationAccessToken(credentials: EbayOAuthCredentials): P
   return accessToken;
 }
 
-async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<string> {
-  const now = Date.now();
-  const cached = publicKeyCache.get(kid);
-  if (isFresh(cached, now)) return cached.value;
-
+/**
+ * Pide y normaliza la clave pública de `kid` DIRECTAMENTE de la API de
+ * eBay, sin consultar ni escribir `publicKeyCache` en absoluto (por eso la
+ * usa también la recarga forzada de diagnóstico — "ignorando la caché",
+ * ver comentario de cabecera del fichero). El acceso a `kid` es idéntico
+ * al del resto del fichero: `encodeURIComponent(kid)` se aplica una única
+ * vez, solo para construir la URL, nunca se decodifica de vuelta.
+ */
+async function fetchAndNormalizePublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<string> {
   // Puede lanzar EbayFetchError con reason "oauth_http_error"/"oauth_invalid_response":
   // se deja propagar tal cual, sin envolverlo en un motivo distinto.
   const accessToken = await fetchApplicationAccessToken(credentials);
@@ -233,18 +259,43 @@ async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): P
     throw new EbayFetchError("public_key_invalid_response", 'La respuesta de la clave pública de eBay no incluye "key".');
   }
 
-  let pem: string;
   try {
-    pem = normalizeEbayPublicKey(key);
+    return normalizeEbayPublicKey(key);
   } catch (error) {
     if (error instanceof EbayPublicKeyFormatError) {
       throw new EbayFetchError("public_key_normalization_error", error.message, undefined, error.nodeErrorCode);
     }
     throw error;
   }
+}
 
+/** Resultado de `fetchPublicKey`: la clave pública normalizada, y si vino del caché (por `kid`, ver `publicKeyCache`) o de una llamada de red fresca. */
+type FetchedPublicKey = { pem: string; cacheHit: boolean };
+
+async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<FetchedPublicKey> {
+  const now = Date.now();
+  const cached = publicKeyCache.get(kid);
+  if (isFresh(cached, now)) return { pem: cached.value, cacheHit: true };
+
+  const pem = await fetchAndNormalizePublicKey(kid, credentials);
   publicKeyCache.set(kid, { value: pem, expiresAt: now + PUBLIC_KEY_CACHE_TTL_MS });
-  return pem;
+  return { pem, cacheHit: false };
+}
+
+/**
+ * Rate-limit de la recarga forzada de diagnóstico (punto 3): como máximo
+ * UNA recarga forzada por `kid` y por proceso cada hora — nunca decide el
+ * resultado de verificación, solo evita repetir llamadas a la API pública
+ * de eBay en investigaciones sucesivas del mismo `signature_mismatch`.
+ * Caché en memoria del proceso, igual que las demás — se pierde al
+ * reiniciar, lo cual es correcto (no debe persistir).
+ */
+const FORCED_REFETCH_RATE_LIMIT_MS = 60 * 60 * 1000;
+const forcedRefetchAttemptedAt = new Map<string, number>();
+
+function canAttemptForcedRefetch(kid: string, now: number): boolean {
+  const last = forcedRefetchAttemptedAt.get(kid);
+  return last === undefined || now - last >= FORCED_REFETCH_RATE_LIMIT_MS;
 }
 
 function extractNodeErrorCode(error: unknown): string | undefined {
@@ -298,6 +349,18 @@ export type SignatureMismatchDiagnostics = {
   sha256RawBodyMatched: boolean;
   /** DIAGNÓSTICO ÚNICAMENTE — igual que `sha256RawBodyMatched`, pero contra la representación canónica `JSON.stringify(JSON.parse(rawBody))`. `false` si esa representación ni siquiera se pudo construir (JSON inválido). */
   sha256CanonicalBodyMatched: boolean;
+  /** Si la clave usada para verificar vino del caché en memoria (indexado por `kid`) en vez de una llamada de red fresca en esta misma petición. */
+  publicKeyCacheHit: boolean;
+  /** Si se intentó una recarga forzada (ignorando el caché) de la clave pública, solo con fines de diagnóstico. Siempre `false` cuando `publicKeyCacheHit` es `false` (la clave ya venía fresca) o cuando ya se agotó el límite de una recarga forzada por `kid` y por proceso cada hora. */
+  freshPublicKeyFetchAttempted: boolean;
+  /** Si esa recarga forzada (cuando se intentó) obtuvo y normalizó una clave con éxito. */
+  freshPublicKeyFetchSucceeded: boolean;
+  /** Si la clave fresca (cuando se obtuvo con éxito) es, byte a byte por su DER exportado, la MISMA que la clave que se usó para verificar — nunca se registra el DER, un hash ni ninguna huella, solo esta igualdad. */
+  freshPublicKeyMatchesUsedKey: boolean;
+  /** DIAGNÓSTICO ÚNICAMENTE, solo poblado cuando la clave fresca es DISTINTA de la usada: si SHA-1 (el único algoritmo de aceptación real) habría verificado con la clave fresca contra el cuerpo bruto. */
+  freshPublicKeyRawBodyMatched: boolean;
+  /** DIAGNÓSTICO ÚNICAMENTE — igual que `freshPublicKeyRawBodyMatched`, pero contra la representación canónica. */
+  freshPublicKeyCanonicalBodyMatched: boolean;
 };
 
 function containsIntegerLikeKeys(value: unknown, seen: Set<unknown> = new Set()): boolean {
@@ -317,7 +380,14 @@ function containsIntegerLikeKeys(value: unknown, seen: Set<unknown> = new Set())
 /** Literal numérico JSON (no dentro de una cadena) de 16 o más dígitos — umbral de posible pérdida de precisión IEEE-754 en JSON.parse. */
 const LARGE_INTEGER_LITERAL_PATTERN = /[:,[]\s*-?\d{16,}(?:\.\d+)?\s*(?=[,}\]])/;
 
-function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: string, publicKeyPem: string): SignatureMismatchDiagnostics {
+async function buildSignatureMismatchDiagnostics(
+  rawBody: string,
+  signatureBase64: string,
+  publicKeyPem: string,
+  publicKeyCacheHit: boolean,
+  kid: string,
+  credentials: EbayOAuthCredentials
+): Promise<SignatureMismatchDiagnostics> {
   let rawBodyIsValidJson = false;
   let canonicalBody: string | undefined;
   let containsIntegerLike = false;
@@ -361,6 +431,52 @@ function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: str
   const sha256CanonicalAttempt = canonicalBody !== undefined ? attemptVerify(canonicalBody, publicKeyPem, signatureBase64, DIAGNOSTIC_ONLY_SHA256_DIGEST) : undefined;
   const sha256CanonicalBodyMatched = sha256CanonicalAttempt !== undefined && !sha256CanonicalAttempt.threw && sha256CanonicalAttempt.matched;
 
+  // Punto 3/7: SOLO si la clave usada procedía de caché (si ya vino fresca
+  // de red en esta misma petición, una segunda llamada sería innecesaria)
+  // Y no se ha agotado ya el límite de una recarga forzada por `kid` y por
+  // proceso cada hora, se intenta esa recarga — siempre ignorando
+  // `publicKeyCache` (`fetchAndNormalizePublicKey` no la toca).
+  let freshPublicKeyFetchAttempted = false;
+  let freshPublicKeyFetchSucceeded = false;
+  let freshPublicKeyMatchesUsedKey = false;
+  let freshPublicKeyRawBodyMatched = false;
+  let freshPublicKeyCanonicalBodyMatched = false;
+
+  const now = Date.now();
+  if (publicKeyCacheHit && canAttemptForcedRefetch(kid, now)) {
+    freshPublicKeyFetchAttempted = true;
+    forcedRefetchAttemptedAt.set(kid, now);
+    try {
+      const freshPem = await fetchAndNormalizePublicKey(kid, credentials);
+      freshPublicKeyFetchSucceeded = true;
+
+      // Punto 4: comparación EN MEMORIA por DER exportado — se registra
+      // ÚNICAMENTE el booleano de igualdad, nunca el DER, un hash ni
+      // ninguna huella de ninguna de las dos claves.
+      const usedDer = createPublicKey(publicKeyPem).export({ type: "spki", format: "der" });
+      const freshDer = createPublicKey(freshPem).export({ type: "spki", format: "der" });
+      freshPublicKeyMatchesUsedKey = usedDer.equals(freshDer);
+
+      if (!freshPublicKeyMatchesUsedKey) {
+        // Punto 5: la clave fresca es distinta de la usada -> se prueba
+        // SHA-1 (el único algoritmo de aceptación real, ver
+        // `SIGNATURE_DIGEST`) contra ambas representaciones, SOLO como
+        // diagnóstico: el `verified: false` de `signature_mismatch` ya lo
+        // fijó el llamador antes de invocar esta función (punto 6).
+        const freshRawAttempt = attemptVerify(rawBody, freshPem, signatureBase64);
+        freshPublicKeyRawBodyMatched = !freshRawAttempt.threw && freshRawAttempt.matched;
+
+        const freshCanonicalAttempt = canonicalBody !== undefined ? attemptVerify(canonicalBody, freshPem, signatureBase64) : undefined;
+        freshPublicKeyCanonicalBodyMatched = freshCanonicalAttempt !== undefined && !freshCanonicalAttempt.threw && freshCanonicalAttempt.matched;
+      }
+    } catch {
+      // Fallo al recargar (red, formato de la clave, OAuth...):
+      // `freshPublicKeyFetchSucceeded` queda en `false`. Nunca se registra
+      // el motivo — ya está cubierto, sin exponer nada sensible, por el
+      // camino normal de `fetchPublicKey`/`EbayFetchError`.
+    }
+  }
+
   return {
     rawBodyLength: rawBody.length,
     rawBodyIsValidJson,
@@ -373,6 +489,12 @@ function buildSignatureMismatchDiagnostics(rawBody: string, signatureBase64: str
     publicKeyCurve,
     sha256RawBodyMatched,
     sha256CanonicalBodyMatched,
+    publicKeyCacheHit,
+    freshPublicKeyFetchAttempted,
+    freshPublicKeyFetchSucceeded,
+    freshPublicKeyMatchesUsedKey,
+    freshPublicKeyRawBodyMatched,
+    freshPublicKeyCanonicalBodyMatched,
   };
 }
 
@@ -429,8 +551,11 @@ export async function verifyEbaySignature(params: {
   if (!oauthCredentials) return { verified: false, reason: "oauth_not_configured" };
 
   let publicKeyPem: string;
+  let publicKeyCacheHit: boolean;
   try {
-    publicKeyPem = await fetchPublicKey(parsed.kid, oauthCredentials);
+    const fetched = await fetchPublicKey(parsed.kid, oauthCredentials);
+    publicKeyPem = fetched.pem;
+    publicKeyCacheHit = fetched.cacheHit;
   } catch (error) {
     if (error instanceof EbayFetchError) {
       return {
@@ -471,5 +596,9 @@ export async function verifyEbaySignature(params: {
     if (canonicalAttempt.matched) return { verified: true };
   }
 
-  return { verified: false, reason: "signature_mismatch", diagnostics: buildSignatureMismatchDiagnostics(rawBody, parsed.signature, publicKeyPem) };
+  return {
+    verified: false,
+    reason: "signature_mismatch",
+    diagnostics: await buildSignatureMismatchDiagnostics(rawBody, parsed.signature, publicKeyPem, publicKeyCacheHit, parsed.kid, oauthCredentials),
+  };
 }
