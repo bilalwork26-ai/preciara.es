@@ -42,8 +42,14 @@ jobs:
           MARIADB_DATABASE: preciara_ci
         ports:
           - 3306:3306
+        # `healthcheck.sh` es el script oficial incluido en la imagen
+        # (docker-library/mariadb), pensado precisamente para este caso: usa
+        # el socket local y espera a que InnoDB esté completamente
+        # inicializado, evitando el falso "unhealthy" del arranque en dos
+        # fases (servidor temporal de inicialización -> servidor real) que
+        # `mysqladmin ping` por TCP puede confundir con un fallo real.
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root_password --silent"
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=15
