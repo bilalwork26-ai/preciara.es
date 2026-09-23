@@ -5,14 +5,14 @@
  * un número pequeño y fijo de consultas (hoy: 4), nunca una por
  * componente ni una por producto.
  */
-import { demoCategories } from "@/data/demo/categories";
 import { demoDealsGrid, demoFeaturedProduct } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
-import { getActiveCategories } from "@/server/repositories/categories";
+import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers, getProductBySlug } from "@/server/repositories/products";
 import { getPriceHistoryForOffer } from "@/server/repositories/priceHistory";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
+import { getDemoCategoriesWithProductCounts } from "./category";
 import { extractMerchants, toLegacyCategory, toLegacyProduct, toPricePoint } from "./transform";
 
 /**
@@ -31,13 +31,37 @@ const FEATURED_PRODUCT_SLUG = "auriculares-inalambricos-pro";
  */
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
 
-export async function getHomeCategories(): Promise<SourcedResult<Category[]>> {
-  return resolveWithFallback({
+/** Máximo de categorías que la portada muestra en escritorio (ver CategoryRow). */
+export const HOME_CATEGORIES_LIMIT = 8;
+
+export type HomeCategoriesBundle = {
+  categories: Category[];
+  /** true si hay más categorías con ofertas activas que las mostradas aquí (activa el enlace "Ver todas"). */
+  hasMore: boolean;
+};
+
+export async function getHomeCategories(): Promise<SourcedResult<HomeCategoriesBundle>> {
+  return resolveWithFallback<HomeCategoriesBundle>({
     fetchFromDb: async () => {
-      const rows = await getActiveCategories();
-      return rows ? rows.map(toLegacyCategory) : null;
+      const rows = await getActiveCategoriesWithOfferCounts();
+      if (!rows) return null;
+      return {
+        categories: rows.slice(0, HOME_CATEGORIES_LIMIT).map(toLegacyCategory),
+        hasMore: rows.length > HOME_CATEGORIES_LIMIT,
+      };
     },
-    demoFallback: demoCategories,
+    demoFallback: (() => {
+      // Solo categorías demo con al menos un producto demo real: las que no
+      // tienen ninguno (ver getDemoCategoriesWithProductCounts) enlazarían a
+      // un `/categoria/[slug]` que responde 404 — nunca se navega hacia una
+      // ruta que no existe de verdad.
+      const demoCategoriesWithProducts = getDemoCategoriesWithProductCounts();
+      return {
+        categories: demoCategoriesWithProducts.slice(0, HOME_CATEGORIES_LIMIT),
+        hasMore: demoCategoriesWithProducts.length > HOME_CATEGORIES_LIMIT,
+      };
+    })(),
+    isSufficient: (bundle) => bundle.categories.length > 0,
   });
 }
 

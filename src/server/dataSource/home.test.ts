@@ -36,7 +36,20 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     const { getHomeCategories: fn } = await import("./home");
     const { source, data } = await fn();
     expect(source).toBe("demo");
-    expect(data.length).toBeGreaterThan(0);
+    expect(data.categories.length).toBeGreaterThan(0);
+  });
+
+  it("getHomeCategories en demo nunca incluye una categoría sin productos demo (evita un enlace de píldora que daría 404 en /categoria/[slug])", async () => {
+    vi.resetModules();
+    delete process.env.DATABASE_URL;
+    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
+    const { getHomeCategories: fn } = await import("./home");
+    const { getCategoryDetail } = await import("./category");
+    const { data } = await fn();
+    for (const category of data.categories) {
+      const detail = await getCategoryDetail(category.slug);
+      expect(detail.status).toBe("found");
+    }
   });
 
   it("getFeaturedBundle responde con demo sin lanzar", async () => {
@@ -70,7 +83,8 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     const result = await getHomeCategories();
     // La BD de pruebas de este entorno ya tiene el seed de demostración cargado.
     expect(result.source === "database" || result.source === "demo").toBe(true);
-    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data.categories.length).toBeGreaterThan(0);
+    expect(result.data.categories.length).toBeLessThanOrEqual(8);
   });
 
   it("una categoría inactiva no aparece en el resultado de BD", async () => {

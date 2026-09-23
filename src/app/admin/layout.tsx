@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: "/admin/comercios", label: "Comercios" },
   { href: "/admin/ofertas", label: "Ofertas" },
   { href: "/admin/importaciones", label: "Importaciones" },
+  { href: "/admin/sincronizacion", label: "Sincronización" },
   { href: "/admin/errores", label: "Errores" },
   { href: "/admin/importar", label: "Importar CSV" },
 ];

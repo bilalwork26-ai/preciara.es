@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { BrandCarousel } from "@/components/home/BrandCarousel";
 import { PromoBannerMain } from "@/components/home/PromoBannerMain";
 import { PromoBannerSecondary } from "@/components/home/PromoBannerSecondary";
@@ -7,6 +8,27 @@ import { ComparisonPanel } from "@/components/home/ComparisonPanel";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
 import { getDealsGridBundle, getFeaturedBundle, getHomeCategories } from "@/server/dataSource/home";
+import { SITE_URL } from "@/lib/seo";
+import { serializeJsonLd } from "@/lib/jsonLd";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+// /buscar existe de verdad (src/app/(site)/buscar/page.tsx acepta ?q=): la
+// acción de búsqueda del JSON-LD solo se declara porque esa URL es real,
+// nunca como una promesa de una funcionalidad que no existe.
+const websiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Preciara",
+  url: SITE_URL,
+  potentialAction: {
+    "@type": "SearchAction",
+    target: `${SITE_URL}/buscar?q={search_term_string}`,
+    "query-input": "required name=search_term_string",
+  },
+};
 
 /**
  * Sin esto, Next intentaría prerenderizar la portada como HTML estático en
@@ -34,6 +56,8 @@ export default async function Home() {
 
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteJsonLd) }} />
+
       <BrandCarousel />
 
       <Container className="pb-8 pt-4 sm:pt-5">
@@ -43,7 +67,7 @@ export default async function Home() {
         </div>
 
         <div id="categorias" className="mt-5 scroll-mt-24">
-          <CategoryRow categories={categories.data} />
+          <CategoryRow categories={categories.data.categories} viewAllHref={categories.data.hasMore ? "/categorias" : undefined} />
         </div>
 
         <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">

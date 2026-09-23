@@ -1,0 +1,126 @@
+name: CI
+
+# Valida cada pull request hacia `main` y cada push a `main`: instala
+# dependencias, levanta una base de datos MariaDB efímera y sintética
+# (nunca la de producción), aplica el esquema, y ejecuta exactamente las
+# mismas comprobaciones que se piden antes de subir cambios a mano (ver
+# README, sección "Desarrollo local"). No despliega nada, no ejecuta el
+# seed de demostración y no escribe en ningún servicio externo.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancela cualquier ejecución anterior todavía en curso de la MISMA rama:
+# un nuevo push la deja obsoleta, así que no tiene sentido seguir gastando
+# minutos de CI en ella.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Permisos mínimos: este workflow solo necesita leer el repositorio (clonar
+# el código). No publica comentarios, no crea releases, no escribe paquetes.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verificación (tipos, lint, pruebas, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # MariaDB efímera, exclusiva de este job: se crea y se destruye con
+      # él. Las credenciales de abajo son sintéticas, fijas y sin ningún
+      # valor fuera de este workflow — nunca son las de Hostinger.
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: ci_root_password
+          MARIADB_DATABASE: preciara_ci
+        ports:
+          - 3306:3306
+        # `healthcheck.sh` es el script oficial incluido en la imagen
+        # (docker-library/mariadb), pensado precisamente para este caso: usa
+        # el socket local y espera a que InnoDB esté completamente
+        # inicializado, evitando el falso "unhealthy" del arranque en dos
+        # fases (servidor temporal de inicialización -> servidor real) que
+        # `mysqladmin ping` por TCP puede confundir con un fallo real.
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=15
+
+    env:
+      # Sintética y exclusiva de este job — nunca apunta a Hostinger ni a
+      # ningún servicio real. Ver services.mariadb más arriba.
+      DATABASE_URL: mysql://root:ci_root_password@127.0.0.1:3306/preciara_ci
+      NEXT_PUBLIC_SITE_URL: https://preciara.es
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Instalar dependencias (npm ci)
+        run: npm ci
+
+      - name: Esperar activamente a que MariaDB acepte conexiones
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -pci_root_password --silent 2>/dev/null; then
+              echo "MariaDB lista tras $i intento(s)."
+              exit 0
+            fi
+            echo "Esperando a MariaDB... intento $i/30"
+            sleep 2
+          done
+          echo "MariaDB no respondió a tiempo." >&2
+          exit 1
+
+      # Mecanismo seguro ya usado por el repositorio (scripts/build-migrate.ts,
+      # que ejecuta este mismo comando dentro de `npm run build`): solo
+      # aplica migraciones ya commiteadas en prisma/migrations/, nunca
+      # `db push`, `migrate reset` ni `--force-reset`. Se ejecuta aquí de
+      # forma explícita para que las pruebas de integración de más abajo ya
+      # encuentren el esquema aplicado.
+      - name: Aplicar migraciones (prisma migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      - name: Generar tipos de rutas de Next.js (next typegen)
+        run: npx next typegen
+
+      - name: Comprobación de tipos (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      # Nunca ejecuta `prisma db seed`: el catálogo de demostración no debe
+      # cargarse en esta base de datos sintética, solo el esquema.
+      - name: Pruebas (Vitest)
+        run: npx vitest run
+
+      # Umbral "high": nunca oculta vulnerabilidades altas o críticas: el
+      # job falla si aparece alguna. Las de severidad baja/moderada no
+      # bloquean el pipeline por sí solas.
+      - name: Auditoría de dependencias (npm audit)
+        run: npm audit --audit-level=high
+
+      # Incluye internamente `prisma migrate deploy` (ver
+      # scripts/build-migrate.ts): con las migraciones ya al día por el paso
+      # de arriba, esta segunda pasada no tiene nada pendiente que aplicar.
+      # No hace ningún despliegue: solo compila.
+      - name: Build de producción
+        run: npm run build
