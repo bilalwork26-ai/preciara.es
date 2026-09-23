@@ -1,5 +1,7 @@
 import { prisma, isDatabaseConfigured } from "@/server/db/client";
 import { Prisma, type PrismaClient } from "@/generated/prisma";
+import { isUniqueConstraintViolationOn } from "@/server/db/prismaErrors";
+import { normalizeGtinOrNull } from "@/server/catalogSync/gtin";
 import { parseCsv, csvRowsToRecords } from "./csv";
 import { validateRow, RowValidationError, type NormalizedOfferRow } from "./validate";
 
@@ -244,6 +246,19 @@ async function applyRow(
     imageUrl: row.imageUrl,
     categoryId,
   };
+  // `ean` es texto libre sin validar (comportamiento histórico, sin
+  // cambios); cuando SÍ resulta ser un GTIN válido, se refleja también en
+  // `canonicalGtin` — la clave real de coincidencia entre fuentes (ver
+  // src/server/catalogSync/applyOffer.ts) — para que un producto creado por
+  // el CSV se reconozca correctamente cuando más tarde llegue una oferta
+  // Awin/eBay con el mismo GTIN, en vez de duplicarlo. Nunca sobrescribe un
+  // `canonicalGtin` ya establecido (backfill-only, igual que en el núcleo
+  // de sincronización), y si el GTIN ya pertenece a OTRO producto, el
+  // conflicto se detecta (P2002) y se descarta sin fusionar ni bloquear la
+  // fila: el producto se crea/actualiza igual que siempre, solo sin ese
+  // enlace — una sincronización o el script de backfill podrán resolverlo
+  // más tarde de forma segura.
+  const normalizedGtin = normalizeGtinOrNull(row.ean);
   let productId: number;
   let productOutcome: RowOutcome["product"];
   if (dryRun) {
@@ -251,21 +266,51 @@ async function applyRow(
     productOutcome = existingProduct ? "updated" : "created";
   } else if (existingProduct) {
     productId = existingProduct.id;
-    await db.product.update({
-      where: { id: existingProduct.id },
-      data: { ...productData, isDemo: resolveIsDemo(existingProduct.isDemo, row.isDemo) },
-    });
+    const canonicalGtin = existingProduct.canonicalGtin ?? normalizedGtin;
+    try {
+      await db.product.update({
+        where: { id: existingProduct.id },
+        data: { ...productData, canonicalGtin, isDemo: resolveIsDemo(existingProduct.isDemo, row.isDemo) },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintViolationOn(error, "canonicalGtin")) throw error;
+      console.warn(
+        `[importer] El GTIN "${normalizedGtin}" de la fila (product_slug="${row.productSlug}") ya pertenece a otro producto: se actualiza todo lo demás, pero no se enlaza (sin fusionar ni borrar nada).`
+      );
+      await db.product.update({
+        where: { id: existingProduct.id },
+        data: { ...productData, isDemo: resolveIsDemo(existingProduct.isDemo, row.isDemo) },
+      });
+    }
     productOutcome = "updated";
   } else {
-    productId = (await db.product.create({ data: { slug: row.productSlug, ...productData, isDemo: row.isDemo } })).id;
+    try {
+      productId = (
+        await db.product.create({ data: { slug: row.productSlug, ...productData, canonicalGtin: normalizedGtin, isDemo: row.isDemo } })
+      ).id;
+    } catch (error) {
+      if (!isUniqueConstraintViolationOn(error, "canonicalGtin")) throw error;
+      console.warn(
+        `[importer] El GTIN "${normalizedGtin}" de la fila (product_slug="${row.productSlug}") ya pertenece a otro producto: se crea igualmente, pero sin enlazar (sin fusionar ni borrar nada).`
+      );
+      productId = (await db.product.create({ data: { slug: row.productSlug, ...productData, isDemo: row.isDemo } })).id;
+    }
     productOutcome = "created";
   }
 
-  const existingOffer = dryRun
-    ? existingProduct && existingMerchant
-      ? await db.offer.findUnique({ where: { productId_merchantId: { productId, merchantId } } })
-      : null
-    : await db.offer.findUnique({ where: { productId_merchantId: { productId, merchantId } } });
+  // La identidad estable de una oferta es (fuente, comercio, id externo),
+  // no (producto, comercio) — ver el núcleo de sincronización de catálogos
+  // en src/server/catalogSync/*. El importador CSV sigue localizando la
+  // oferta exactamente como antes cuando la fila no trae
+  // "external_offer_id" (por producto + comercio, con id externo ausente);
+  // cuando sí lo trae, lo usa como identidad — más preciso que antes (ya se
+  // guardaba el dato, pero nunca se usaba para encontrar la oferta) y sin
+  // cambiar el resultado para las filas que ya se importaban sin él.
+  const existingOfferLookup = row.externalId
+    ? { source: "CSV" as const, merchantId, externalId: row.externalId }
+    : { source: "CSV" as const, merchantId, productId, externalId: null };
+  const existingOffer =
+    dryRun && !(existingProduct && existingMerchant) ? null : await db.offer.findFirst({ where: existingOfferLookup });
 
   const offerData = {
     externalId: row.externalId,
@@ -293,7 +338,9 @@ async function applyRow(
     });
     offerOutcome = "updated";
   } else {
-    offerId = (await db.offer.create({ data: { productId, merchantId, ...offerData, isDemo: row.isDemo } })).id;
+    offerId = (
+      await db.offer.create({ data: { productId, merchantId, source: "CSV", ...offerData, isDemo: row.isDemo } })
+    ).id;
     offerOutcome = "created";
   }
 

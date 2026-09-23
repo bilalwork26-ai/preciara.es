@@ -17,6 +17,8 @@
     "db:migrate:status": "prisma migrate status",
     "db:seed": "prisma db seed",
     "db:import": "tsx scripts/import-csv.ts",
+    "catalog:sync:awin": "tsx scripts/sync-awin.ts",
+    "db:backfill-canonical-gtin": "tsx scripts/backfill-canonical-gtin.ts",
     "db:check": "tsx scripts/db-check.ts",
     "db:prepare": "tsx scripts/db-prepare.ts"
   },

@@ -26,18 +26,26 @@ describe.skipIf(!process.env.DATABASE_URL)("repositorios: conversión BD -> obje
       update: {},
       create: { slug: `${PREFIX}-product`, name: "Producto conversión", categoryId: category.id },
     });
-    const offer = await prisma!.offer.upsert({
-      where: { productId_merchantId: { productId: product.id, merchantId: merchant.id } },
-      update: { currentPrice: 42.5 },
-      create: {
-        productId: product.id,
-        merchantId: merchant.id,
-        currentPrice: 42.5,
-        productUrl: "https://example.invalid/p",
-        availability: "IN_STOCK",
-        lastCheckedAt: new Date(),
-      },
+    // La identidad única de una oferta ya no es (producto, comercio) sino
+    // (fuente, comercio, id externo) — ver el núcleo de sincronización de
+    // catálogos. Aquí no hay id externo, así que se localiza como hace el
+    // importador CSV histórico: por producto + comercio + fuente CSV.
+    const existingOffer = await prisma!.offer.findFirst({
+      where: { productId: product.id, merchantId: merchant.id, source: "CSV", externalId: null },
     });
+    const offer = existingOffer
+      ? await prisma!.offer.update({ where: { id: existingOffer.id }, data: { currentPrice: 42.5 } })
+      : await prisma!.offer.create({
+          data: {
+            productId: product.id,
+            merchantId: merchant.id,
+            source: "CSV",
+            currentPrice: 42.5,
+            productUrl: "https://example.invalid/p",
+            availability: "IN_STOCK",
+            lastCheckedAt: new Date(),
+          },
+        });
     offerId = offer.id;
     await prisma!.priceSnapshot.create({ data: { offerId, price: 42.5, availability: "IN_STOCK" } });
   });

@@ -19,9 +19,7 @@ import { randomUUID } from "node:crypto";
 import { prisma, isDatabaseConfigured } from "../src/server/db/client";
 import { runCsvImport, ImportSetupError } from "../src/server/importer/run";
 import { deactivateStaleOffers, getOfferStaleAfterHours } from "../src/server/importer/staleOffers";
-
-const LOCK_NAME = "preciara_csv_import";
-const LOCK_WAIT_SECONDS = 5;
+import { acquireDistributedLock, releaseDistributedLock, CSV_IMPORT_LOCK_NAME } from "../src/server/importer/distributedLock";
 
 type LogEvent = Record<string, unknown> & { level: "info" | "warn" | "error"; event: string };
 
@@ -30,16 +28,11 @@ function log(entry: LogEvent) {
 }
 
 async function acquireLock(): Promise<boolean> {
-  if (!prisma) return false;
-  const rows = await prisma.$queryRawUnsafe<{ acquired: number }[]>(
-    `SELECT GET_LOCK('${LOCK_NAME}', ${LOCK_WAIT_SECONDS}) as acquired`
-  );
-  return rows[0]?.acquired === 1;
+  return acquireDistributedLock(CSV_IMPORT_LOCK_NAME);
 }
 
 async function releaseLock(): Promise<void> {
-  if (!prisma) return;
-  await prisma.$queryRawUnsafe(`SELECT RELEASE_LOCK('${LOCK_NAME}')`);
+  return releaseDistributedLock(CSV_IMPORT_LOCK_NAME);
 }
 
 function parseArgs(argv: string[]) {

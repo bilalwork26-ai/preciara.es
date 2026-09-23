@@ -33,7 +33,7 @@ export default async function AdminMerchantsPage() {
                   <p className="font-medium text-navy-900">{m.name}</p>
                   <p className="text-xs text-navy-300">{m.slug}</p>
                 </td>
-                <td className="max-w-[240px] truncate px-4 py-3 text-navy-700">{m.websiteUrl}</td>
+                <td className="max-w-[240px] truncate px-4 py-3 text-navy-700">{m.websiteUrl ?? <span className="text-navy-300">Sin web</span>}</td>
                 <td className="px-4 py-3 text-navy-700">{m.offerCount}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">

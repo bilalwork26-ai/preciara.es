@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { runCsvImport } from "./run";
 import { prisma } from "@/server/db/client";
+import { OfferSource } from "@/generated/prisma";
+import { applyNormalizedOfferRow } from "@/server/catalogSync/applyOffer";
+import type { NormalizedOfferRow as CatalogSyncOfferRow } from "@/server/catalogSync/types";
 
 const HEADER =
   "category_slug,category_name,product_slug,product_name,brand,model,ean,image_url,merchant_slug,merchant_name,merchant_url,external_offer_id,price,previous_price,currency,availability,shipping_cost,product_url,affiliate_url,last_checked_at,is_demo";
@@ -192,7 +195,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport (integración, BD local
   it("una importación real (is_demo=false) crea producto, comercio y oferta marcados isDemo=false", async () => {
     const product = await prisma!.product.findUnique({ where: { slug: PRODUCT } });
     const merchant = await prisma!.merchant.findUnique({ where: { slug: MERCHANT_A } });
-    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    const offer = await prisma!.offer.findFirst({ where: { productId: product!.id, merchantId: merchant!.id, source: "CSV", externalId: null } });
     expect(product!.isDemo).toBe(false);
     expect(merchant!.isDemo).toBe(false);
     expect(offer!.isDemo).toBe(false);
@@ -234,7 +237,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: is_demo (integración,
 
     const product = await prisma!.product.findUnique({ where: { slug: DEMO_PRODUCT } });
     const merchant = await prisma!.merchant.findUnique({ where: { slug: DEMO_MERCHANT } });
-    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    const offer = await prisma!.offer.findFirst({ where: { productId: product!.id, merchantId: merchant!.id, source: "CSV", externalId: null } });
     expect(product!.isDemo).toBe(true);
     expect(merchant!.isDemo).toBe(true);
     expect(offer!.isDemo).toBe(true);
@@ -266,7 +269,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: is_demo (integración,
 
     const product = await prisma!.product.findUnique({ where: { slug: DEMO_PRODUCT } });
     const merchant = await prisma!.merchant.findUnique({ where: { slug: DEMO_MERCHANT } });
-    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    const offer = await prisma!.offer.findFirst({ where: { productId: product!.id, merchantId: merchant!.id, source: "CSV", externalId: null } });
     expect(product!.isDemo).toBe(false);
     expect(merchant!.isDemo).toBe(false);
     expect(offer!.isDemo).toBe(false);
@@ -302,9 +305,130 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: is_demo (integración,
 
     const product = await prisma!.product.findUnique({ where: { slug: upgradeProduct } });
     const merchant = await prisma!.merchant.findUnique({ where: { slug: upgradeMerchant } });
-    const offer = await prisma!.offer.findUnique({ where: { productId_merchantId: { productId: product!.id, merchantId: merchant!.id } } });
+    const offer = await prisma!.offer.findFirst({ where: { productId: product!.id, merchantId: merchant!.id, source: "CSV", externalId: null } });
     expect(product!.isDemo).toBe(false);
     expect(merchant!.isDemo).toBe(false);
     expect(offer!.isDemo).toBe(false);
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: canonicalGtin (bloqueo 2 de la segunda ronda — compatibilidad con EAN histórico)", () => {
+  const GTIN_PREFIX = "test-importer-gtin";
+  const GTIN_CATEGORY = `${GTIN_PREFIX}-categoria`;
+
+  async function cleanupGtin() {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { category: { slug: GTIN_CATEGORY } } });
+    await prisma.merchant.deleteMany({ where: { slug: { startsWith: GTIN_PREFIX } } });
+    await prisma.category.deleteMany({ where: { slug: GTIN_CATEGORY } });
+  }
+
+  beforeAll(cleanupGtin);
+  afterAll(cleanupGtin);
+
+  it("un EAN válido en el CSV se refleja también en canonicalGtin al crear el producto", async () => {
+    const productSlug = `${GTIN_PREFIX}-crea-producto`;
+    const csv = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: `${GTIN_PREFIX}-comercio-crea`, ean: "50000000000005" })}\n`;
+    const summary = await runCsvImport({ csvContent: csv, source: "test-gtin-create" });
+    expect(summary.status).toBe("SUCCESS");
+
+    const product = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(product.ean).toBe("50000000000005");
+    expect(product.canonicalGtin).toBe("50000000000005");
+  });
+
+  it("un EAN inválido nunca rellena canonicalGtin, pero el producto se crea igual (compatibilidad con datos libres/sucios)", async () => {
+    const productSlug = `${GTIN_PREFIX}-invalido-producto`;
+    const csv = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: `${GTIN_PREFIX}-comercio-invalido`, ean: "no-es-un-gtin" })}\n`;
+    const summary = await runCsvImport({ csvContent: csv, source: "test-gtin-invalid" });
+    expect(summary.status).toBe("SUCCESS");
+
+    const product = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(product.ean).toBe("no-es-un-gtin"); // se guarda tal cual, como siempre (compatibilidad histórica)
+    expect(product.canonicalGtin).toBeNull();
+  });
+
+  it("una re-importación que aporta un EAN válido rellena canonicalGtin en un producto que antes no lo tenía (backfill), sin sobrescribir si ya estaba puesto", async () => {
+    const productSlug = `${GTIN_PREFIX}-backfill-producto`;
+    const merchantSlug = `${GTIN_PREFIX}-comercio-backfill`;
+    const sinGtin = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: merchantSlug, ean: "" })}\n`;
+    await runCsvImport({ csvContent: sinGtin, source: "test-gtin-backfill-1" });
+    let product = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(product.canonicalGtin).toBeNull();
+
+    const conGtin = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: merchantSlug, ean: "60000000000002" })}\n`;
+    await runCsvImport({ csvContent: conGtin, source: "test-gtin-backfill-2" });
+    product = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(product.canonicalGtin).toBe("60000000000002");
+
+    // Una tercera fila con OTRO EAN válido nunca sobrescribe el ya establecido.
+    const otroGtin = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: merchantSlug, ean: "70000000000009" })}\n`;
+    await runCsvImport({ csvContent: otroGtin, source: "test-gtin-backfill-3" });
+    product = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(product.canonicalGtin).toBe("60000000000002"); // nunca se sobrescribe
+    expect(product.ean).toBe("70000000000009"); // el ean libre sí se sigue actualizando como siempre (compatibilidad)
+  });
+
+  it("un GTIN ya usado por OTRO producto se detecta como conflicto (P2002) y se omite el enlace, sin fusionar ni bloquear la fila", async () => {
+    const holderSlug = `${GTIN_PREFIX}-conflicto-titular`;
+    const challengerSlug = `${GTIN_PREFIX}-conflicto-retador`;
+    const merchantSlug = `${GTIN_PREFIX}-comercio-conflicto`;
+
+    const holderCsv = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: holderSlug, merchant_slug: `${merchantSlug}-holder`, ean: "70000000000009" })}\n`;
+    await runCsvImport({ csvContent: holderCsv, source: "test-gtin-conflict-holder" });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const challengerCsv = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: challengerSlug, merchant_slug: `${merchantSlug}-challenger`, ean: "70000000000009" })}\n`;
+      const summary = await runCsvImport({ csvContent: challengerCsv, source: "test-gtin-conflict-challenger" });
+      expect(summary.status).toBe("SUCCESS"); // la fila no se rechaza: se crea el producto, solo sin enlazar
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    const holder = await prisma!.product.findUniqueOrThrow({ where: { slug: holderSlug } });
+    const challenger = await prisma!.product.findUniqueOrThrow({ where: { slug: challengerSlug } });
+    expect(holder.canonicalGtin).toBe("70000000000009"); // el titular conserva el enlace
+    expect(challenger.canonicalGtin).toBeNull(); // el retador se crea igual, pero sin enlazar (nunca se fusionan)
+    expect(challenger.ean).toBe("70000000000009"); // el ean libre se guarda de todas formas, como siempre
+  });
+
+  it("un producto creado por el CSV con EAN válido y una oferta AWIN posterior con el mismo GTIN comparten un único Product (dos ofertas, nunca duplica)", async () => {
+    const productSlug = `${GTIN_PREFIX}-interop-producto`;
+    const csvMerchantSlug = `${GTIN_PREFIX}-comercio-interop-csv`;
+    const csv = `${HEADER}\n${row({ category_slug: GTIN_CATEGORY, product_slug: productSlug, merchant_slug: csvMerchantSlug, ean: "80000000000006" })}\n`;
+    await runCsvImport({ csvContent: csv, source: "test-gtin-interop-csv" });
+    const csvProduct = await prisma!.product.findUniqueOrThrow({ where: { slug: productSlug } });
+    expect(csvProduct.canonicalGtin).toBe("80000000000006");
+
+    const awinRow: CatalogSyncOfferRow = {
+      source: OfferSource.AWIN,
+      merchant: { slug: `${GTIN_PREFIX}-comercio-interop-awin`, name: "Comercio Awin interop", websiteUrl: "https://example.invalid" },
+      externalId: `${GTIN_PREFIX}-interop-awin-1`,
+      gtin: "80000000000006",
+      name: "Nombre desde Awin",
+      brand: null,
+      model: null,
+      category: { slug: GTIN_CATEGORY, name: "Categoría de prueba" },
+      imageUrl: null,
+      price: 25,
+      shippingCost: null,
+      currency: "EUR",
+      availability: "IN_STOCK" as never,
+      productUrl: "https://example.invalid/p",
+      affiliateUrl: null,
+      fetchedAt: new Date(),
+    };
+    const outcome = await applyNormalizedOfferRow(prisma!, awinRow, { dryRun: false });
+    expect(outcome.product).toBe("updated"); // reutiliza el producto del CSV, no crea uno nuevo
+
+    const productsWithGtin = await prisma!.product.findMany({ where: { canonicalGtin: "80000000000006" } });
+    expect(productsWithGtin).toHaveLength(1); // un único Product para el GTIN compartido
+    expect(productsWithGtin[0].id).toBe(csvProduct.id);
+
+    const offers = await prisma!.offer.findMany({ where: { productId: csvProduct.id } });
+    expect(offers).toHaveLength(2); // la oferta CSV original + la oferta Awin nueva, ambas en el mismo producto
+    expect(new Set(offers.map((o) => o.source))).toEqual(new Set(["CSV", OfferSource.AWIN]));
   });
 });
