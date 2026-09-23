@@ -81,6 +81,35 @@ describe("proxy (protección de /admin y /api/admin)", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
+  it("protege /admin/sincronizacion igual que el resto del panel: 404 sin auth configurada", async () => {
+    const { proxy } = await freshProxy();
+    const res = proxy(new NextRequest("https://preciara.es/admin/sincronizacion"));
+    expect(res.status).toBe(404);
+  });
+
+  it("redirige /admin/sincronizacion a /admin/login sin sesión", async () => {
+    process.env.ADMIN_PASSWORD = "correcto-horse-battery-staple";
+    process.env.ADMIN_SESSION_SECRET = "un-secreto-distinto-y-largo";
+    const { proxy } = await freshProxy();
+    const res = proxy(new NextRequest("https://preciara.es/admin/sincronizacion"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/admin/login");
+  });
+
+  it("deja pasar /admin/sincronizacion con una cookie de sesión válida", async () => {
+    process.env.ADMIN_PASSWORD = "correcto-horse-battery-staple";
+    process.env.ADMIN_SESSION_SECRET = "un-secreto-distinto-y-largo";
+    const { createSessionToken, ADMIN_SESSION_COOKIE } = await import("./server/admin/auth");
+    const token = createSessionToken()!;
+    const { proxy } = await freshProxy();
+    const request = new NextRequest("https://preciara.es/admin/sincronizacion", {
+      headers: { cookie: `${ADMIN_SESSION_COOKIE}=${token}` },
+    });
+    const res = proxy(request);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+  });
+
   it("rechaza una cookie de sesión inválida en /admin", async () => {
     process.env.ADMIN_PASSWORD = "correcto-horse-battery-staple";
     process.env.ADMIN_SESSION_SECRET = "un-secreto-distinto-y-largo";

@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
 import type { Category } from "@/types";
+import { buildCategoryHref } from "./categoryLinks";
 
-export function CategoryRow({ categories }: { categories: Category[] }) {
+const PILL_FOCUS_CLASSES =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2";
+
+export function CategoryRow({ categories, viewAllHref }: { categories: Category[]; viewAllHref?: string }) {
   const scrollerRef = useRef<HTMLUListElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -45,30 +49,34 @@ export function CategoryRow({ categories }: { categories: Category[] }) {
         aria-label="Categorías"
         tabIndex={0}
       >
-        {categories.map((category, index) => {
+        {categories.map((category) => {
           const Icon = (icons as unknown as Record<string, LucideIcon>)[category.icon] ?? icons.Tag;
-          const isDefaultActive = index === 0;
           return (
             <li key={category.id} className="shrink-0 snap-start">
               <a
-                href={`/buscar?categoria=${category.slug}`}
-                aria-current={isDefaultActive ? "true" : undefined}
-                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium shadow-sm transition-colors ${
-                  isDefaultActive
-                    ? "border-navy-900 bg-navy-900 text-white"
-                    : "border-border bg-white text-navy-700 hover:border-teal-600 hover:text-teal-700"
-                }`}
+                href={buildCategoryHref(category.slug)}
+                aria-label={`Ver ofertas en ${category.name}`}
+                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-border bg-white px-4 py-2.5 text-sm font-medium text-navy-700 shadow-sm transition-colors hover:border-teal-600 hover:text-teal-700 ${PILL_FOCUS_CLASSES}`}
               >
-                <Icon
-                  className={`h-4 w-4 ${isDefaultActive ? "text-crystal" : "text-teal-600"}`}
-                  aria-hidden="true"
-                  strokeWidth={1.75}
-                />
+                <Icon className="h-4 w-4 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
                 {category.name}
               </a>
             </li>
           );
         })}
+
+        {viewAllHref && (
+          <li className="shrink-0 snap-start">
+            <a
+              href={viewAllHref}
+              aria-label="Ver todas las categorías"
+              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-dashed border-navy-300 bg-white px-4 py-2.5 text-sm font-medium text-navy-700 shadow-sm transition-colors hover:border-teal-600 hover:text-teal-700 ${PILL_FOCUS_CLASSES}`}
+            >
+              <LayoutGrid className="h-4 w-4 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
+              Ver todas
+            </a>
+          </li>
+        )}
       </ul>
 
       {canScrollLeft && (
@@ -81,7 +89,7 @@ export function CategoryRow({ categories }: { categories: Category[] }) {
             type="button"
             onClick={() => scrollBy(-1)}
             aria-label="Ver categorías anteriores"
-            className="absolute left-0 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-navy-700 shadow-sm hover:text-teal-600 sm:flex"
+            className={`absolute left-0 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-navy-700 shadow-sm hover:text-teal-600 sm:flex ${PILL_FOCUS_CLASSES}`}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -98,7 +106,7 @@ export function CategoryRow({ categories }: { categories: Category[] }) {
             type="button"
             onClick={() => scrollBy(1)}
             aria-label="Ver más categorías"
-            className="absolute right-0 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-navy-700 shadow-sm hover:text-teal-600 sm:flex"
+            className={`absolute right-0 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-navy-700 shadow-sm hover:text-teal-600 sm:flex ${PILL_FOCUS_CLASSES}`}
           >
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </button>

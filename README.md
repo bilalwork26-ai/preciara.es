@@ -460,6 +460,18 @@ npm run db:check      # comprueba la conexión sin escribir nada
 npm run db:prepare    # aplica solo migraciones pendientes + resumen (--seed opcional)
 ```
 
+### Integración continua (GitHub Actions)
+
+`.github/workflows/ci.yml` ejecuta automáticamente, en cada pull request
+hacia `main` y en cada push a `main`, prácticamente los mismos pasos de
+esta sección: `npm ci`, `prisma migrate deploy` + `prisma generate` +
+`next typegen` contra una MariaDB efímera y sintética (credenciales fijas,
+exclusivas del job, nunca las de Hostinger), `tsc --noEmit`, `npm run
+lint`, `npx vitest run`, `npm audit --audit-level=high` y `npm run build`.
+No ejecuta el seed de demostración, no despliega nada y no escribe en
+ningún servicio externo — solo valida. Las ejecuciones anteriores de la
+misma rama se cancelan automáticamente al llegar un push nuevo.
+
 ## Preparación para tareas programadas
 
 `scripts/import-csv.ts` está pensado para invocarse desde un cron o una
