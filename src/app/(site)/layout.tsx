@@ -11,7 +11,17 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <Header />
-      <main className="flex-1">{children}</main>
+      {/*
+        Nunca `flex-1`: el body raíz es `flex flex-col min-h-full` (ver
+        src/app/layout.tsx), así que un `<main>` con `flex-1` se estira para
+        rellenar el alto del viewport en cualquier página más corta que la
+        pantalla — ese relleno blanco caía precisamente entre el marquee de
+        la portada (el último elemento real dentro de `<main>`) y este
+        `<Footer>`, rompiendo el bloque azul continuo que ambos deben
+        formar. Sin `flex-1`, `<main>` ocupa solo su alto real y el footer
+        le sigue de inmediato, sin ningún hueco.
+      */}
+      <main>{children}</main>
       <Footer />
     </>
   );
