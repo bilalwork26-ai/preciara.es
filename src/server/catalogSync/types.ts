@@ -15,7 +15,8 @@ export { OfferSource };
 export type NormalizedMerchant = {
   slug: string;
   name: string;
-  websiteUrl: string;
+  /** `null` si la fuente no aporta un sitio web de comercio fiable (p. ej. el adaptador de Awin: ni la lista de feeds ni las columnas del feed de productos incluyen jamás la web de la tienda) — nunca se inventa un valor. */
+  websiteUrl: string | null;
   logoUrl?: string | null;
 };
 

@@ -87,7 +87,13 @@ model Merchant {
   id         Int      @id @default(autoincrement())
   slug       String   @unique @db.VarChar(120)
   name       String   @db.VarChar(120)
-  websiteUrl String   @db.VarChar(500)
+  /// `null` = fuente sin un sitio web de comercio fiable que aportar (p. ej.
+  /// el adaptador de Awin: la lista de feeds y las columnas del feed de
+  /// productos nunca incluyen la web de la tienda, solo enlaces a productos
+  /// concretos — inventar un valor sería peor que dejarlo vacío). El
+  /// importador CSV histórico sigue aportando siempre un valor real aquí,
+  /// sin cambios.
+  websiteUrl String?  @db.VarChar(500)
   logoUrl    String?  @db.VarChar(500)
   isActive   Boolean  @default(true)
   /// true = comercio ficticio de demostración (seed), nunca un comercio real. Ver README.

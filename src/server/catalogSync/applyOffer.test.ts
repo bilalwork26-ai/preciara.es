@@ -429,3 +429,30 @@ describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: bloqueo 4 �
     expect(offerAfter.productId).toBe(offerBefore.productId); // dry-run: no se escribió nada de verdad
   });
 });
+
+describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: merchant.websiteUrl null (fuentes sin web de comercio fiable, p. ej. Awin)", () => {
+  afterAll(cleanup);
+
+  it("crea un comercio nuevo con websiteUrl NULL cuando la fila no lo aporta, sin inventar ni rechazar la fila", async () => {
+    const merchantSlug = `${PREFIX}-merchant-null-website`;
+    const row = baseRow({ externalId: `${PREFIX}-null-website-1`, merchant: { slug: merchantSlug, name: "Comercio sin web", websiteUrl: null } });
+    const outcome = await applyNormalizedOfferRow(prisma!, row, { dryRun: false });
+    expect(outcome.merchant).toBe("created");
+
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    expect(merchant.websiteUrl).toBeNull();
+  });
+
+  it("re-sincronizar con websiteUrl NULL NUNCA borra un websiteUrl real ya conocido (solo se rellenan huecos, nunca se sobrescribe con vacío)", async () => {
+    const merchantSlug = `${PREFIX}-merchant-keep-website`;
+    const first = baseRow({ externalId: `${PREFIX}-keep-website-1`, merchant: { slug: merchantSlug, name: "Comercio", websiteUrl: "https://example.invalid/real" } });
+    await applyNormalizedOfferRow(prisma!, first, { dryRun: false });
+
+    // Segunda sincronización (p. ej. desde Awin) del MISMO comercio, sin aportar websiteUrl.
+    const second = baseRow({ externalId: `${PREFIX}-keep-website-2`, merchant: { slug: merchantSlug, name: "Comercio", websiteUrl: null } });
+    await applyNormalizedOfferRow(prisma!, second, { dryRun: false });
+
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    expect(merchant.websiteUrl).toBe("https://example.invalid/real"); // conservado, nunca borrado por un `null` entrante
+  });
+});

@@ -168,12 +168,9 @@ describe("validateNormalizedOfferRow: moneda inválida (INVALID_CURRENCY)", () =
 });
 
 describe("validateNormalizedOfferRow: URLs inválidas (INVALID_URL)", () => {
-  it.each([
-    ["merchant.websiteUrl", (url: string) => ({ merchant: { slug: "comercio-prueba", name: "X", websiteUrl: url } })],
-    ["productUrl", (url: string) => ({ productUrl: url })],
-  ] as const)("rechaza %s inválida con INVALID_URL", (_label, buildOverrides) => {
-    expect(captureError(baseRow(buildOverrides("no-es-una-url") as Partial<NormalizedOfferRow>)).code).toBe("INVALID_URL");
-    expect(captureError(baseRow(buildOverrides("ftp://example.invalid/x") as Partial<NormalizedOfferRow>)).code).toBe("INVALID_URL");
+  it("rechaza productUrl inválida con INVALID_URL", () => {
+    expect(captureError(baseRow({ productUrl: "no-es-una-url" })).code).toBe("INVALID_URL");
+    expect(captureError(baseRow({ productUrl: "ftp://example.invalid/x" })).code).toBe("INVALID_URL");
   });
 
   it("acepta http:// y https:// para las URLs obligatorias", () => {
@@ -182,6 +179,7 @@ describe("validateNormalizedOfferRow: URLs inválidas (INVALID_URL)", () => {
   });
 
   it.each([
+    ["merchant.websiteUrl", (url: string) => ({ merchant: { slug: "comercio-prueba", name: "X", websiteUrl: url } })],
     ["merchant.logoUrl", (url: string) => ({ merchant: { slug: "comercio-prueba", name: "X", websiteUrl: "https://example.invalid", logoUrl: url } })],
     ["imageUrl", (url: string) => ({ imageUrl: url })],
     ["affiliateUrl", (url: string) => ({ affiliateUrl: url })],
@@ -189,9 +187,9 @@ describe("validateNormalizedOfferRow: URLs inválidas (INVALID_URL)", () => {
     expect(captureError(baseRow(buildOverrides("no-es-una-url") as Partial<NormalizedOfferRow>)).code).toBe("INVALID_URL");
   });
 
-  it("las URLs opcionales ausentes (null) nunca se validan ni rechazan la fila", () => {
+  it("las URLs opcionales ausentes (null) nunca se validan ni rechazan la fila, incluido merchant.websiteUrl — una fuente (p. ej. el adaptador de Awin) puede no aportar jamás un sitio web de comercio fiable", () => {
     const row = baseRow({
-      merchant: { slug: "comercio-prueba", name: "X", websiteUrl: "https://example.invalid", logoUrl: null },
+      merchant: { slug: "comercio-prueba", name: "X", websiteUrl: null, logoUrl: null },
       imageUrl: null,
       affiliateUrl: null,
     });

@@ -40,7 +40,7 @@ export type AdminMerchantRow = {
   id: number;
   slug: string;
   name: string;
-  websiteUrl: string;
+  websiteUrl: string | null;
   isActive: boolean;
   isDemo: boolean;
   offerCount: number;

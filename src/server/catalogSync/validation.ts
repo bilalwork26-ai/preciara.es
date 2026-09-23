@@ -48,7 +48,7 @@ export function validateNormalizedOfferRow(row: NormalizedOfferRow): void {
 
   requireSlug(row.merchant.slug, "merchant.slug");
   requireNonEmpty(row.merchant.name, "merchant.name");
-  requireHttpUrl(row.merchant.websiteUrl, "merchant.websiteUrl");
+  if (row.merchant.websiteUrl) requireHttpUrl(row.merchant.websiteUrl, "merchant.websiteUrl");
   if (row.merchant.logoUrl) requireHttpUrl(row.merchant.logoUrl, "merchant.logoUrl");
 
   requireSlug(row.category.slug, "category.slug");
