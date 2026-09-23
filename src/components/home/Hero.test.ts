@@ -35,11 +35,15 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
   });
 
   it("contiene el copy real exigido, exacto (texto HTML, no una imagen con el texto incrustado)", () => {
-    expect(heroSource).toContain("Compara y ahorra");
     expect(heroSource).toContain("Los mejores productos. Las mejores ofertas.");
     expect(heroSource).toContain("Moda, hogar, tecnología, belleza y mucho más, comparado para ti.");
     expect(heroSource).toContain("Descubrir ofertas");
     expect(heroSource).toContain("Precios claros · Varias tiendas");
+  });
+
+  it("ya no muestra la etiqueta 'Compara y ahorra' (retirada a propósito) ni la píldora teal que la contenía", () => {
+    expect(heroSource).not.toContain("Compara y ahorra");
+    expect(heroSource).not.toContain("bg-teal-600");
   });
 
   it("hay un único <h1>, y es exactamente el titular exigido", () => {
@@ -92,11 +96,14 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(heroSource).toMatch(/sm:grid-cols-\[42fr_58fr\]/);
   });
 
-  it("usa teal para el distintivo y coral para el CTA, como exige el encargo", () => {
-    const badgeMatch = heroSource.match(/<span className="([^"]*)">\s*Compara y ahorra/);
-    expect(badgeMatch?.[1]).toMatch(/bg-teal-600/);
+  it("usa coral para el CTA, como exige el encargo", () => {
     const ctaMatch = heroSource.match(/<a\s+href="\/buscar"\s+className="([^"]*)"/);
     expect(ctaMatch?.[1]).toMatch(/bg-coral-500/);
+  });
+
+  it("el titular es el primer elemento del bloque de texto (sin hueco reservado donde estaba la etiqueta retirada)", () => {
+    const textBlockMatch = heroSource.match(/justify-center gap-3[^>]*>\s*<(\w+)/);
+    expect(textBlockMatch?.[1]).toBe("h1");
   });
 
   it("mantiene la tipografía editorial serif del proyecto para el titular", () => {

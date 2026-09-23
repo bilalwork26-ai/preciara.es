@@ -15,10 +15,6 @@ export function Hero() {
     <div className="overflow-hidden rounded-[2rem] bg-navy-900">
       <div className="grid grid-cols-1 sm:grid-cols-[42fr_58fr] sm:min-h-[420px] lg:min-h-[460px]">
         <div className="flex flex-col justify-center gap-3 p-6 sm:p-8 lg:p-10">
-          <span className="w-fit rounded-full bg-teal-600 px-3 py-1 text-xs font-semibold text-white">
-            Compara y ahorra
-          </span>
-
           <h1 className="font-serif text-3xl font-bold leading-[1.1] text-white sm:text-4xl lg:text-5xl">
             Los mejores productos. Las mejores ofertas.
           </h1>
