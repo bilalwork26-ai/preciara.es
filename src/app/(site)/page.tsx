@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { BrandCarousel } from "@/components/home/BrandCarousel";
-import { PromoBannerMain } from "@/components/home/PromoBannerMain";
-import { PromoBannerSecondary } from "@/components/home/PromoBannerSecondary";
+import { Hero } from "@/components/home/Hero";
 import { CategoryRow } from "@/components/home/CategoryRow";
 import { VerifiedDealsGrid } from "@/components/home/VerifiedDealsGrid";
 import { ComparisonPanel } from "@/components/home/ComparisonPanel";
@@ -61,10 +60,7 @@ export default async function Home() {
       <BrandCarousel />
 
       <Container className="pb-8 pt-4 sm:pt-5">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.7fr_1fr]">
-          <PromoBannerMain product={featured.data.product} />
-          <PromoBannerSecondary />
-        </div>
+        <Hero />
 
         <div id="categorias" className="mt-5 scroll-mt-24">
           <CategoryRow categories={categories.data.categories} viewAllHref={categories.data.hasMore ? "/categorias" : undefined} />

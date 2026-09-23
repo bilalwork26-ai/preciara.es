@@ -16,18 +16,24 @@ import { getDemoCategoriesWithProductCounts } from "./category";
 import { extractMerchants, toLegacyCategory, toLegacyProduct, toPricePoint } from "./transform";
 
 /**
- * Slug del producto destacado (banner principal + panel de comparación).
- * Es un hueco curado a propósito, no "la mejor oferta de lo que haya":
- * así el banner nunca muestra una foto/copy que no corresponda al
- * producto cuyo precio está enseñando. Coincide con el slug del seed.
+ * Slug del producto destacado del panel de comparación (`ComparisonPanel`,
+ * ver page.tsx). Es un hueco curado a propósito, no "la mejor oferta de lo
+ * que haya": así el panel nunca muestra una foto/copy que no corresponda
+ * al producto cuyo precio está enseñando. Coincide con el slug del seed.
+ * (El hero de la portada es estático y genérico — ver
+ * `src/components/home/Hero.tsx` — nunca muestra el precio de un único
+ * producto, precisamente para no ser engañoso al representar un catálogo
+ * con muchos productos de muchas categorías.)
  */
 const FEATURED_PRODUCT_SLUG = "auriculares-inalambricos-pro";
 
 /**
- * El portátil tiene su propio banner (sin datos de producto, ver
- * PromoBannerSecondary) y no vuelve a aparecer en la cuadrícula de
- * bajadas, igual que hace hoy `demoDealsGrid` con el producto de demo
- * equivalente.
+ * Curación histórica: este producto tenía su propio banner secundario en
+ * la portada (ya retirado, sustituido por el hero estático único, ver
+ * Hero.tsx) y por eso se excluye de la cuadrícula de bajadas, igual que
+ * hace hoy `demoDealsGrid` con el producto de demo equivalente — se
+ * mantiene la exclusión para no cambiar el catálogo que la cuadrícula
+ * muestra hoy sin que se haya pedido.
  */
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
 
