@@ -1,8 +1,8 @@
 name: Sincronización del catálogo de Awin
 
-# Importa automáticamente los feeds de los anunciantes aprobados en Awin.
-# También permite lanzar una prueba manual (dry-run) que descarga y valida
-# los feeds sin escribir ningún producto en la base de datos.
+# GitHub actúa únicamente como reloj: firma una solicitud y la envía a la
+# aplicación de Preciara. La sincronización y el acceso a MySQL ocurren dentro
+# de Hostinger, donde "localhost:3306" sí es la base de datos correcta.
 on:
   workflow_dispatch:
     inputs:
@@ -19,47 +19,28 @@ on:
 permissions:
   contents: read
 
-# El orquestador ya usa un bloqueo distribuido en la base de datos. Esta
-# segunda barrera impide además que GitHub arranque dos jobs del mismo
-# workflow a la vez.
 concurrency:
   group: awin-catalog-sync
   cancel-in-progress: false
 
 jobs:
   sync:
-    name: Sincronizar productos de Awin
+    name: Solicitar sincronización de productos de Awin
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 10
 
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       AWIN_DATAFEED_API_KEY: ${{ secrets.AWIN_DATAFEED_API_KEY }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
 
     steps:
-      - name: Descargar el código
-        uses: actions/checkout@v4
-
-      - name: Configurar Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Comprobar secretos obligatorios
+      - name: Comprobar secreto obligatorio
         shell: bash
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Falta el secreto DATABASE_URL."
-            exit 3
-          fi
           if [ -z "$AWIN_DATAFEED_API_KEY" ]; then
             echo "::error::Falta el secreto AWIN_DATAFEED_API_KEY."
             exit 3
           fi
-
-      - name: Instalar dependencias
-        run: npm ci
 
       # Las ejecuciones programadas esperan entre 10 y 120 segundos para no
       # coincidir siempre con el pico de peticiones de otros publicadores.
@@ -68,10 +49,39 @@ jobs:
         shell: bash
         run: sleep $((10 + RANDOM % 111))
 
-      - name: Prueba segura sin escribir datos
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        run: npm run catalog:sync:awin -- --dry-run
+      - name: Solicitar la sincronización dentro de Hostinger
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { createHmac } = require("node:crypto");
 
-      - name: Sincronización real
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        run: npm run catalog:sync:awin
+          const secret = process.env.AWIN_DATAFEED_API_KEY?.trim();
+          if (!secret) {
+            console.error("Falta AWIN_DATAFEED_API_KEY.");
+            process.exit(3);
+          }
+
+          const dryRun = process.env.DRY_RUN === "true";
+          const timestamp = String(Math.floor(Date.now() / 1000));
+          const body = JSON.stringify({ dryRun });
+          const signature = createHmac("sha256", secret)
+            .update(`${timestamp}.${body}`)
+            .digest("hex");
+
+          const response = await fetch("https://preciara.es/api/jobs/awin-sync", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-preciara-timestamp": timestamp,
+              "x-preciara-signature": signature,
+            },
+            body,
+          });
+
+          if (response.status !== 202) {
+            console.error(`Hostinger rechazó la solicitud (HTTP ${response.status}).`);
+            process.exit(1);
+          }
+
+          console.log(`Solicitud aceptada por Hostinger (dryRun=${dryRun}).`);
+          NODE
