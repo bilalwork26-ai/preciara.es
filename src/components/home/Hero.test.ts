@@ -165,6 +165,43 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
       expect(["next/image", "lucide-react", "@/components/ui/Container"]).toContain(specifier);
     }
   });
+
+  it("etiqueta de descuento: texto exacto 'Hasta −70 %', colocada entre la descripción y el CTA (inmediatamente encima del botón)", () => {
+    expect(heroSource).toContain("Hasta −70 %");
+    const descIndex = heroSource.indexOf("Moda, hogar, tecnología");
+    const tagIndex = heroSource.indexOf("Hasta −70 %");
+    const ctaIndex = heroSource.indexOf('href="/buscar"');
+    expect(descIndex).toBeGreaterThan(0);
+    expect(tagIndex).toBeGreaterThan(descIndex);
+    expect(ctaIndex).toBeGreaterThan(tagIndex);
+  });
+
+  it("la etiqueta de descuento es un <span> puramente informativo: nunca un enlace/botón, sin manejador de clic, sin recibir foco (sin tabIndex propio)", () => {
+    const tagMatch = heroSource.match(/<span\s+className="([^"]*w-fit[^"]*)"\s*\n\s*aria-label="([^"]*)"/);
+    expect(tagMatch).toBeTruthy();
+    const [, tagClassName, ariaLabel] = tagMatch!;
+    expect(ariaLabel.length).toBeGreaterThan(10); // aria-label descriptivo, no vacío
+    expect(heroSource).not.toMatch(/tabIndex/); // nunca recibe foco: no es interactiva
+    // El span de la etiqueta no debe llevar href/onClick (no es un <a>/<button>)
+    const tagBlockMatch = heroSource.match(/<span[\s\S]*?<\/span>/);
+    expect(tagBlockMatch?.[0]).not.toMatch(/href=|onClick=/);
+    expect(tagClassName).toMatch(/rounded-full/); // bordes completamente redondeados
+    expect(tagClassName).toMatch(/border-coral-500/); // borde coral fino, mismo color que el CTA
+    expect(tagClassName).toMatch(/text-coral-500/); // texto coral
+    expect(tagClassName).not.toMatch(/bg-coral/); // nunca fondo coral sólido: transparente o navy
+    expect(tagClassName).not.toMatch(/shadow|rotate|animate|transition/); // sin sombra/inclinación/animación
+  });
+
+  it("la etiqueta usa el icono Tag de lucide-react (mismo sistema de iconos que ArrowRight en el CTA)", () => {
+    expect(heroSource).toMatch(/import \{ ArrowRight, Tag \} from "lucide-react"/);
+    expect(heroSource).toMatch(/<Tag className="[^"]*" aria-hidden="true" \/>/);
+  });
+
+  it("alineación: la etiqueta y el CTA comparten el mismo ancho ajustado al contenido (w-fit), nunca centrada ni de ancho completo, para que sus bordes izquierdos coincidan", () => {
+    const tagMatch = heroSource.match(/<span\s+className="([^"]*)"\s*\n\s*aria-label/);
+    expect(tagMatch?.[1]).toMatch(/\bw-fit\b/);
+    expect(tagMatch?.[1]).not.toMatch(/\bmx-auto\b|\bjustify-center\b|\bw-full\b/);
+  });
 });
 
 describe("page.tsx: portada usa el nuevo Hero (sustituye a los dos banners retirados)", () => {
