@@ -57,12 +57,18 @@ export default async function Home() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteJsonLd) }} />
 
+      {/*
+        BrandCarousel y Hero son dos `<section>` navy de ancho completo,
+        pegadas una a la otra sin ningún margen entre ellas — nunca dejan
+        ver el fondo blanco de la página por encima ni entre ambas (ver
+        Hero.tsx). El resto de la portada, a partir de aquí, vuelve al
+        `Container` normal sobre fondo blanco.
+      */}
       <BrandCarousel />
+      <Hero />
 
-      <Container className="pb-8 pt-4 sm:pt-5">
-        <Hero />
-
-        <div id="categorias" className="mt-5 scroll-mt-24">
+      <Container className="pb-8 pt-6 sm:pt-7">
+        <div id="categorias" className="scroll-mt-24">
           <CategoryRow categories={categories.data.categories} viewAllHref={categories.data.hasMore ? "/categorias" : undefined} />
         </div>
 

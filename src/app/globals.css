@@ -33,6 +33,10 @@
   --color-coral-100: #fbe0d8;
   --color-coral-50: #fdf1ec;
 
+  /* Dorado cálido: exclusivo de la línea de la marquesina (texto + puntos separadores) sobre fondo navy. */
+  --color-gold-400: #f2c14e;
+  --color-gold-600: #b3841f;
+
   --color-border: #e4e1d8;
   --color-border-navy: rgba(247, 242, 232, 0.14);
 
@@ -69,6 +73,9 @@
   --color-coral-600: var(--color-coral-600);
   --color-coral-100: var(--color-coral-100);
   --color-coral-50: var(--color-coral-50);
+
+  --color-gold-400: var(--color-gold-400);
+  --color-gold-600: var(--color-gold-600);
 
   --color-border: var(--color-border);
   --color-border-navy: var(--color-border-navy);
@@ -209,4 +216,48 @@ body {
   .marquee-dup {
     display: none;
   }
+}
+
+/*
+ * Fundido de la fotografía del hero con el fondo navy — nunca un corte
+ * vertical/horizontal duro entre la imagen y el navy que la rodea.
+ * rgba(7, 26, 51, X) es literalmente `--color-navy-900` en rgb (mismo
+ * valor ya confirmado por captura de pantalla real): un gradiente CSS no
+ * puede leer una variable de color y aplicarle una opacidad distinta a la
+ * vez, así que aquí se repite el valor en rgb en vez de mezclar unidades.
+ *
+ * `.hero-fade-x` (escritorio, sm+): navy sólido bajo el texto (hasta
+ * pasado el final de la columna de texto Y el borde izquierdo real de la
+ * imagen), atenuación progresiva hasta transparente sobre la fotografía,
+ * y una viñeta suave de vuelta al navy en el borde derecho (para que el
+ * resplandor rojizo de la foto tampoco termine en un corte).
+ */
+.hero-fade-x {
+  background: linear-gradient(
+    to right,
+    var(--color-navy-900) 0%,
+    var(--color-navy-900) 38%,
+    rgba(7, 26, 51, 0.55) 50%,
+    transparent 62%,
+    transparent 78%,
+    var(--color-navy-900) 100%
+  );
+}
+
+/*
+ * `.hero-fade-y` (móvil, < sm): dos gradientes apilados en un único
+ * fondo — el vertical (dominante) funde el borde superior de la foto con
+ * el navy del bloque de texto de justo encima; el horizontal (sutil)
+ * funde también los laterales, aunque la foto ya ocupe el ancho completo.
+ */
+.hero-fade-y {
+  background:
+    linear-gradient(to right, var(--color-navy-900), transparent 18%, transparent 82%, var(--color-navy-900)),
+    linear-gradient(
+      to bottom,
+      var(--color-navy-900) 0%,
+      var(--color-navy-900) 20%,
+      rgba(7, 26, 51, 0.55) 36%,
+      transparent 55%
+    );
 }
