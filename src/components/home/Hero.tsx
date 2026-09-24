@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Tag } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 
 /**
@@ -57,6 +57,14 @@ export function Hero() {
           <p className="max-w-md text-sm text-navy-100 sm:text-base">
             Moda, hogar, tecnología, belleza y mucho más, comparado para ti.
           </p>
+
+          <span
+            className="inline-flex h-6 w-fit items-center gap-1 rounded-full border border-coral-500 px-2.5 text-[11px] font-semibold text-coral-500 sm:h-7 sm:gap-1.5 sm:px-3 sm:text-xs"
+            aria-label="Descuento de hasta el 70 % en productos seleccionados"
+          >
+            <Tag className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+            Hasta −70 %
+          </span>
 
           <a
             href="/buscar"
