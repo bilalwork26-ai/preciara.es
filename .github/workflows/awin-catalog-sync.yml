@@ -1,0 +1,77 @@
+name: Sincronización del catálogo de Awin
+
+# Importa automáticamente los feeds de los anunciantes aprobados en Awin.
+# También permite lanzar una prueba manual (dry-run) que descarga y valida
+# los feeds sin escribir ningún producto en la base de datos.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simular sin modificar la base de datos"
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    # Todos los días a las 04:17 UTC. Se evita el inicio de la hora para
+    # repartir la carga tanto en GitHub Actions como en los servidores de Awin.
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: read
+
+# El orquestador ya usa un bloqueo distribuido en la base de datos. Esta
+# segunda barrera impide además que GitHub arranque dos jobs del mismo
+# workflow a la vez.
+concurrency:
+  group: awin-catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sincronizar productos de Awin
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AWIN_DATAFEED_API_KEY: ${{ secrets.AWIN_DATAFEED_API_KEY }}
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Comprobar secretos obligatorios
+        shell: bash
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta el secreto DATABASE_URL."
+            exit 3
+          fi
+          if [ -z "$AWIN_DATAFEED_API_KEY" ]; then
+            echo "::error::Falta el secreto AWIN_DATAFEED_API_KEY."
+            exit 3
+          fi
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Las ejecuciones programadas esperan entre 10 y 120 segundos para no
+      # coincidir siempre con el pico de peticiones de otros publicadores.
+      - name: Espera aleatoria antes de la ejecución programada
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: sleep $((10 + RANDOM % 111))
+
+      - name: Prueba segura sin escribir datos
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: npm run catalog:sync:awin -- --dry-run
+
+      - name: Sincronización real
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: npm run catalog:sync:awin
