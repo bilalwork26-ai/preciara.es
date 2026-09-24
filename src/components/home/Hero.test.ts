@@ -19,6 +19,10 @@ const pageSource = readFileSync(
   path.resolve(import.meta.dirname, "../../app/(site)/page.tsx"),
   "utf8"
 );
+const globalsCssSource = readFileSync(
+  path.resolve(import.meta.dirname, "../../app/globals.css"),
+  "utf8"
+);
 
 describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBannerSecondary)", () => {
   it("es un componente de servidor: nunca 'use client', nunca un manejador de evento de ratón/puntero/táctil", () => {
@@ -65,14 +69,15 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(heroSource).not.toMatch(/\bproduct\b/i); // nunca recibe un producto concreto por props
   });
 
-  it("usa una única fotografía real (next/image), nunca productos/capas separados", () => {
+  it("usa el mismo archivo de fotografía real (next/image) en las dos disposiciones responsive (fondo de escritorio + bloque de móvil), nunca productos/capas separados ni una segunda composición distinta", () => {
     expect(heroSource).toContain('import Image from "next/image"');
     const imageTagCount = (heroSource.match(/<Image\s/g) ?? []).length;
-    expect(imageTagCount).toBe(1);
-    expect(heroSource).toContain("/images/home/hero-lifestyle-collection-v1.webp");
+    expect(imageTagCount).toBe(2); // una para el fondo de escritorio, otra para el bloque de móvil — nunca capas de producto sueltas
+    const srcCount = (heroSource.match(/\/images\/home\/hero-lifestyle-collection-v1\.webp/g) ?? []).length;
+    expect(srcCount).toBe(2); // el mismo archivo en las dos, nunca un recorte pre-generado distinto
   });
 
-  it("la fotografía usa object-cover recortado a la derecha (mismo archivo y mismo recorte en todos los anchos, nunca una segunda composición)", () => {
+  it("la fotografía de escritorio usa object-cover recortado a la derecha", () => {
     expect(heroSource).toMatch(/object-cover/);
     expect(heroSource).toMatch(/object-right/);
   });
@@ -89,11 +94,53 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(heroSource).toMatch(/\bpriority\b/);
   });
 
-  it("tarjeta única azul marino, con esquinas redondeadas y la proporción de columnas 42/58 exigida en escritorio", () => {
-    expect(heroSource).toContain("bg-navy-900");
-    expect(heroSource).toContain("rounded-[2rem]");
-    expect(heroSource).toContain("overflow-hidden");
-    expect(heroSource).toMatch(/sm:grid-cols-\[42fr_58fr\]/);
+  it("sección navy de ancho completo (nunca una tarjeta): la raíz no lleva rounded-* ni ningún borde propio (overflow-hidden sí es necesario aquí, para contener las capas absolutas de fondo — mismo patrón que BrandCarousel; el rounded-full del CTA es un botón, no la tarjeta)", () => {
+    const rootMatch = heroSource.match(/return\s*\(\s*<section className="([^"]*)"/);
+    expect(rootMatch?.[1]).toContain("bg-navy-900");
+    expect(rootMatch?.[1]).not.toMatch(/rounded/);
+    expect(rootMatch?.[1]).not.toMatch(/\bborder(?!-\S)/); // "border" solo aparece aquí si es un borde real (nunca como sub-cadena de otra clase)
+  });
+
+  it("usa <section>, no <div>, como elemento raíz (semántica de sección de página, no de tarjeta aislada)", () => {
+    const rootTagMatch = heroSource.match(/return\s*\(\s*<(\w+)/);
+    expect(rootTagMatch?.[1]).toBe("section");
+  });
+
+  it("usa el mismo Container que el resto de la web para alinear el contenido (nunca un ancho/margen propio inventado)", () => {
+    expect(heroSource).toContain('import { Container } from "@/components/ui/Container"');
+    expect(heroSource).toMatch(/<Container>/);
+  });
+
+  it("texto a la izquierda (acotado a un ancho máximo dentro de Container) y fotografía a la derecha (capa de fondo ocupando la mayoría de la sección), nunca una rejilla de columnas con bordes propios", () => {
+    expect(heroSource).not.toMatch(/grid-cols/); // ya no es una rejilla de columnas: la foto es una capa de fondo
+    expect(heroSource).toMatch(/sm:max-w-md/); // el texto sigue acotado a la izquierda
+    const wrapperMatch = heroSource.match(/absolute right-0 top-0 h-full w-\[(\d+)%\]/);
+    expect(wrapperMatch?.[1]).toBeTruthy();
+    expect(Number(wrapperMatch?.[1])).toBeGreaterThanOrEqual(55); // la foto ocupa la mitad derecha o más
+  });
+
+  it("la fotografía se funde con el navy mediante degradados CSS reales (.hero-fade-x en escritorio, .hero-fade-y en móvil), nunca solo un cambio de color de fondo", () => {
+    expect(heroSource).toContain("hero-fade-x");
+    expect(heroSource).toContain("hero-fade-y");
+    // Las clases de fundido viven en globals.css: aquí solo se comprueba que
+    // Hero.tsx las aplique de verdad sobre una capa que cubre toda la
+    // sección (absolute inset-0), nunca sobre un recuadro más pequeño.
+    const fadeXMatch = heroSource.match(/className="(hero-fade-x[^"]*|[^"]*hero-fade-x[^"]*)"/);
+    expect(fadeXMatch?.[1]).toMatch(/absolute inset-0/);
+  });
+
+  it("el bloque de foto de móvil nunca usa un margen negativo para sangrar hasta el borde (es hermano de Container, no un hijo con -mx-)", () => {
+    expect(heroSource).not.toMatch(/-mx-\d/);
+    expect(heroSource).not.toMatch(/-ml-\d|-mr-\d/);
+  });
+
+  it("globals.css: .hero-fade-x y .hero-fade-y son degradados reales (linear-gradient con paradas transparentes), nunca un simple color plano", () => {
+    const fadeXBlock = globalsCssSource.match(/\.hero-fade-x\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const fadeYBlock = globalsCssSource.match(/\.hero-fade-y\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    expect(fadeXBlock).toMatch(/linear-gradient/);
+    expect(fadeXBlock).toMatch(/transparent/);
+    expect(fadeYBlock).toMatch(/linear-gradient/);
+    expect(fadeYBlock).toMatch(/transparent/);
   });
 
   it("usa coral para el CTA, como exige el encargo", () => {
@@ -111,11 +158,11 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(h1Match?.[1]).toMatch(/font-serif/);
   });
 
-  it("no añade ninguna dependencia de animación/gestos externa (solo React, next/image y lucide-react, ya propios del proyecto)", () => {
+  it("no añade ninguna dependencia de animación/gestos externa (solo next/image, lucide-react y el Container propio del proyecto)", () => {
     const importedModules = [...heroSource.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
     expect(importedModules.length).toBeGreaterThan(0);
     for (const specifier of importedModules) {
-      expect(["next/image", "lucide-react"]).toContain(specifier);
+      expect(["next/image", "lucide-react", "@/components/ui/Container"]).toContain(specifier);
     }
   });
 });
@@ -126,5 +173,14 @@ describe("page.tsx: portada usa el nuevo Hero (sustituye a los dos banners retir
     expect(pageSource).toMatch(/<Hero\s*\/>/);
     expect(pageSource).not.toContain("PromoBannerMain");
     expect(pageSource).not.toContain("PromoBannerSecondary");
+  });
+
+  it("<Hero /> se renderiza pegado a <BrandCarousel />, nunca dentro de un <Container> (así el navy llega de lado a lado, sin margen blanco por encima ni a los lados)", () => {
+    const brandCarouselIndex = pageSource.indexOf("<BrandCarousel");
+    const heroIndex = pageSource.indexOf("<Hero");
+    const between = pageSource.slice(brandCarouselIndex, heroIndex);
+    expect(brandCarouselIndex).toBeGreaterThan(0);
+    expect(heroIndex).toBeGreaterThan(brandCarouselIndex);
+    expect(between).not.toContain("<Container");
   });
 });

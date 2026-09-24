@@ -50,9 +50,13 @@ describe("Footer.tsx: mismo bloque azul continuo que MarqueeBand, sin franja bla
     expect(footerSource).not.toMatch(/\bborder-border(?!-navy)\b/);
   });
 
-  it("el divisor interno del footer (entre el bloque de enlaces y el texto legal) usa el token de borde ya pensado para navy (border-border-navy, el mismo que ya usa MarqueeBand)", () => {
+  it("el divisor interno del footer (entre el bloque de enlaces y el texto legal) usa el token de borde ya pensado para navy (border-border-navy)", () => {
     expect(footerSource).toContain("border-border-navy");
-    expect(marqueeSource).toContain("border-border-navy");
+  });
+
+  it("MarqueeBand nunca lleva un borde propio (ni border-border-navy ni ningún otro): esa línea, aunque sutil, es justo la separación visible que no debe existir justo antes del footer", () => {
+    const marqueeRootMatch = marqueeSource.match(/className="(marquee-band[^"]*)"/);
+    expect(marqueeRootMatch?.[1]).not.toMatch(/\bborder(-\S*)?\b/);
   });
 });
 
