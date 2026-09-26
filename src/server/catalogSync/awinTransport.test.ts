@@ -182,6 +182,30 @@ describe("buildAwinFeedListUrl: la URL de la lista también lleva la API key, as
     expect(url.pathname).toContain("mi-api-key-123");
   });
 
+  it("acepta el enlace completo de la interfaz nueva y lo conserva dentro de SensitiveFeedUrl", () => {
+    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/feedlist";
+    const sensitive = buildAwinFeedListUrl("clave-para-firma", configuredUrl);
+    expect(sensitive).toBeInstanceOf(SensitiveFeedUrl);
+    expect(sensitive.revealSensitiveUrlForDownload()).toBe(configuredUrl);
+  });
+
+  it.each([
+    "https://evil.example/productdata-darwin-download/publisher/1/token/feedlist",
+    "http://ui.awin.com/productdata-darwin-download/publisher/1/token/feedlist",
+    "https://ui.awin.com/otra-ruta/publisher/1/token/feedlist",
+    "https://ui.awin.com/productdata-darwin-download/publisher/1/token/otro",
+  ])("rechaza un enlace completo que no coincida con el endpoint oficial (%s)", (configuredUrl) => {
+    expect(() => buildAwinFeedListUrl("clave-para-firma", configuredUrl)).toThrow(AwinTransportError);
+  });
+
+  it("nunca expone el enlace completo configurado mediante String, JSON o inspección", () => {
+    const secretUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-canario/feedlist";
+    const sensitive = buildAwinFeedListUrl("clave-para-firma", secretUrl);
+    expect(String(sensitive)).not.toContain("token-canario");
+    expect(JSON.stringify(sensitive)).not.toContain("token-canario");
+    expect(inspect(sensitive)).not.toContain("token-canario");
+  });
+
   it("lanza AwinTransportError si la API key está vacía o compuesta solo por espacios, sin incluirla en el mensaje", () => {
     for (const blank of ["", "   ", "\t\n"]) {
       let caught: unknown;
@@ -239,6 +263,19 @@ describe("buildAwinFeedListUrl: la URL de la lista también lleva la API key, as
     const url = new URL(receivedUrl!);
     expect(url.hostname).toBe(AWIN_ALLOWED_TRANSPORT_HOSTS[0]);
     expect(decodeURIComponent(url.pathname.split("/").at(-1)!)).toBe(trickyKey);
+  });
+
+  it("la descarga usa el enlace completo configurado en lugar de reconstruir el endpoint Legacy", async () => {
+    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/feedlist";
+    let receivedUrl: string | undefined;
+    const fetchImpl = vi.fn(async (input: string | URL) => {
+      receivedUrl = input.toString();
+      return textResponse(buildFeedListCsv([]));
+    }) as unknown as typeof fetch;
+
+    await collectFeedList(downloadAwinFeedList("clave-para-firma", { fetchImpl, wait: NO_WAIT }, configuredUrl));
+
+    expect(receivedUrl).toBe(configuredUrl);
   });
 });
 

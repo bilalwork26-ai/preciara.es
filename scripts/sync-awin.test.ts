@@ -6,6 +6,7 @@ import {
   MAX_DEACTIVATE_STALE_AFTER_HOURS,
   parseDryRunFlag,
   readAwinApiKey,
+  readAwinFeedListUrl,
   readDeactivateStaleAfterHours,
   runAwinSyncCommand,
   type AwinSyncCliDeps,
@@ -95,6 +96,19 @@ describe("readAwinApiKey", () => {
   });
 });
 
+describe("readAwinFeedListUrl", () => {
+  it("recorta y devuelve el enlace completo cuando está configurado", () => {
+    expect(readAwinFeedListUrl({ AWIN_DATAFEED_LIST_URL: "  https://ui.awin.com/productdata-darwin-download/publisher/1/token/feedlist  " })).toBe(
+      "https://ui.awin.com/productdata-darwin-download/publisher/1/token/feedlist"
+    );
+  });
+
+  it("devuelve undefined cuando está ausente o vacío", () => {
+    expect(readAwinFeedListUrl({})).toBeUndefined();
+    expect(readAwinFeedListUrl({ AWIN_DATAFEED_LIST_URL: "   " })).toBeUndefined();
+  });
+});
+
 describe("readDeactivateStaleAfterHours", () => {
   it("ausente: devuelve undefined — la opción más segura, nunca se solicita desactivación", () => {
     expect(readDeactivateStaleAfterHours({})).toBeUndefined();
@@ -145,6 +159,24 @@ describe("runAwinSyncCommand: configuración", () => {
     const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "  clave-valida  " }), deps);
     expect(outcome.exitCode).toBe(0);
     expect(received).toMatchObject({ apiKey: "clave-valida", dryRun: false, deactivateStaleAfterHours: undefined });
+  });
+
+  it("propaga el enlace completo de la lista al orquestador sin registrarlo", async () => {
+    const feedListUrl = "https://ui.awin.com/productdata-darwin-download/publisher/1/token-canario/feedlist";
+    let received: Parameters<NonNullable<AwinSyncCliDeps["runCycle"]>>[0] | undefined;
+    const runCycle: NonNullable<AwinSyncCliDeps["runCycle"]> = async (options) => {
+      received = options;
+      return buildSummary();
+    };
+
+    const outcome = await runAwinSyncCommand(
+      [],
+      envWith({ AWIN_DATAFEED_API_KEY: "clave-valida", AWIN_DATAFEED_LIST_URL: `  ${feedListUrl}  ` }),
+      { runCycle, disconnect: noopDisconnect }
+    );
+
+    expect(outcome.exitCode).toBe(0);
+    expect(received?.feedListUrl).toBe(feedListUrl);
   });
 
   it("clave ausente: nunca invoca el ciclo, termina con exitCode 3", async () => {

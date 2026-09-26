@@ -260,7 +260,7 @@ export type AwinOrchestratorSummary = {
 
 export type AwinOrchestratorDeps = {
   /** Por defecto, `downloadAwinFeedList` real (`awinTransport.ts`). Las pruebas sustituyen esto por un generador simulado — transporte cero. */
-  downloadFeedList?: (apiKey: string) => AsyncGenerator<AwinFeedListResult>;
+  downloadFeedList?: (apiKey: string, feedListUrl?: string) => AsyncGenerator<AwinFeedListResult>;
   /** Por defecto, `downloadAwinProductFeed` real. */
   downloadProductFeed?: (feedUrl: SensitiveFeedUrl, context: AwinFeedContext) => AsyncGenerator<AwinFeedRowResult>;
   /** Por defecto, `runCatalogSync` real (`syncRun.ts`). */
@@ -276,6 +276,8 @@ export type AwinOrchestratorDeps = {
 export type AwinOrchestratorOptions = {
   /** API key de Awin, recibida siempre explícitamente — este módulo NUNCA lee variables de entorno. */
   apiKey: string;
+  /** Enlace completo y secreto de "Descargar lista" de la interfaz nueva de Awin. Si se omite, se conserva el endpoint Legacy construido desde `apiKey`. */
+  feedListUrl?: string;
   /** Si se omite, ningún anunciante desactiva ofertas viejas este ciclo, sin importar lo demás. */
   deactivateStaleAfterHours?: number;
   dryRun?: boolean;
@@ -322,7 +324,9 @@ type ResolvedDeps = Required<AwinOrchestratorDeps>;
 
 function resolveDeps(deps: AwinOrchestratorDeps | undefined): ResolvedDeps {
   return {
-    downloadFeedList: deps?.downloadFeedList ?? downloadAwinFeedList,
+    downloadFeedList:
+      deps?.downloadFeedList ??
+      ((apiKey, feedListUrl) => downloadAwinFeedList(apiKey, undefined, feedListUrl)),
     downloadProductFeed: deps?.downloadProductFeed ?? downloadAwinProductFeed,
     runSync: deps?.runSync ?? runCatalogSync,
     acquireLock: deps?.acquireLock ?? acquireDistributedLock,
@@ -343,7 +347,7 @@ type FeedListClassification = {
 };
 
 /** Consume la lista de feeds en streaming, clasifica cada fila y agrupa los `approved` (deduplicados por `id`) por `advertiserId`. La lista SÍ se agrupa en memoria (metadatos, nunca productos — ver comentario de cabecera). Un fallo del transporte/parser de la LISTA se refleja en `listFatalError`, nunca se propaga como excepción (aborta el resto del ciclo, que comprueba esa bandera antes de tocar ningún producto). */
-async function classifyFeedList(deps: ResolvedDeps, apiKey: string): Promise<FeedListClassification> {
+async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?: string): Promise<FeedListClassification> {
   const seenFeedIds = new Set<string>();
   const advertiserGroups = new Map<string, { advertiserName: string; feeds: AwinFeedListEntry[] }>();
   let feedsDiscovered = 0;
@@ -355,7 +359,7 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string): Promise<Fee
   let listFatalError = false;
 
   try {
-    for await (const result of deps.downloadFeedList(apiKey)) {
+    for await (const result of deps.downloadFeedList(apiKey, feedListUrl)) {
       feedsDiscovered += 1;
       if (result.status === "skipped") {
         feedsSkippedNotJoined += 1;
@@ -498,7 +502,7 @@ async function processAdvertiser(
  * conservadora de desactivación.
  */
 export async function runAwinCatalogSyncCycle(options: AwinOrchestratorOptions): Promise<AwinOrchestratorSummary> {
-  const { apiKey, deactivateStaleAfterHours, dryRun = false } = options;
+  const { apiKey, feedListUrl, deactivateStaleAfterHours, dryRun = false } = options;
   const deps = resolveDeps(options.deps);
 
   const locked = await deps.acquireLock(AWIN_CYCLE_LOCK_NAME);
@@ -507,7 +511,7 @@ export async function runAwinCatalogSyncCycle(options: AwinOrchestratorOptions):
   }
 
   try {
-    const classification = await classifyFeedList(deps, apiKey);
+    const classification = await classifyFeedList(deps, apiKey, feedListUrl);
 
     const advertisers: AwinOrchestratorAdvertiserOutcome[] = [];
     const feeds: AwinOrchestratorFeedOutcome[] = [];

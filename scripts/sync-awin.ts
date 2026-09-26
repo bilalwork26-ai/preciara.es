@@ -22,6 +22,9 @@
  *     compuesta solo por espacios detiene la ejecución ANTES de tocar
  *     Awin o crear ningún `ImportRun` (código de salida 3) — su valor
  *     nunca se registra, se devuelve ni se incluye en ningún error.
+ *   AWIN_DATAFEED_LIST_URL (opcional): enlace completo y secreto de
+ *     "Descargar lista" de la interfaz nueva de Awin. Si se omite, se usa
+ *     el endpoint Legacy construido con AWIN_DATAFEED_API_KEY.
  *   AWIN_DEACTIVATE_STALE_AFTER_HOURS (opcional): horas sin refrescar una
  *     oferta antes de poder desactivarla en la pasada final de cada
  *     anunciante (ver la regla conservadora de `awinOrchestrator.ts`). Si
@@ -133,6 +136,12 @@ export function readAwinApiKey(env: Record<string, string | undefined>): string 
   return trimmed;
 }
 
+/** Conserva el enlace como secreto opaco; la validación estricta de host/ruta ocurre en `awinTransport.ts`, justo antes de cualquier petición. */
+export function readAwinFeedListUrl(env: Record<string, string | undefined>): string | undefined {
+  const trimmed = env.AWIN_DATAFEED_LIST_URL?.trim();
+  return trimmed || undefined;
+}
+
 /** `undefined` (ausente o vacía) es la opción más segura por defecto: ningún anunciante desactiva nada. Si se aporta, debe ser un número finito, positivo y acotado — cualquier otro valor lanza `AwinSyncConfigError`, nunca se redondea ni se sustituye en silencio. */
 export function readDeactivateStaleAfterHours(env: Record<string, string | undefined>): number | undefined {
   const raw = env.AWIN_DEACTIVATE_STALE_AFTER_HOURS;
@@ -184,6 +193,7 @@ export async function runAwinSyncCommand(argv: string[], env: Record<string, str
   try {
     let dryRun: boolean;
     let apiKey: string;
+    let feedListUrl: string | undefined;
     let deactivateStaleAfterHours: number | undefined;
     try {
       if (!isDatabaseConfigured()) {
@@ -191,6 +201,7 @@ export async function runAwinSyncCommand(argv: string[], env: Record<string, str
       }
       dryRun = parseDryRunFlag(argv);
       apiKey = readAwinApiKey(env);
+      feedListUrl = readAwinFeedListUrl(env);
       deactivateStaleAfterHours = readDeactivateStaleAfterHours(env);
     } catch (error) {
       if (error instanceof AwinSyncConfigError) {
@@ -203,7 +214,7 @@ export async function runAwinSyncCommand(argv: string[], env: Record<string, str
     log({ level: "info", event: "awin_sync_start", runId, dryRun, deactivateStaleAfterHoursConfigured: deactivateStaleAfterHours !== undefined });
 
     try {
-      const summary = await runCycle({ apiKey, dryRun, deactivateStaleAfterHours });
+      const summary = await runCycle({ apiKey, feedListUrl, dryRun, deactivateStaleAfterHours });
       const durationMs = now().getTime() - startedAt.getTime();
       const ok = !summary.listFatalError && summary.feedsFailed === 0 && summary.advertisersIncomplete === 0;
 

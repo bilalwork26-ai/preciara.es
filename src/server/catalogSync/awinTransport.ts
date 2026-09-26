@@ -111,7 +111,7 @@ import { parseAwinFeedList, SensitiveFeedUrl, type AwinFeedListResult } from "./
 import { parseAwinProductFeed, type AwinFeedContext, type AwinFeedRowResult } from "./awinFeedParser";
 
 /** Hosts oficiales del feed Legacy de Awin — lista cerrada, comparación EXACTA (ver comentario de cabecera sobre por qué esto basta para rechazar subdominios engañosos, IPs y destinos locales/privados). */
-export const AWIN_ALLOWED_TRANSPORT_HOSTS = ["productdata.awin.com", "datafeed.api.productserve.com"] as const;
+export const AWIN_ALLOWED_TRANSPORT_HOSTS = ["productdata.awin.com", "datafeed.api.productserve.com", "ui.awin.com"] as const;
 const ALLOWED_HOSTS = new Set<string>(AWIN_ALLOWED_TRANSPORT_HOSTS);
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -228,7 +228,24 @@ function assertSafeUrl(url: URL): void {
  * releer/confirmar directamente aquí: antes de conectar una cuenta real de
  * Awin (bloque posterior), confírmala contra el panel real de la cuenta.
  */
-function buildAwinFeedListUrlInternal(apiKey: string): URL {
+function buildAwinFeedListUrlInternal(apiKey: string, configuredUrl?: string): URL {
+  if (configuredUrl !== undefined) {
+    let url: URL;
+    try {
+      url = new URL(configuredUrl.trim());
+    } catch {
+      throw new AwinTransportError("INVALID_FEED_LIST_URL", "La URL configurada para la lista de feeds no es válida.");
+    }
+    assertSafeUrl(url);
+    if (
+      url.hostname.toLowerCase() !== "ui.awin.com" ||
+      !url.pathname.startsWith("/productdata-darwin-download/publisher/") ||
+      !url.pathname.endsWith("/feedlist")
+    ) {
+      throw new AwinTransportError("INVALID_FEED_LIST_URL", "La URL configurada no corresponde a la descarga oficial de la lista de feeds de Awin.");
+    }
+    return url;
+  }
   if (!apiKey.trim()) {
     throw new AwinTransportError("MISSING_API_KEY", "Falta la API key para construir la URL de la lista de feeds.");
   }
@@ -258,8 +275,8 @@ function buildAwinFeedListUrlInternal(apiKey: string): URL {
  * sitio del código se llama a `revealSensitiveUrlForDownload()` sobre
  * ella.
  */
-export function buildAwinFeedListUrl(apiKey: string): SensitiveFeedUrl {
-  return new SensitiveFeedUrl(buildAwinFeedListUrlInternal(apiKey).toString());
+export function buildAwinFeedListUrl(apiKey: string, configuredUrl?: string): SensitiveFeedUrl {
+  return new SensitiveFeedUrl(buildAwinFeedListUrlInternal(apiKey, configuredUrl).toString());
 }
 
 /** Libera/cancela el cuerpo de una respuesta que no se va a leer (redirección ya seguida, respuesta que se va a reintentar, o error final) — nunca deja un cuerpo sin drenar. Best-effort: un fallo aquí nunca debe enmascarar el error real que se esté propagando. */
@@ -555,8 +572,8 @@ async function connectAwinTextStream(url: URL, options: AwinTransportOptions | u
  * fragmento a fragmento, a `parseAwinFeedList` — nunca materializa la
  * lista completa en memoria antes de empezar a clasificarla.
  */
-export async function* downloadAwinFeedList(apiKey: string, options?: AwinTransportOptions): AsyncGenerator<AwinFeedListResult> {
-  const listUrl = buildAwinFeedListUrl(apiKey);
+export async function* downloadAwinFeedList(apiKey: string, options?: AwinTransportOptions, configuredUrl?: string): AsyncGenerator<AwinFeedListResult> {
+  const listUrl = buildAwinFeedListUrl(apiKey, configuredUrl);
   const url = new URL(listUrl.revealSensitiveUrlForDownload());
   const textStream = await connectAwinTextStream(url, options);
   yield* parseAwinFeedList(textStream);
