@@ -108,3 +108,21 @@ describe("Footer.tsx: nueva columna 'Descubrir' (Categorías y Guías de compra)
     expect(footerSource).toContain('{ label: "Privacidad y cookies", href: "/privacidad" }');
   });
 });
+
+describe("Footer.tsx: nueva columna corporativa 'Preciara' (Sobre Preciara, Para tiendas, Contacto)", () => {
+  it("añade la columna con los tres enlaces corporativos exactos", () => {
+    expect(footerSource).toContain('{ label: "Sobre Preciara", href: "/sobre-preciara" }');
+    expect(footerSource).toContain('{ label: "Para tiendas", href: "/para-tiendas" }');
+    expect(footerSource).toContain('{ label: "Contacto", href: "/contacto" }');
+    expect(footerSource).toMatch(/<nav aria-label="Preciara">/);
+    expect(footerSource).toMatch(/<h3[^>]*>Preciara<\/h3>/);
+  });
+
+  it("las tres columnas de navegación (Descubrir, Preciara, Información) apilan en móvil (flex-col) y pasan a fila con salto de línea permitido en escritorio (sm:flex-row sm:flex-wrap), nunca desbordan", () => {
+    const wrapperMatch = footerSource.match(/<div className="(flex flex-col gap-8 sm:flex-row sm:flex-wrap[^"]*)">/);
+    expect(wrapperMatch).toBeTruthy();
+    expect(wrapperMatch?.[1]).toMatch(/\bflex-col\b/);
+    expect(wrapperMatch?.[1]).toMatch(/sm:flex-row/);
+    expect(wrapperMatch?.[1]).toMatch(/sm:flex-wrap/);
+  });
+});

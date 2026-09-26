@@ -16,6 +16,13 @@ const jakarta = Plus_Jakarta_Sans({
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://preciara.es";
 
+/**
+ * Verificación de propiedad de Google Search Console (método "etiqueta
+ * HTML"). Sin `GOOGLE_SITE_VERIFICATION`, `verification` simplemente no se
+ * incluye: nunca se inventa un código de verificación falso.
+ */
+const googleSiteVerification = process.env.GOOGLE_SITE_VERIFICATION;
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
@@ -32,6 +39,7 @@ export const metadata: Metadata = {
     siteName: "Preciara",
     type: "website",
   },
+  ...(googleSiteVerification ? { verification: { google: googleSiteVerification } } : {}),
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

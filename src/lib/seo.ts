@@ -88,3 +88,50 @@ export function buildArticleJsonLd(
     publisher: { "@type": "Organization", name: "Preciara" },
   };
 }
+
+/** `AboutPage` para /sobre-preciara. */
+export function buildAboutPageJsonLd(input: { name: string; description: string }, canonicalPath: string) {
+  const url = new URL(canonicalPath, SITE_URL).toString();
+  return {
+    "@context": "https://schema.org",
+    "@type": "AboutPage",
+    name: input.name,
+    description: input.description,
+    url,
+    about: { "@type": "Organization", name: "Preciara", url: SITE_URL },
+  };
+}
+
+/** `WebPage` para /para-tiendas (página informativa, no un artículo editorial). */
+export function buildWebPageJsonLd(input: { name: string; description: string }, canonicalPath: string) {
+  const url = new URL(canonicalPath, SITE_URL).toString();
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: input.name,
+    description: input.description,
+    url,
+  };
+}
+
+/**
+ * `ContactPage` para /contacto. `email` solo se incluye cuando hay un
+ * correo real configurado (`getContactEmail()`, ya validado): nunca se
+ * inventa un `contactPoint` con un correo que no existe.
+ */
+export function buildContactPageJsonLd(
+  input: { name: string; description: string; email: string | null },
+  canonicalPath: string,
+) {
+  const url = new URL(canonicalPath, SITE_URL).toString();
+  return {
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    name: input.name,
+    description: input.description,
+    url,
+    ...(input.email
+      ? { mainEntity: { "@type": "Organization", name: "Preciara", email: input.email } }
+      : {}),
+  };
+}
