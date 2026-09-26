@@ -183,23 +183,23 @@ describe("buildAwinFeedListUrl: la URL de la lista también lleva la API key, as
   });
 
   it("acepta el enlace completo de la interfaz nueva y lo conserva dentro de SensitiveFeedUrl", () => {
-    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/feedlist";
+    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/1/feedList";
     const sensitive = buildAwinFeedListUrl("clave-para-firma", configuredUrl);
     expect(sensitive).toBeInstanceOf(SensitiveFeedUrl);
     expect(sensitive.revealSensitiveUrlForDownload()).toBe(configuredUrl);
   });
 
   it.each([
-    "https://evil.example/productdata-darwin-download/publisher/1/token/feedlist",
-    "http://ui.awin.com/productdata-darwin-download/publisher/1/token/feedlist",
-    "https://ui.awin.com/otra-ruta/publisher/1/token/feedlist",
+    "https://evil.example/productdata-darwin-download/publisher/1/token/1/feedList",
+    "http://ui.awin.com/productdata-darwin-download/publisher/1/token/1/feedList",
+    "https://ui.awin.com/otra-ruta/publisher/1/token/1/feedList",
     "https://ui.awin.com/productdata-darwin-download/publisher/1/token/otro",
   ])("rechaza un enlace completo que no coincida con el endpoint oficial (%s)", (configuredUrl) => {
     expect(() => buildAwinFeedListUrl("clave-para-firma", configuredUrl)).toThrow(AwinTransportError);
   });
 
   it("nunca expone el enlace completo configurado mediante String, JSON o inspección", () => {
-    const secretUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-canario/feedlist";
+    const secretUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-canario/1/feedList";
     const sensitive = buildAwinFeedListUrl("clave-para-firma", secretUrl);
     expect(String(sensitive)).not.toContain("token-canario");
     expect(JSON.stringify(sensitive)).not.toContain("token-canario");
@@ -266,7 +266,7 @@ describe("buildAwinFeedListUrl: la URL de la lista también lleva la API key, as
   });
 
   it("la descarga usa el enlace completo configurado en lugar de reconstruir el endpoint Legacy", async () => {
-    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/feedlist";
+    const configuredUrl = "https://ui.awin.com/productdata-darwin-download/publisher/3101014/token-secreto/1/feedList";
     let receivedUrl: string | undefined;
     const fetchImpl = vi.fn(async (input: string | URL) => {
       receivedUrl = input.toString();
