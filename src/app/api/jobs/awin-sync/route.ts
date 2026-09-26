@@ -28,6 +28,7 @@ function isAwinSyncRequestBody(value: unknown): value is AwinSyncRequestBody {
  */
 export async function POST(request: NextRequest) {
   const apiKey = process.env.AWIN_DATAFEED_API_KEY?.trim();
+  const feedListUrl = process.env.AWIN_DATAFEED_LIST_URL?.trim();
   if (!apiKey) {
     // Cerrado por defecto y sin revelar que la integración existe.
     return new NextResponse(null, { status: 404 });
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
   const { dryRun } = payload;
   after(async () => {
     try {
-      const summary = await runAwinCatalogSyncCycle({ apiKey, dryRun });
+      const summary = await runAwinCatalogSyncCycle({ apiKey, feedListUrl, dryRun });
       console.log({
         event: "awin_sync_job_done",
         dryRun: summary.dryRun,
