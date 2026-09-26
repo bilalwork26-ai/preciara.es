@@ -30,6 +30,14 @@ describe("sitemap", () => {
     expect(urls).toContain("https://preciara.es/guias/elegir-tecnologia-reacondicionada");
     expect(urls).toContain("https://preciara.es/guias/como-comparar-electrodomesticos");
   });
+
+  it("incluye las páginas corporativas nuevas: Sobre Preciara, Para tiendas y Contacto", async () => {
+    const entries = await sitemap();
+    const urls = entries.map((e) => e.url);
+    expect(urls).toContain("https://preciara.es/sobre-preciara");
+    expect(urls).toContain("https://preciara.es/para-tiendas");
+    expect(urls).toContain("https://preciara.es/contacto");
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("sitemap (integración, BD local de pruebas)", () => {

@@ -7,6 +7,12 @@ const discoverLinks = [
   { label: "Guías de compra", href: "/guias" },
 ];
 
+const corporateLinks = [
+  { label: "Sobre Preciara", href: "/sobre-preciara" },
+  { label: "Para tiendas", href: "/para-tiendas" },
+  { label: "Contacto", href: "/contacto" },
+];
+
 const legalLinks = [
   { label: "Metodología", href: "/metodologia" },
   { label: "Aviso de afiliación", href: "/aviso-afiliacion" },
@@ -34,11 +40,27 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-8 sm:flex-row sm:gap-16">
+          <div className="flex flex-col gap-8 sm:flex-row sm:flex-wrap sm:gap-x-12 sm:gap-y-8 lg:gap-x-16">
             <nav aria-label="Descubrir">
               <h3 className="text-sm font-semibold text-white">Descubrir</h3>
               <ul className="mt-3 space-y-2">
                 {discoverLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className={`rounded text-sm text-navy-100 transition-colors hover:text-white ${FOCUS_RING_CLASSES}`}
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <nav aria-label="Preciara">
+              <h3 className="text-sm font-semibold text-white">Preciara</h3>
+              <ul className="mt-3 space-y-2">
+                {corporateLinks.map((link) => (
                   <li key={link.href}>
                     <Link
                       href={link.href}

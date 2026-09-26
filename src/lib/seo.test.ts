@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildBreadcrumbList, buildProductJsonLd, SITE_URL } from "./seo";
+import {
+  buildAboutPageJsonLd,
+  buildBreadcrumbList,
+  buildContactPageJsonLd,
+  buildProductJsonLd,
+  buildWebPageJsonLd,
+  SITE_URL,
+} from "./seo";
 import type { Merchant, Product } from "@/types";
 
 describe("buildBreadcrumbList", () => {
@@ -66,5 +73,40 @@ describe("buildProductJsonLd", () => {
     expect(jsonLd).not.toHaveProperty("aggregateRating");
     expect(jsonLd).not.toHaveProperty("review");
     expect(jsonLd).not.toHaveProperty("brand");
+  });
+});
+
+describe("buildAboutPageJsonLd", () => {
+  it("construye un AboutPage con la URL absoluta correcta", () => {
+    const jsonLd = buildAboutPageJsonLd({ name: "Sobre Preciara", description: "..." }, "/sobre-preciara");
+    expect(jsonLd["@type"]).toBe("AboutPage");
+    expect(jsonLd.url).toBe(`${SITE_URL}/sobre-preciara`);
+    expect(jsonLd.about).toMatchObject({ "@type": "Organization", name: "Preciara" });
+  });
+});
+
+describe("buildWebPageJsonLd", () => {
+  it("construye un WebPage simple con la URL absoluta correcta", () => {
+    const jsonLd = buildWebPageJsonLd({ name: "Para tiendas", description: "..." }, "/para-tiendas");
+    expect(jsonLd["@type"]).toBe("WebPage");
+    expect(jsonLd.url).toBe(`${SITE_URL}/para-tiendas`);
+  });
+});
+
+describe("buildContactPageJsonLd", () => {
+  it("incluye mainEntity con el correo cuando se proporciona uno real", () => {
+    const jsonLd = buildContactPageJsonLd(
+      { name: "Contacto", description: "...", email: "contacto@preciara.es" },
+      "/contacto",
+    );
+    expect(jsonLd["@type"]).toBe("ContactPage");
+    expect(jsonLd.url).toBe(`${SITE_URL}/contacto`);
+    expect(jsonLd).toHaveProperty("mainEntity");
+    expect(jsonLd.mainEntity).toMatchObject({ "@type": "Organization", email: "contacto@preciara.es" });
+  });
+
+  it("nunca inventa un correo: sin email real, no incluye mainEntity en absoluto", () => {
+    const jsonLd = buildContactPageJsonLd({ name: "Contacto", description: "...", email: null }, "/contacto");
+    expect(jsonLd).not.toHaveProperty("mainEntity");
   });
 });

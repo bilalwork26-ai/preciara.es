@@ -4,6 +4,7 @@ import { Hero } from "@/components/home/Hero";
 import { CategoryRow } from "@/components/home/CategoryRow";
 import { VerifiedDealsGrid } from "@/components/home/VerifiedDealsGrid";
 import { ComparisonPanel } from "@/components/home/ComparisonPanel";
+import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
 import { getDealsGridBundle, getFeaturedBundle, getHomeCategories } from "@/server/dataSource/home";
@@ -77,6 +78,8 @@ export default async function Home() {
           <ComparisonPanel product={featured.data.product} merchants={featured.data.merchants} />
         </div>
       </Container>
+
+      <HowItWorksSection />
 
       <MarqueeBand />
     </>
