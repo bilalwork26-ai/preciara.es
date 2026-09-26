@@ -2,6 +2,11 @@ import Link from "next/link";
 import { Logo } from "@/components/icons/Logo";
 import { Container } from "@/components/ui/Container";
 
+const discoverLinks = [
+  { label: "Categorías", href: "/categorias" },
+  { label: "Guías de compra", href: "/guias" },
+];
+
 const legalLinks = [
   { label: "Metodología", href: "/metodologia" },
   { label: "Aviso de afiliación", href: "/aviso-afiliacion" },
@@ -29,21 +34,39 @@ export function Footer() {
             </p>
           </div>
 
-          <nav aria-label="Enlaces legales">
-            <h3 className="text-sm font-semibold text-white">Información</h3>
-            <ul className="mt-3 space-y-2">
-              {legalLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className={`rounded text-sm text-navy-100 transition-colors hover:text-white ${FOCUS_RING_CLASSES}`}
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <div className="flex flex-col gap-8 sm:flex-row sm:gap-16">
+            <nav aria-label="Descubrir">
+              <h3 className="text-sm font-semibold text-white">Descubrir</h3>
+              <ul className="mt-3 space-y-2">
+                {discoverLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className={`rounded text-sm text-navy-100 transition-colors hover:text-white ${FOCUS_RING_CLASSES}`}
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <nav aria-label="Enlaces legales">
+              <h3 className="text-sm font-semibold text-white">Información</h3>
+              <ul className="mt-3 space-y-2">
+                {legalLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className={`rounded text-sm text-navy-100 transition-colors hover:text-white ${FOCUS_RING_CLASSES}`}
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </div>
         </div>
 
         <p className="mt-8 border-t border-border-navy pt-6 text-xs leading-relaxed text-navy-100">

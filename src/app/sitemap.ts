@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/seo";
+import { guides } from "@/data/guides";
 import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers } from "@/server/repositories/products";
 
@@ -15,9 +16,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: SITE_URL, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/categorias`, changeFrequency: "daily", priority: 0.8 },
+    { url: `${SITE_URL}/guias`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/metodologia`, changeFrequency: "monthly", priority: 0.3 },
     { url: `${SITE_URL}/privacidad`, changeFrequency: "yearly", priority: 0.1 },
     { url: `${SITE_URL}/aviso-afiliacion`, changeFrequency: "yearly", priority: 0.1 },
+    ...guides.map((guide) => ({
+      url: `${SITE_URL}/guias/${guide.slug}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    })),
   ];
 
   const [categories, products] = await Promise.all([

@@ -21,6 +21,15 @@ describe("sitemap", () => {
     expect(urls).toContain("https://preciara.es");
     expect(urls).toContain("https://preciara.es/categorias");
   });
+
+  it("incluye /guias y las tres guías de compra", async () => {
+    const entries = await sitemap();
+    const urls = entries.map((e) => e.url);
+    expect(urls).toContain("https://preciara.es/guias");
+    expect(urls).toContain("https://preciara.es/guias/como-comparar-precios-online");
+    expect(urls).toContain("https://preciara.es/guias/elegir-tecnologia-reacondicionada");
+    expect(urls).toContain("https://preciara.es/guias/como-comparar-electrodomesticos");
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("sitemap (integración, BD local de pruebas)", () => {

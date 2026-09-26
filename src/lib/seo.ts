@@ -68,3 +68,23 @@ export function buildProductJsonLd(product: Product, merchants: Merchant[], cano
     offers: offersNode,
   };
 }
+
+/**
+ * `Article` para las guías editoriales de `/guias`. Sin `datePublished`:
+ * no hay una fecha real de publicación que citar, y no se inventa una.
+ */
+export function buildArticleJsonLd(
+  input: { headline: string; description: string },
+  canonicalPath: string,
+) {
+  const url = new URL(canonicalPath, SITE_URL).toString();
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: input.headline,
+    description: input.description,
+    url,
+    mainEntityOfPage: url,
+    publisher: { "@type": "Organization", name: "Preciara" },
+  };
+}
