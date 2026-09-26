@@ -240,7 +240,7 @@ function buildAwinFeedListUrlInternal(apiKey: string, configuredUrl?: string): U
     if (
       url.hostname.toLowerCase() !== "ui.awin.com" ||
       !url.pathname.startsWith("/productdata-darwin-download/publisher/") ||
-      !url.pathname.endsWith("/feedlist")
+      !url.pathname.toLowerCase().endsWith("/feedlist")
     ) {
       throw new AwinTransportError("INVALID_FEED_LIST_URL", "La URL configurada no corresponde a la descarga oficial de la lista de feeds de Awin.");
     }
