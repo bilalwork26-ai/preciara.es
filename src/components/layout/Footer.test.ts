@@ -91,3 +91,20 @@ describe("Footer.tsx: contenido y enlaces conservados, con contraste accesible s
     expect(footerSource).toContain("focus-visible:ring-offset-navy-900");
   });
 });
+
+describe("Footer.tsx: nueva columna 'Descubrir' (Categorías y Guías de compra), sin tocar 'Información'", () => {
+  it("añade una columna 'Descubrir' con enlaces a Categorías y Guías de compra", () => {
+    expect(footerSource).toContain('{ label: "Categorías", href: "/categorias" }');
+    expect(footerSource).toContain('{ label: "Guías de compra", href: "/guias" }');
+    expect(footerSource).toMatch(/<nav aria-label="Descubrir">/);
+    expect(footerSource).toMatch(/<h3[^>]*>Descubrir<\/h3>/);
+  });
+
+  it("la columna 'Información' sigue intacta: mismo título, mismos tres enlaces legales, mismo aria-label", () => {
+    expect(footerSource).toMatch(/<nav aria-label="Enlaces legales">/);
+    expect(footerSource).toMatch(/<h3[^>]*>Información<\/h3>/);
+    expect(footerSource).toContain('{ label: "Metodología", href: "/metodologia" }');
+    expect(footerSource).toContain('{ label: "Aviso de afiliación", href: "/aviso-afiliacion" }');
+    expect(footerSource).toContain('{ label: "Privacidad y cookies", href: "/privacidad" }');
+  });
+});
