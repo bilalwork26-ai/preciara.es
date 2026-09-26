@@ -89,7 +89,10 @@ function makeThrowingDownloadFeedList(error: () => Error): NonNullable<AwinOrche
     })();
 }
 
-const FIXED_NOW = new Date("2026-09-23T10:00:00.000Z");
+// Debe representar el momento de ESTA ejecución: una fecha literal acaba
+// convirtiendo las ofertas recién importadas en "viejas" cuando el calendario
+// real avanza más de `deactivateStaleAfterHours` (72 h).
+const FIXED_NOW = new Date();
 const NO_WAIT: AwinTransportOptions["wait"] = async () => undefined;
 
 function baseDeps(overrides: Partial<AwinOrchestratorDeps> = {}): AwinOrchestratorDeps {
