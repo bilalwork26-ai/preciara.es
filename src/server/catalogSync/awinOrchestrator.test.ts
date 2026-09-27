@@ -101,7 +101,19 @@ function baseDeps(overrides: Partial<AwinOrchestratorDeps> = {}): AwinOrchestrat
 
 async function cleanup() {
   if (!prisma) return;
-  await prisma.product.deleteMany({ where: { category: { slug: { startsWith: PREFIX } } } });
+  // Los productos que crea `applyOffer.ts` siempre llevan el slug
+  // `ext-awin-awin-<advertiserId>-<externalId>` (ver
+  // `deriveExternalProductSlug`), sea cual sea su categoría final — desde
+  // que `mapAwinCategoryText` agrupa el texto de prueba (`${PREFIX}-cat`)
+  // bajo la categoría genérica "otros" (una categoría real y compartida,
+  // nunca exclusiva de los tests), filtrar solo por categoría con `PREFIX`
+  // ya no los encuentra. Un puñado de pruebas también insertan un producto
+  // "de un ciclo anterior" a mano, con slug `${PREFIX}-...` en una
+  // categoría `${PREFIX}-cat` — esos siguen necesitando el filtro por
+  // categoría. Se combinan las tres formas para no dejar ningún resto.
+  await prisma.product.deleteMany({
+    where: { OR: [{ slug: { startsWith: "ext-awin-awin-" } }, { slug: { startsWith: PREFIX } }, { category: { slug: { startsWith: PREFIX } } }] },
+  });
   await prisma.merchant.deleteMany({ where: { slug: { startsWith: "awin-" } } });
   await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX } } });
   await prisma.importRun.deleteMany({ where: { source: { startsWith: "sync:awin:" } } });
@@ -142,6 +154,14 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: descubrimie
     expect(summary.advertisersSuccessful).toBe(2);
     expect(summary.feedsCompleted).toBe(2);
     expect(summary.validRowsTotal).toBe(2);
+    // Resumen agregado del ciclo completo (punto 7 de observabilidad): dos
+    // productos y dos ofertas nunca vistos antes -> ambos "creados", cero
+    // actualizaciones y cero desactivaciones (no se pidió deactivateStaleAfterHours).
+    expect(summary.productsCreatedTotal).toBe(2);
+    expect(summary.productsUpdatedTotal).toBe(0);
+    expect(summary.offersCreatedTotal).toBe(2);
+    expect(summary.offersUpdatedTotal).toBe(0);
+    expect(summary.staleDeactivatedTotal).toBe(0);
 
     const merchantA = await prisma!.merchant.findUniqueOrThrow({ where: { slug: deriveAwinMerchantSlug(advA) } });
     const merchantB = await prisma!.merchant.findUniqueOrThrow({ where: { slug: deriveAwinMerchantSlug(advB) } });
@@ -374,6 +394,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: regla conse
     expect(outcome.deactivation.executed).toBe(true);
     expect(outcome.deactivation.reason).toBe("OK");
     expect(outcome.deactivation.deactivatedCount).toBe(1);
+    expect(summary.staleDeactivatedTotal).toBe(1); // agregado del ciclo completo, ver AwinOrchestratorSummary
 
     const oldOffer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId: `${PREFIX}-930001-old` } });
     expect(oldOffer.isActive).toBe(false);

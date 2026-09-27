@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { AwinOrchestratorLockBusyError, runAwinCatalogSyncCycle } from "@/server/catalogSync/awinOrchestrator";
+import { AwinOrchestratorLockBusyError, runAwinCatalogSyncCycle, summarizeAwinFeedFailures } from "@/server/catalogSync/awinOrchestrator";
 import { verifyAwinSyncSignature } from "@/server/jobs/awinSyncRequestAuth";
 
 export const runtime = "nodejs";
@@ -66,23 +66,39 @@ export async function POST(request: NextRequest) {
 
   const { dryRun } = payload;
   after(async () => {
+    const startedAt = Date.now();
     try {
       const summary = await runAwinCatalogSyncCycle({ apiKey, feedListUrl, dryRun });
       console.log({
         event: "awin_sync_job_done",
+        durationMs: Date.now() - startedAt,
         dryRun: summary.dryRun,
         ok: !summary.listFatalError && summary.feedsFailed === 0 && summary.advertisersIncomplete === 0,
         feedsDiscovered: summary.feedsDiscovered,
         feedsApproved: summary.feedsApproved,
+        feedsSkippedNotJoined: summary.feedsSkippedNotJoined,
+        feedsInvalidInList: summary.feedsInvalidInList,
         advertisersProcessed: summary.advertisersProcessed,
+        advertisersSuccessful: summary.advertisersSuccessful,
+        advertisersIncomplete: summary.advertisersIncomplete,
         validRowsTotal: summary.validRowsTotal,
         invalidRowsTotal: summary.invalidRowsTotal,
         feedsCompleted: summary.feedsCompleted,
         feedsFailed: summary.feedsFailed,
+        feedsEmpty: summary.feedsEmpty,
+        productsCreatedTotal: summary.productsCreatedTotal,
+        productsUpdatedTotal: summary.productsUpdatedTotal,
+        offersCreatedTotal: summary.offersCreatedTotal,
+        offersUpdatedTotal: summary.offersUpdatedTotal,
+        staleDeactivatedTotal: summary.staleDeactivatedTotal,
+        // Solo identificadores ya públicos y un código fijo de motivo —
+        // nunca la URL del feed, la API key ni un mensaje crudo.
+        feedFailures: summarizeAwinFeedFailures(summary.feeds),
       });
     } catch (error) {
       console.error({
         event: error instanceof AwinOrchestratorLockBusyError ? "awin_sync_job_lock_busy" : "awin_sync_job_failed",
+        durationMs: Date.now() - startedAt,
       });
     }
   });

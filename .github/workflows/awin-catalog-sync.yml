@@ -49,6 +49,15 @@ jobs:
         shell: bash
         run: sleep $((10 + RANDOM % 111))
 
+      # Misma versión de Node que el resto del proyecto (ver ci.yml). El
+      # runner de ubuntu-latest trae un Node preinstalado, pero fijarla
+      # explícitamente evita depender de la imagen y elimina el aviso de
+      # GitHub Actions sobre no declarar una versión de Node.
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Solicitar la sincronización dentro de Hostinger
         shell: bash
         run: |

@@ -531,10 +531,11 @@ describe("parseAwinProductFeed: confirmación de que se emiten todas las filas v
 });
 
 describe("parseAwinProductFeed: casos límite adicionales", () => {
-  it("una categoría cuyo texto no produce ningún carácter válido de slug (solo símbolos) se rechaza con INVALID_SLUG", async () => {
+  it("una categoría cuyo texto no coincide con ninguna regla de mapeo (aquí, solo símbolos) cae en la categoría genérica 'Otros' — la fila sigue siendo válida, nunca se rechaza por esto (ver categoryMapping.ts)", async () => {
     const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "P", merchant_category: "!!!", search_price: "10", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
-    const results = await collect(csv);
-    expect(invalid(results)[0].code).toBe("INVALID_SLUG");
+    const results = valid(await collect(csv));
+    expect(results).toHaveLength(1);
+    expect(results[0].row.category).toEqual({ slug: "otros", name: "Otros" });
   });
 
   it("in_stock=1 y in_stock=0 se mapean a IN_STOCK/OUT_OF_STOCK; un valor ausente o no reconocido se mapea a UNKNOWN (nunca se asume 'en stock')", async () => {
@@ -551,5 +552,22 @@ describe("parseAwinProductFeed: casos límite adicionales", () => {
     const csv = [FULL_HEADER, row({ merchant_product_id: "sku-123", product_name: "P", merchant_category: "C", search_price: "10", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
     const results = valid(await collect(csv));
     expect(results[0].row.externalId).toBe("sku-123");
+  });
+});
+
+describe("parseAwinProductFeed: la categoría se mapea a la taxonomía existente de Preciara (ver categoryMapping.ts), nunca al texto crudo del feed", () => {
+  it("un texto de categoría reconocible se mapea a la categoría real de Preciara, no a un slug derivado del texto del comercio", async () => {
+    const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "P", merchant_category: "Electrónica y Ordenadores", search_price: "10", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
+    const results = valid(await collect(csv));
+    expect(results[0].row.category).toEqual({ slug: "tecnologia", name: "Tecnología" });
+  });
+
+  it("dos textos de categoría distintos que apuntan al mismo tema se agrupan bajo la MISMA categoría de Preciara", async () => {
+    const csvA = [FULL_HEADER, row({ aw_product_id: "a", product_name: "A", merchant_category: "Lavadoras", search_price: "10", currency: "EUR", aw_deep_link: "https://x.invalid/a" })].join("\n");
+    const csvB = [FULL_HEADER, row({ aw_product_id: "b", product_name: "B", merchant_category: "Electrodomésticos de cocina", search_price: "10", currency: "EUR", aw_deep_link: "https://x.invalid/b" })].join("\n");
+    const resultsA = valid(await collect(csvA));
+    const resultsB = valid(await collect(csvB));
+    expect(resultsA[0].row.category.slug).toBe("electrodomesticos");
+    expect(resultsB[0].row.category.slug).toBe("electrodomesticos");
   });
 });
