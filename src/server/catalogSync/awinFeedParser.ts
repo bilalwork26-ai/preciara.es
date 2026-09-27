@@ -76,6 +76,7 @@
 import { OfferSource } from "@/generated/prisma";
 import { Availability } from "@/generated/prisma";
 import { parseDecimalField, RowValidationError } from "@/server/importer/validate";
+import { mapAwinCategoryText } from "./categoryMapping";
 import { parseCsvStream, singleChunk, StreamingCsvTruncatedError } from "./streamingCsv";
 import { validateNormalizedOfferRow } from "./validation";
 import { NormalizedOfferRowError, type NormalizedMerchant, type NormalizedOfferRow } from "./types";
@@ -209,17 +210,6 @@ function recordFromRow(headerColumns: string[], row: string[]): Record<string, s
   return record;
 }
 
-/** Quita diacríticos, pasa a minúsculas y sustituye todo lo que no sea `a-z0-9` por guiones simples — la misma forma que exige `validateNormalizedOfferRow` para slugs. Nunca inventa contenido: solo transforma el texto ya presente en la columna de categoría. */
-function slugify(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 150);
-}
-
 function resolveAvailability(raw: string): Availability {
   const value = raw.trim();
   if (value === "1") return Availability.IN_STOCK;
@@ -250,10 +240,13 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
   if (!categoryText) {
     throw new NormalizedOfferRowError("MISSING_FIELD", `Falta la categoría de la fila (${COLUMN_ALIASES.categoryText.join(" / ")}).`);
   }
-  const categorySlug = slugify(categoryText);
-  if (!categorySlug) {
-    throw new NormalizedOfferRowError("INVALID_SLUG", `La categoría "${categoryText}" no produce un identificador válido tras normalizar el texto.`);
-  }
+  // Mapeo conservador a la taxonomía YA existente de Preciara (ver
+  // categoryMapping.ts) — nunca un slug nuevo derivado a ciegas del texto
+  // de cada comercio: siempre agrupa bajo una de las categorías reales que
+  // el usuario ya navega, o bajo la categoría genérica "Otros" si el texto
+  // no coincide con ninguna regla. `mapAwinCategoryText` nunca devuelve un
+  // resultado vacío, así que esta fila nunca se rechaza por su categoría.
+  const category = mapAwinCategoryText(categoryText);
 
   const name = pickField(headerIndex, record, COLUMN_ALIASES.name);
 
@@ -279,7 +272,7 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
     name,
     brand: pickField(headerIndex, record, COLUMN_ALIASES.brand) || null,
     model: pickField(headerIndex, record, COLUMN_ALIASES.model) || null,
-    category: { slug: categorySlug, name: categoryText },
+    category,
     imageUrl: pickField(headerIndex, record, COLUMN_ALIASES.imageUrl) || null,
     price,
     shippingCost,

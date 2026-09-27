@@ -80,7 +80,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { prisma, isDatabaseConfigured } from "../src/server/db/client";
-import { runAwinCatalogSyncCycle, AwinOrchestratorLockBusyError, type AwinOrchestratorSummary } from "../src/server/catalogSync/awinOrchestrator";
+import { runAwinCatalogSyncCycle, summarizeAwinFeedFailures, AwinOrchestratorLockBusyError, type AwinOrchestratorSummary } from "../src/server/catalogSync/awinOrchestrator";
 
 type LogEvent = Record<string, unknown> & { level: "info" | "warn" | "error"; event: string };
 
@@ -239,6 +239,15 @@ export async function runAwinSyncCommand(argv: string[], env: Record<string, str
         feedsCompleted: summary.feedsCompleted,
         feedsFailed: summary.feedsFailed,
         feedsEmpty: summary.feedsEmpty,
+        productsCreatedTotal: summary.productsCreatedTotal,
+        productsUpdatedTotal: summary.productsUpdatedTotal,
+        offersCreatedTotal: summary.offersCreatedTotal,
+        offersUpdatedTotal: summary.offersUpdatedTotal,
+        staleDeactivatedTotal: summary.staleDeactivatedTotal,
+        // Solo identificadores ya públicos del feed (advertiserId/feedId) y
+        // un código de motivo fijo — nunca la URL, la API key ni un mensaje
+        // crudo (ver AwinOrchestratorFeedFailureReason en awinOrchestrator.ts).
+        feedFailures: summarizeAwinFeedFailures(summary.feeds),
       });
 
       return { exitCode: ok ? 0 : 1 };

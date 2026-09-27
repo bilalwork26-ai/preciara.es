@@ -213,6 +213,11 @@ export type AwinOrchestratorFeedOutcome = {
   status: "completed" | "empty" | "failed";
   validRows: number;
   invalidRows: number;
+  /** Copiados de `SyncSummary` (ver `syncRun.ts`) cuando `runSync` llega a devolver un resumen — 0 si el feed falló antes de eso (transporte/parser/contrato). */
+  productsCreated: number;
+  productsUpdated: number;
+  offersCreated: number;
+  offersUpdated: number;
   importRunId: number | null;
   syncStatus: SyncSummary["status"] | null;
   failureReason?: AwinOrchestratorFeedFailureReason;
@@ -227,6 +232,10 @@ export type AwinOrchestratorAdvertiserOutcome = {
   feedsEmpty: number;
   validRowsTotal: number;
   invalidRowsTotal: number;
+  productsCreatedTotal: number;
+  productsUpdatedTotal: number;
+  offersCreatedTotal: number;
+  offersUpdatedTotal: number;
   /** `true` solo si NINGUNO de sus feeds falló (por transporte, parser, stream o rechazo de `runCatalogSync`) — un feed `empty` sigue contando como "terminado", solo bloquea la desactivación, no la completitud. */
   complete: boolean;
   deactivation: {
@@ -254,6 +263,13 @@ export type AwinOrchestratorSummary = {
   feedsCompleted: number;
   feedsFailed: number;
   feedsEmpty: number;
+  /** Agregados de todo el ciclo (todos los feeds de todos los anunciantes) — punto único de observabilidad, nunca hay que sumar `feeds[]`/`advertisers[]` a mano para saber qué pasó. */
+  productsCreatedTotal: number;
+  productsUpdatedTotal: number;
+  offersCreatedTotal: number;
+  offersUpdatedTotal: number;
+  /** Suma de `advertisers[].deactivation.deactivatedCount` — cuántas ofertas se desactivaron en TODO el ciclo (siempre 0 si `dryRun` o si no se pidió `deactivateStaleAfterHours`). */
+  staleDeactivatedTotal: number;
   advertisers: AwinOrchestratorAdvertiserOutcome[];
   feeds: AwinOrchestratorFeedOutcome[];
 };
@@ -287,6 +303,22 @@ export type AwinOrchestratorOptions = {
 /** `awin-<advertiserId>` — ÚNICAMENTE a partir de `advertiserId`, nunca del `feedId`/idioma/vertical: varios feeds de un mismo anunciante son, a propósito, el MISMO comercio (ver comentario de cabecera). */
 export function deriveAwinMerchantSlug(advertiserId: string): string {
   return `awin-${advertiserId}`;
+}
+
+export type AwinFeedFailureSummary = { advertiserId: string; feedId: string; failureReason: AwinOrchestratorFeedFailureReason | undefined };
+
+/**
+ * Lista compacta de los feeds fallidos de un ciclo, solo con identificadores
+ * ya públicos (`advertiserId`/`feedId`) y el código fijo de motivo — NUNCA
+ * la URL del feed, la API key ni un mensaje de error crudo (ya descartados
+ * más arriba en este mismo fichero). Pensada para el resumen final de
+ * observabilidad (punto 7 del encargo) que registran tanto
+ * `scripts/sync-awin.ts` como `src/app/api/jobs/awin-sync/route.ts` — un
+ * único sitio, nunca dos implementaciones distintas. Vacía si no hubo
+ * ningún feed fallido.
+ */
+export function summarizeAwinFeedFailures(feeds: AwinOrchestratorFeedOutcome[]): AwinFeedFailureSummary[] {
+  return feeds.filter((f) => f.status === "failed").map((f) => ({ advertiserId: f.advertiserId, feedId: f.feedId, failureReason: f.failureReason }));
 }
 
 function classifyFeedFailure(error: unknown): AwinOrchestratorFeedFailureReason {
@@ -414,6 +446,11 @@ async function processAdvertiser(
   let validRowsTotal = 0;
   let invalidRowsTotal = 0;
 
+  let productsCreatedTotal = 0;
+  let productsUpdatedTotal = 0;
+  let offersCreatedTotal = 0;
+  let offersUpdatedTotal = 0;
+
   for (const feedEntry of sortedFeeds) {
     const counters = { valid: 0, invalid: 0 };
     const context: AwinFeedContext = { merchant, fetchedAt: deps.now() };
@@ -421,6 +458,10 @@ async function processAdvertiser(
     let syncStatus: SyncSummary["status"] | null = null;
     let importRunId: number | null = null;
     let failureReason: AwinOrchestratorFeedFailureReason | undefined;
+    let productsCreated = 0;
+    let productsUpdated = 0;
+    let offersCreated = 0;
+    let offersUpdated = 0;
 
     try {
       const feedResults = deps.downloadProductFeed(feedEntry.url, context);
@@ -435,6 +476,10 @@ async function processAdvertiser(
       });
       syncStatus = summary.status;
       importRunId = summary.importRunId;
+      productsCreated = summary.productsCreated;
+      productsUpdated = summary.productsUpdated;
+      offersCreated = summary.offersCreated;
+      offersUpdated = summary.offersUpdated;
       if (summary.status !== "SUCCESS") {
         status = "failed";
         failureReason = "ROWS_REJECTED_BY_SYNC";
@@ -452,6 +497,10 @@ async function processAdvertiser(
 
     validRowsTotal += counters.valid;
     invalidRowsTotal += counters.invalid;
+    productsCreatedTotal += productsCreated;
+    productsUpdatedTotal += productsUpdated;
+    offersCreatedTotal += offersCreated;
+    offersUpdatedTotal += offersUpdated;
     if (status === "failed") {
       advertiserComplete = false;
       feedsFailed += 1;
@@ -468,6 +517,10 @@ async function processAdvertiser(
       status,
       validRows: counters.valid,
       invalidRows: counters.invalid,
+      productsCreated,
+      productsUpdated,
+      offersCreated,
+      offersUpdated,
       importRunId,
       syncStatus,
       failureReason,
@@ -484,6 +537,10 @@ async function processAdvertiser(
       feedsEmpty,
       validRowsTotal,
       invalidRowsTotal,
+      productsCreatedTotal,
+      productsUpdatedTotal,
+      offersCreatedTotal,
+      offersUpdatedTotal,
       complete: advertiserComplete,
       // Se rellena en `runAwinCatalogSyncCycle`, que conoce las condiciones GLOBALES (p. ej. `listHadInvalidRows`).
       deactivation: { executed: false, reason: "NOT_REQUESTED", deactivatedCount: 0, importRunId: null },
@@ -550,6 +607,11 @@ export async function runAwinCatalogSyncCycle(options: AwinOrchestratorOptions):
       feedsCompleted: feeds.filter((f) => f.status === "completed").length,
       feedsFailed: feeds.filter((f) => f.status === "failed").length,
       feedsEmpty: feeds.filter((f) => f.status === "empty").length,
+      productsCreatedTotal: feeds.reduce((sum, f) => sum + f.productsCreated, 0),
+      productsUpdatedTotal: feeds.reduce((sum, f) => sum + f.productsUpdated, 0),
+      offersCreatedTotal: feeds.reduce((sum, f) => sum + f.offersCreated, 0),
+      offersUpdatedTotal: feeds.reduce((sum, f) => sum + f.offersUpdated, 0),
+      staleDeactivatedTotal: advertisers.reduce((sum, a) => sum + a.deactivation.deactivatedCount, 0),
       advertisers,
       feeds,
     };
