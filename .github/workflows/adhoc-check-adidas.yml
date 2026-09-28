@@ -10,6 +10,8 @@ name: "[Temporal] Comprobación puntual: productos Adidas en producción"
 # política de red del entorno), así que esta comprobación se hace desde
 # GitHub Actions, que sí llega (ya lo hace el propio awin-catalog-sync.yml).
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
