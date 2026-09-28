@@ -137,6 +137,32 @@
  * log ni cálculo adicional. Nunca se registra el cuerpo, la firma, `kid`, el
  * PEM de la clave ni ningún token — solo longitudes, hashes SHA-256 (que no
  * permiten recuperar el contenido) y booleanos.
+ *
+ * Instrumentación TEMPORAL de `algorithm`/`digest` (esta ronda): con
+ * notificaciones REALES de producción ya confirmando `rawBodySha256 ===
+ * canonicalBodySha256` (sin mutación dentro de nuestro proceso) y
+ * `sha256RawBodyMatched`/`sha256CanonicalBodyMatched` en `false` (SHA-256
+ * tampoco verifica, descartando ya la sonda de algoritmo previa), queda una
+ * última pieza observable desde el código: la respuesta de `getPublicKey`
+ * de eBay incluye, además de `key`, los campos `algorithm`/`digest` — nunca
+ * leídos hasta ahora (`fetchAndNormalizePublicKey` solo extraía `key`). El
+ * SDK .NET oficial de eBay SÍ los usa de forma dinámica por clave
+ * (`SignerUtilities.GetSigner(String.Format("{0}WITH{1}", digest,
+ * algorithm))`, ver `Utils/SignatureValidatorImpl.cs`); el SDK Node oficial
+ * los MODELA en su tipo `PublicKey` pero tampoco los usa (verifica con una
+ * constante fija, igual que nosotros) — es decir, es una inconsistencia
+ * entre los dos SDKs oficiales de eBay, no una discrepancia clara contra la
+ * documentación (que sigue describiendo ECDSA/SHA1 como único valor
+ * observado). `fetchAndNormalizePublicKey`/`fetchPublicKey` ahora también
+ * devuelven (y cachean junto al PEM, mismo TTL) `algorithm`/`digest`
+ * TAL CUAL los da esa respuesta — ÚNICAMENTE para el log
+ * `ebay_public_key_selection` cuando hay `requestId` (ver más abajo);
+ * `attemptVerify` sigue usando EXCLUSIVAMENTE `SIGNATURE_DIGEST = "sha1"`,
+ * sin excepción. El objetivo es, con la PRÓXIMA notificación real, ver qué
+ * valor devuelve eBay de verdad para el `kid` que está fallando, antes de
+ * decidir cualquier cambio. `kid` nunca se registra en claro (se sigue la
+ * misma convención que el resto del fichero) — solo su SHA-256, para poder
+ * agrupar log lines del mismo `kid` sin poder recuperarlo.
  */
 import { createHash, createPublicKey, createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
@@ -160,8 +186,8 @@ type CachedValue<T> = { value: T; expiresAt: number };
 
 /** Caché en memoria del proceso — nunca persistida a disco/BD; se pierde (correctamente) al reiniciar. Clave: clientId. */
 const appTokenCache = new Map<string, CachedValue<string>>();
-/** Caché en memoria del proceso. Clave: kid. */
-const publicKeyCache = new Map<string, CachedValue<string>>();
+/** Caché en memoria del proceso. Clave: kid. Guarda el PEM normalizado junto a `algorithm`/`digest` (ver `NormalizedPublicKey`) — estos dos últimos SOLO para instrumentación de diagnóstico, nunca para verificar. */
+const publicKeyCache = new Map<string, CachedValue<NormalizedPublicKey>>();
 
 function isFresh<T>(entry: CachedValue<T> | undefined, now: number): entry is CachedValue<T> {
   return !!entry && entry.expiresAt > now;
@@ -248,6 +274,16 @@ async function fetchApplicationAccessToken(credentials: EbayOAuthCredentials): P
 }
 
 /**
+ * Clave pública ya normalizada más, ÚNICAMENTE para instrumentación de
+ * diagnóstico (nunca para decidir verificación — `attemptVerify` solo usa
+ * `pem` y `SIGNATURE_DIGEST`, ver comentario de cabecera del fichero,
+ * "Instrumentación de `algorithm`/`digest`"), los campos `algorithm` y
+ * `digest` TAL CUAL los devuelve la respuesta de `getPublicKey` de eBay
+ * para ese `kid` — `null` si la respuesta no los incluye o no son texto.
+ */
+type NormalizedPublicKey = { pem: string; algorithm: string | null; digest: string | null };
+
+/**
  * Pide y normaliza la clave pública de `kid` DIRECTAMENTE de la API de
  * eBay, sin consultar ni escribir `publicKeyCache` en absoluto (por eso la
  * usa también la recarga forzada de diagnóstico — "ignorando la caché",
@@ -255,7 +291,7 @@ async function fetchApplicationAccessToken(credentials: EbayOAuthCredentials): P
  * al del resto del fichero: `encodeURIComponent(kid)` se aplica una única
  * vez, solo para construir la URL, nunca se decodifica de vuelta.
  */
-async function fetchAndNormalizePublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<string> {
+async function fetchAndNormalizePublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<NormalizedPublicKey> {
   // Puede lanzar EbayFetchError con reason "oauth_http_error"/"oauth_invalid_response":
   // se deja propagar tal cual, sin envolverlo en un motivo distinto.
   const accessToken = await fetchApplicationAccessToken(credentials);
@@ -285,9 +321,15 @@ async function fetchAndNormalizePublicKey(kid: string, credentials: EbayOAuthCre
   if (typeof key !== "string" || !key) {
     throw new EbayFetchError("public_key_invalid_response", 'La respuesta de la clave pública de eBay no incluye "key".');
   }
+  // Instrumentación únicamente (ver `NormalizedPublicKey`): estos dos campos
+  // NUNCA se pasan a `attemptVerify` ni influyen en `verified`.
+  const algorithmField = (data as { algorithm?: unknown } | null)?.algorithm;
+  const digestField = (data as { digest?: unknown } | null)?.digest;
+  const algorithm = typeof algorithmField === "string" ? algorithmField : null;
+  const digest = typeof digestField === "string" ? digestField : null;
 
   try {
-    return normalizeEbayPublicKey(key);
+    return { pem: normalizeEbayPublicKey(key), algorithm, digest };
   } catch (error) {
     if (error instanceof EbayPublicKeyFormatError) {
       throw new EbayFetchError("public_key_normalization_error", error.message, undefined, error.nodeErrorCode);
@@ -296,17 +338,24 @@ async function fetchAndNormalizePublicKey(kid: string, credentials: EbayOAuthCre
   }
 }
 
-/** Resultado de `fetchPublicKey`: la clave pública normalizada, y si vino del caché (por `kid`, ver `publicKeyCache`) o de una llamada de red fresca. */
-type FetchedPublicKey = { pem: string; cacheHit: boolean };
+/**
+ * Resultado de `fetchPublicKey`: la clave pública normalizada, si vino del
+ * caché (por `kid`, ver `publicKeyCache`) o de una llamada de red fresca, y
+ * `algorithm`/`digest` — cacheados junto al PEM (mismo TTL, ver
+ * `PUBLIC_KEY_CACHE_TTL_MS`) puramente para que la instrumentación de
+ * diagnóstico los tenga disponibles también en un acierto de caché, no solo
+ * en la primera petición tras arrancar el proceso.
+ */
+type FetchedPublicKey = { pem: string; cacheHit: boolean; algorithm: string | null; digest: string | null };
 
 async function fetchPublicKey(kid: string, credentials: EbayOAuthCredentials): Promise<FetchedPublicKey> {
   const now = Date.now();
   const cached = publicKeyCache.get(kid);
-  if (isFresh(cached, now)) return { pem: cached.value, cacheHit: true };
+  if (isFresh(cached, now)) return { pem: cached.value.pem, cacheHit: true, algorithm: cached.value.algorithm, digest: cached.value.digest };
 
-  const pem = await fetchAndNormalizePublicKey(kid, credentials);
-  publicKeyCache.set(kid, { value: pem, expiresAt: now + PUBLIC_KEY_CACHE_TTL_MS });
-  return { pem, cacheHit: false };
+  const fetched = await fetchAndNormalizePublicKey(kid, credentials);
+  publicKeyCache.set(kid, { value: fetched, expiresAt: now + PUBLIC_KEY_CACHE_TTL_MS });
+  return { pem: fetched.pem, cacheHit: false, algorithm: fetched.algorithm, digest: fetched.digest };
 }
 
 /**
@@ -492,7 +541,7 @@ async function buildSignatureMismatchDiagnostics(
     freshPublicKeyFetchAttempted = true;
     forcedRefetchAttemptedAt.set(kid, now);
     try {
-      const freshPem = await fetchAndNormalizePublicKey(kid, credentials);
+      const freshPem = (await fetchAndNormalizePublicKey(kid, credentials)).pem;
       freshPublicKeyFetchSucceeded = true;
 
       // Punto 4: comparación EN MEMORIA por DER exportado — se registra
@@ -613,10 +662,35 @@ export async function verifyEbaySignature(params: {
     const fetched = await fetchPublicKey(parsed.kid, oauthCredentials);
     publicKeyPem = fetched.pem;
     publicKeyCacheHit = fetched.cacheHit;
-    logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: true, cacheHit: publicKeyCacheHit });
+
+    if (requestId !== undefined) {
+      // Instrumentación TEMPORAL (ver comentario de cabecera del fichero,
+      // "Instrumentación de `algorithm`/`digest`"): tipo/curva de la clave
+      // (ya se calculaban en `SignatureMismatchDiagnostics`, aquí también
+      // para tenerlos en el MISMO log que `algorithm`/`digest`) — ninguno
+      // de estos campos participa en `attemptVerify`.
+      let publicKeyType: string | null = null;
+      let publicKeyCurve: string | null = null;
+      try {
+        const keyObject = createPublicKey(publicKeyPem);
+        publicKeyType = keyObject.asymmetricKeyType ?? null;
+        publicKeyCurve = (keyObject.asymmetricKeyDetails as { namedCurve?: string } | undefined)?.namedCurve ?? null;
+      } catch {
+        // No debería ocurrir: la clave ya se validó en normalizeEbayPublicKey. Puramente defensivo/diagnóstico.
+      }
+      logInstrumentationEvent(requestId, "ebay_public_key_selection", {
+        ok: true,
+        cacheHit: publicKeyCacheHit,
+        kidSha256: sha256Hex(parsed.kid),
+        algorithm: fetched.algorithm,
+        digest: fetched.digest,
+        publicKeyType,
+        publicKeyCurve,
+      });
+    }
   } catch (error) {
     if (error instanceof EbayFetchError) {
-      logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: error.reason });
+      logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: error.reason, ...(requestId !== undefined ? { kidSha256: sha256Hex(parsed.kid) } : {}) });
       return {
         verified: false,
         reason: error.reason,
@@ -626,7 +700,7 @@ export async function verifyEbaySignature(params: {
     }
     // No debería ocurrir (fetchPublicKey solo lanza EbayFetchError), pero
     // ante cualquier excepción no prevista se falla cerrado igualmente.
-    logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: "public_key_http_error" });
+    logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: "public_key_http_error", ...(requestId !== undefined ? { kidSha256: sha256Hex(parsed.kid) } : {}) });
     return { verified: false, reason: "public_key_http_error" };
   }
 

@@ -1093,4 +1093,98 @@ describe("instrumentación de correlación (requestId)", () => {
       spies.error.mockRestore();
     }
   });
+
+  // Instrumentación TEMPORAL de algorithm/digest (ver comentario de
+  // cabecera del fichero): confirma que ebay_public_key_selection expone lo
+  // que devuelve getPublicKey para ese kid, cacheado junto al PEM, y que
+  // kid NUNCA se registra en claro — solo su SHA-256.
+  describe("instrumentación temporal de algorithm/digest de getPublicKey", () => {
+    it("con requestId: ebay_public_key_selection incluye algorithm/digest tal cual los devuelve eBay, publicKeyType/Curve, y kidSha256 (nunca el kid en claro)", async () => {
+      const rawBody = "cuerpo para algorithm/digest";
+      const kid = "kid-nunca-debe-aparecer-en-claro";
+      const header = buildSignatureHeader(kid, signBody(rawBody, ecPrivateKey));
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey, algorithm: "ECDSA", digest: "SHA1" } } });
+      const spies = spyConsole();
+      const requestId = "test-request-id-algorithm-digest";
+
+      try {
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials(), requestId });
+        expect(result).toEqual({ verified: true });
+
+        const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+        const keySelection = infoCalls.find((call) => call.event === "ebay_public_key_selection")!;
+        expect(keySelection).toMatchObject({
+          ok: true,
+          cacheHit: false,
+          algorithm: "ECDSA",
+          digest: "SHA1",
+          publicKeyType: "ec",
+          publicKeyCurve: "prime256v1",
+        });
+        expect(keySelection.kidSha256).toBe(createHash("sha256").update(kid, "utf8").digest("hex"));
+
+        const text = loggedText(spies);
+        expect(text).not.toContain(kid);
+      } finally {
+        spies.info.mockRestore();
+        spies.warn.mockRestore();
+        spies.error.mockRestore();
+      }
+    });
+
+    it("si getPublicKey no incluye algorithm/digest, se registran como null (nunca se inventan ni se asume sha1)", async () => {
+      const rawBody = "cuerpo sin algorithm/digest en la respuesta";
+      const header = buildSignatureHeader("kid-sin-algorithm-digest", signBody(rawBody, ecPrivateKey));
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } }); // sin algorithm/digest, como el resto de tests de este fichero
+      const spies = spyConsole();
+      const requestId = "test-request-id-sin-algorithm-digest";
+
+      try {
+        const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials(), requestId });
+        expect(result).toEqual({ verified: true });
+
+        const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+        const keySelection = infoCalls.find((call) => call.event === "ebay_public_key_selection")!;
+        expect(keySelection).toMatchObject({ algorithm: null, digest: null });
+      } finally {
+        spies.info.mockRestore();
+        spies.warn.mockRestore();
+        spies.error.mockRestore();
+      }
+    });
+
+    it("un acierto de caché (2ª notificación del mismo kid) sigue reportando el algorithm/digest obtenidos en la 1ª petición fresca", async () => {
+      const kid = "kid-cache-algorithm-digest";
+      const bodyA = "primera notificación";
+      const bodyB = "segunda notificación, mismo kid";
+      const { calls } = mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey, algorithm: "ECDSA", digest: "SHA1" } } });
+      const sharedCredentials = freshCredentials();
+      const spies = spyConsole();
+
+      try {
+        await verifyEbaySignature({
+          rawBody: bodyA,
+          signatureHeader: buildSignatureHeader(kid, signBody(bodyA, ecPrivateKey)),
+          oauthCredentials: sharedCredentials,
+          requestId: "req-cache-1",
+        });
+        await verifyEbaySignature({
+          rawBody: bodyB,
+          signatureHeader: buildSignatureHeader(kid, signBody(bodyB, ecPrivateKey)),
+          oauthCredentials: sharedCredentials,
+          requestId: "req-cache-2",
+        });
+
+        expect(calls.filter((c) => c.url.includes("/public_key/"))).toHaveLength(1); // 2ª vino de caché, sin llamada de red nueva
+
+        const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+        const secondSelection = infoCalls.find((call) => call.event === "ebay_public_key_selection" && call.requestId === "req-cache-2")!;
+        expect(secondSelection).toMatchObject({ cacheHit: true, algorithm: "ECDSA", digest: "SHA1" });
+      } finally {
+        spies.info.mockRestore();
+        spies.warn.mockRestore();
+        spies.error.mockRestore();
+      }
+    });
+  });
 });
