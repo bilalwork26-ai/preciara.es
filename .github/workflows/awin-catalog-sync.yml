@@ -12,9 +12,10 @@ on:
         default: true
         type: boolean
   schedule:
-    # Todos los días a las 04:17 UTC. Se evita el inicio de la hora para
+    # Dos veces al día, cada ~12 horas. Se evita el inicio de la hora para
     # repartir la carga tanto en GitHub Actions como en los servidores de Awin.
-    - cron: "17 4 * * *"
+    - cron: "17 4 * * *" # ~06:17 en Madrid en horario de verano
+    - cron: "17 16 * * *" # ~18:17 en Madrid en horario de verano
 
 permissions:
   contents: read
