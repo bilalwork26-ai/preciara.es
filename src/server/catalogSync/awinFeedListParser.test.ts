@@ -67,10 +67,22 @@ describe("parseAwinFeedList: anunciante no aprobado excluido", () => {
     expect(skipped(results)[0].membershipStatus).toBe("Not Joined");
   });
 
-  it.each(["Pending", "Relationship Ended", "Suspended", ""])("Membership Status %j nunca se aprueba automáticamente", async (status) => {
+  it.each(["Pending", "Relationship Ended", "Suspended", "Inactive", "Rejected"])("Membership Status %j nunca se aprueba automáticamente (skipped, reason: not_joined)", async (status) => {
     const csv = [FULL_HEADER, row({ "Advertiser ID": "100", "Advertiser Name": "X", "Membership Status": status, "Feed ID": "1000", "Feed Name": "Feed A", URL: "https://x.invalid/a" })].join("\n");
     const results = await collect(csv);
     expect(approved(results)).toHaveLength(0);
+    expect(skipped(results)).toHaveLength(1);
+    expect(skipped(results)[0].reason).toBe("not_joined");
+  });
+
+  // Un Membership Status VACÍO es un caso distinto (falta el campo obligatorio):
+  // se rechaza la fila entera como "invalid", no como "skipped" — comportamiento
+  // preexistente, ajeno a esta ronda (ver `normalizeFeedListRow`).
+  it("Membership Status vacío nunca se aprueba automáticamente (fila inválida, campo obligatorio ausente)", async () => {
+    const csv = [FULL_HEADER, row({ "Advertiser ID": "100", "Advertiser Name": "X", "Membership Status": "", "Feed ID": "1000", "Feed Name": "Feed A", URL: "https://x.invalid/a" })].join("\n");
+    const results = await collect(csv);
+    expect(approved(results)).toHaveLength(0);
+    expect(invalid(results)).toHaveLength(1);
   });
 });
 
@@ -124,6 +136,52 @@ describe("parseAwinFeedList: espacios y variantes de mayúsculas en 'Joined'", (
     const results = await collect(csv);
     expect(approved(results)).toHaveLength(0);
     expect(skipped(results)).toHaveLength(1);
+  });
+});
+
+// Formato de la lista que devuelve la interfaz NUEVA de Awin
+// (AWIN_DATAFEED_LIST_URL): usa "active" en vez de "Joined" como valor de
+// Membership Status para una cuenta aprobada — confirmado contra la lista
+// REAL de producción, donde "adidas ES" (Advertiser ID 77008) aparece con
+// Membership Status "active" y NUNCA con el literal "Joined", lo que hacía
+// que se clasificara siempre como "skipped"/"not_joined" y feedsApproved
+// fuera 0 para toda la cuenta. Mismo criterio de comparación (recorte de
+// espacios + minúsculas, coincidencia EXACTA) que para "Joined".
+describe("parseAwinFeedList: 'active' (formato de la interfaz nueva de Awin) se reconoce como aprobado", () => {
+  it.each(["active", "Active", "ACTIVE", "AcTiVe", "  active  ", " Active"])("%j se reconoce como aprobado", async (status) => {
+    const csv = [FULL_HEADER, row({ "Advertiser ID": "100", "Advertiser Name": "X", "Membership Status": status, "Feed ID": "1", "Feed Name": "A", URL: "https://x.invalid/1" })].join("\n");
+    const results = approved(await collect(csv));
+    expect(results).toHaveLength(1);
+  });
+
+  it("'Inactive' NUNCA se confunde con 'active' pese a contenerlo como subcadena", async () => {
+    const csv = [FULL_HEADER, row({ "Advertiser ID": "100", "Advertiser Name": "X", "Membership Status": "Inactive", "Feed ID": "1", "Feed Name": "A", URL: "https://x.invalid/1" })].join("\n");
+    const results = await collect(csv);
+    expect(approved(results)).toHaveLength(0);
+    expect(skipped(results)).toHaveLength(1);
+    expect(skipped(results)[0].membershipStatus).toBe("Inactive");
+  });
+
+  it("regresión con la fila REAL de producción: 'adidas ES' (Advertiser ID 77008, Membership Status 'active') se aprueba", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ "Advertiser ID": "77008", "Advertiser Name": "adidas ES", "Primary Region": "ES", "Membership Status": "active", "Feed ID": "12345", "Feed Name": "adidas ES Feed", URL: "https://x.invalid/adidas" }),
+    ].join("\n");
+    const results = approved(await collect(csv));
+    expect(results).toHaveLength(1);
+    expect(results[0].feed.advertiserId).toBe("77008");
+    expect(results[0].feed.advertiserName).toBe("adidas ES");
+  });
+
+  it("'Joined' (Legacy) y 'active' (interfaz nueva) conviven en la misma lista sin conflicto — ambos se aprueban", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ "Advertiser ID": "100", "Advertiser Name": "Legacy", "Membership Status": "Joined", "Feed ID": "1", "Feed Name": "A", URL: "https://x.invalid/1" }),
+      row({ "Advertiser ID": "200", "Advertiser Name": "Nueva interfaz", "Membership Status": "active", "Feed ID": "2", "Feed Name": "B", URL: "https://x.invalid/2" }),
+    ].join("\n");
+    const results = approved(await collect(csv));
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.feed.advertiserId)).toEqual(["100", "200"]);
   });
 });
 
