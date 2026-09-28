@@ -1,0 +1,57 @@
+name: "[Temporal] Comprobación puntual: productos Adidas en producción"
+
+# Workflow TEMPORAL y de SOLO LECTURA, para una única verificación manual —
+# no forma parte de la arquitectura de sincronización de Awin (no modifica
+# awin-catalog-sync.yml ni ningún otro flujo) y puede borrarse en cuanto se
+# haya usado. Solo hace peticiones GET públicas a preciara.es (nunca
+# escribe nada) para comprobar, desde un runner con salida a internet, si
+# hay productos de Adidas visibles — este entorno de desarrollo no tiene
+# acceso de red a preciara.es ni a developer.ebay.com (bloqueados por la
+# política de red del entorno), así que esta comprobación se hace desde
+# GitHub Actions, que sí llega (ya lo hace el propio awin-catalog-sync.yml).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Comprobar sitemap.xml y búsqueda pública de "adidas"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: sitemap.xml — productos reales indexados
+        shell: bash
+        run: |
+          set -e
+          code=$(curl -sS -o /tmp/sitemap.xml -w "%{http_code}" --max-time 20 "https://preciara.es/sitemap.xml")
+          echo "HTTP status: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::sitemap.xml no respondió 200."
+            exit 1
+          fi
+          echo "Tamaño: $(wc -c < /tmp/sitemap.xml) bytes"
+          echo "Entradas /producto/: $(grep -oc '/producto/' /tmp/sitemap.xml || true)"
+          echo "Entradas con 'adidas' en la URL (case-insensitive): $(grep -oic 'adidas' /tmp/sitemap.xml || true)"
+          echo "--- primeras coincidencias 'adidas' ---"
+          grep -i 'adidas' /tmp/sitemap.xml | head -20 || echo "(ninguna)"
+
+      - name: /buscar?q=adidas — página pública de búsqueda
+        shell: bash
+        run: |
+          set -e
+          code=$(curl -sS -o /tmp/buscar.html -w "%{http_code}" --max-time 20 "https://preciara.es/buscar?q=adidas")
+          echo "HTTP status: $code"
+          echo "Tamaño: $(wc -c < /tmp/buscar.html) bytes"
+          echo "Menciones de 'adidas' (case-insensitive): $(grep -oic 'adidas' /tmp/buscar.html || true)"
+          echo "Menciones de '/producto/': $(grep -oc '/producto/' /tmp/buscar.html || true)"
+          echo "Indicio de estado vacío ('no se han encontrado', 'sin resultados'): $(grep -oic 'no se han encontrado\|sin resultados\|no results' /tmp/buscar.html || true)"
+
+      - name: /categorias — comprobación general de catálogo real vs. demo
+        shell: bash
+        run: |
+          set -e
+          code=$(curl -sS -o /tmp/categorias.html -w "%{http_code}" --max-time 20 "https://preciara.es/categorias")
+          echo "HTTP status: $code"
+          echo "Tamaño: $(wc -c < /tmp/categorias.html) bytes"
