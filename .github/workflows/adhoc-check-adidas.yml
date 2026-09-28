@@ -57,3 +57,101 @@ jobs:
           code=$(curl -sS -o /tmp/categorias.html -w "%{http_code}" --max-time 20 "https://preciara.es/categorias")
           echo "HTTP status: $code"
           echo "Tamaño: $(wc -c < /tmp/categorias.html) bytes"
+
+  awin_list:
+    name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AWIN_DATAFEED_API_KEY: ${{ secrets.AWIN_DATAFEED_API_KEY }}
+    steps:
+      - name: Comprobar secreto obligatorio
+        shell: bash
+        run: |
+          if [ -z "$AWIN_DATAFEED_API_KEY" ]; then
+            echo "::error::Falta el secreto AWIN_DATAFEED_API_KEY."
+            exit 3
+          fi
+
+      # Misma URL Legacy que construye downloadAwinFeedList() por defecto
+      # (ver awinTransport.ts) cuando no hay AWIN_DATAFEED_LIST_URL. La URL
+      # en sí (contiene la API key) NUNCA se imprime; solo columnas no
+      # sensibles del CSV (Advertiser ID/Name, Primary Region, Membership
+      # Status) — nunca la columna URL (token de descarga por feed).
+      - name: Descargar la lista real de feeds de Awin
+        shell: bash
+        run: |
+          set -e
+          code=$(curl -sS -o /tmp/awin-list.csv -w "%{http_code}" --max-time 60 "https://productdata.awin.com/datafeed/list/apikey/${AWIN_DATAFEED_API_KEY}")
+          echo "HTTP status: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::La lista de feeds de Awin no respondió 200 (clave inválida/caducada, o problema de red)."
+            exit 1
+          fi
+          echo "Tamaño: $(wc -c < /tmp/awin-list.csv) bytes"
+          echo "Líneas totales (incl. cabecera): $(wc -l < /tmp/awin-list.csv)"
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Analizar la lista (columnas seguras únicamente, nunca la URL de descarga)
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const raw = fs.readFileSync("/tmp/awin-list.csv", "utf8");
+
+          // Parser CSV mínimo (soporta comillas dobles y comas dentro de
+          // campos entrecomillados) — suficiente para un diagnóstico
+          // puntual, no se reutiliza en producción (ver streamingCsv.ts).
+          function parseCsv(text) {
+            const rows = [];
+            let row = [];
+            let field = "";
+            let inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+              const c = text[i];
+              if (inQuotes) {
+                if (c === '"') {
+                  if (text[i + 1] === '"') { field += '"'; i++; }
+                  else inQuotes = false;
+                } else field += c;
+              } else if (c === '"') inQuotes = true;
+              else if (c === ",") { row.push(field); field = ""; }
+              else if (c === "\n" || c === "\r") {
+                if (c === "\r" && text[i + 1] === "\n") i++;
+                row.push(field); field = "";
+                if (row.length > 1 || row[0] !== "") rows.push(row);
+                row = [];
+              } else field += c;
+            }
+            if (field !== "" || row.length > 0) { row.push(field); rows.push(row); }
+            return rows;
+          }
+
+          const rows = parseCsv(raw);
+          const header = rows[0].map((h) => h.trim());
+          const idx = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+          const iId = idx("Advertiser ID");
+          const iName = idx("Advertiser Name");
+          const iRegion = idx("Primary Region");
+          const iStatus = idx("Membership Status");
+          console.log("Cabecera detectada:", header.filter((h) => h.toLowerCase() !== "url").join(" | "));
+          if (iId < 0 || iName < 0 || iStatus < 0) {
+            console.log("::error::No se encontraron las columnas esperadas (Advertiser ID/Name/Membership Status).");
+            process.exit(1);
+          }
+
+          const dataRows = rows.slice(1).filter((r) => r.length === header.length);
+          const joined = dataRows.filter((r) => (r[iStatus] || "").trim().toLowerCase() === "joined");
+          console.log(`Total de filas de datos: ${dataRows.length}`);
+          console.log(`Total con Membership Status = Joined (aprobados): ${joined.length}`);
+
+          const adidasRows = dataRows.filter((r) => (r[iName] || "").toLowerCase().includes("adidas"));
+          console.log(`Filas cuyo Advertiser Name contiene "adidas": ${adidasRows.length}`);
+          for (const r of adidasRows) {
+            console.log(`  - Advertiser ID=${r[iId]} | Name="${r[iName]}" | Region=${iRegion >= 0 ? r[iRegion] : "?"} | Membership Status=${r[iStatus]}`);
+          }
+          NODE
