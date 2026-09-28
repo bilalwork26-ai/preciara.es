@@ -281,4 +281,95 @@ describe("POST /api/ebay/marketplace-account-deletion (notificaciones)", () => {
       warnSpy.mockRestore();
     }
   });
+
+  describe("instrumentación de recepción (hashes/longitudes, sin secretos) y requestId de correlación", () => {
+    it("registra ebay_webhook_received con sha256/longitud EXACTOS del cuerpo bruto, cabeceras seguras, y nunca el cuerpo ni la firma", async () => {
+      verifyEbaySignatureMock.mockResolvedValue({ verified: true });
+      const sensitiveBody = JSON.stringify({
+        metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+        notification: { data: { username: "recepcion-usuario-secreto", eiasToken: "RECEPCION-TOKEN-SECRETO" } },
+      });
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const request = new NextRequest(ENDPOINT, {
+          method: "POST",
+          headers: { "x-ebay-signature": "firma-de-prueba-no-real", "content-type": "application/json", "user-agent": "eBay Event Notification" },
+          body: sensitiveBody,
+        });
+        await POST(request);
+
+        const receivedCall = infoSpy.mock.calls.map((args) => args[0] as Record<string, unknown>).find((call) => call?.event === "ebay_webhook_received");
+        expect(receivedCall).toBeDefined();
+        expect(receivedCall!.rawBodyByteLength).toBe(Buffer.byteLength(sensitiveBody, "utf8"));
+        expect(receivedCall!.rawBodySha256).toBe(createHash("sha256").update(sensitiveBody, "utf8").digest("hex"));
+        expect(receivedCall!.contentTypeHeader).toBe("application/json");
+        expect(receivedCall!.userAgentHeader).toBe("eBay Event Notification");
+        expect(receivedCall!.signatureHeaderPresent).toBe(true);
+        expect(receivedCall!.signatureHeaderLength).toBe("firma-de-prueba-no-real".length);
+        expect(typeof receivedCall!.requestId).toBe("string");
+        expect((receivedCall!.requestId as string).length).toBeGreaterThan(0);
+
+        const loggedText = infoSpy.mock.calls.map((args) => args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")).join("\n");
+        expect(loggedText).not.toContain("recepcion-usuario-secreto");
+        expect(loggedText).not.toContain("RECEPCION-TOKEN-SECRETO");
+        expect(loggedText).not.toContain(sensitiveBody);
+        expect(loggedText).not.toContain("firma-de-prueba-no-real");
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+
+    it("sin cabecera x-ebay-signature: signatureHeaderPresent es false y signatureHeaderLength es null", async () => {
+      verifyEbaySignatureMock.mockResolvedValue({ verified: false, reason: "missing_header" });
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const request = new NextRequest(ENDPOINT, { method: "POST", body: JSON.stringify({}) });
+        await POST(request);
+
+        const receivedCall = infoSpy.mock.calls.map((args) => args[0] as Record<string, unknown>).find((call) => call?.event === "ebay_webhook_received");
+        expect(receivedCall).toMatchObject({ signatureHeaderPresent: false, signatureHeaderLength: null });
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+
+    it("pasa a verifyEbaySignature el MISMO requestId que se registró en ebay_webhook_received (correlación de extremo a extremo)", async () => {
+      verifyEbaySignatureMock.mockResolvedValue({ verified: true });
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const request = new NextRequest(ENDPOINT, {
+          method: "POST",
+          headers: { "x-ebay-signature": "x" },
+          body: JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: {} }),
+        });
+        await POST(request);
+
+        const receivedCall = infoSpy.mock.calls.map((args) => args[0] as Record<string, unknown>).find((call) => call?.event === "ebay_webhook_received");
+        const requestId = receivedCall!.requestId as string;
+        expect(verifyEbaySignatureMock).toHaveBeenCalledWith(expect.objectContaining({ requestId }));
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+
+    it("dos peticiones distintas obtienen requestId distintos", async () => {
+      verifyEbaySignatureMock.mockResolvedValue({ verified: true });
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const request1 = new NextRequest(ENDPOINT, { method: "POST", headers: { "x-ebay-signature": "x" }, body: JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: {} }) });
+        const request2 = new NextRequest(ENDPOINT, { method: "POST", headers: { "x-ebay-signature": "x" }, body: JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: {} }) });
+        await POST(request1);
+        await POST(request2);
+
+        const receivedIds = infoSpy.mock.calls
+          .map((args) => args[0] as Record<string, unknown>)
+          .filter((call) => call?.event === "ebay_webhook_received")
+          .map((call) => call.requestId);
+        expect(receivedIds).toHaveLength(2);
+        expect(receivedIds[0]).not.toBe(receivedIds[1]);
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+  });
 });
