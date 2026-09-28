@@ -64,6 +64,7 @@ jobs:
     timeout-minutes: 5
     env:
       AWIN_DATAFEED_API_KEY: ${{ secrets.AWIN_DATAFEED_API_KEY }}
+      AWIN_DATAFEED_LIST_URL: ${{ secrets.AWIN_DATAFEED_LIST_URL }}
     steps:
       - name: Comprobar secreto obligatorio
         shell: bash
@@ -72,20 +73,32 @@ jobs:
             echo "::error::Falta el secreto AWIN_DATAFEED_API_KEY."
             exit 3
           fi
+          if [ -n "$AWIN_DATAFEED_LIST_URL" ]; then
+            echo "AWIN_DATAFEED_LIST_URL SÍ está disponible como secreto de GitHub Actions: se usará esa URL (interfaz nueva de Awin), igual que haría producción si Hostinger la tiene configurada."
+          else
+            echo "AWIN_DATAFEED_LIST_URL NO está disponible como secreto de GitHub Actions: se usará la URL Legacy por defecto (productdata.awin.com) — puede NO coincidir con lo que usa producción si Hostinger sí la tiene configurada (ese valor vive solo en Hostinger, no aquí)."
+          fi
 
-      # Misma URL Legacy que construye downloadAwinFeedList() por defecto
-      # (ver awinTransport.ts) cuando no hay AWIN_DATAFEED_LIST_URL. La URL
-      # en sí (contiene la API key) NUNCA se imprime; solo columnas no
-      # sensibles del CSV (Advertiser ID/Name, Primary Region, Membership
-      # Status) — nunca la columna URL (token de descarga por feed).
+      # Si AWIN_DATAFEED_LIST_URL está disponible, se usa tal cual (misma
+      # validación que buildAwinFeedListUrl en awinTransport.ts: debe ser
+      # ui.awin.com/productdata-darwin-download/publisher/.../feedlist).
+      # Si no, fallback a la URL Legacy que construye downloadAwinFeedList()
+      # por defecto. La URL en sí (lleva la API key) NUNCA se imprime; solo
+      # columnas no sensibles del CSV (Advertiser ID/Name, Primary Region,
+      # Membership Status) — nunca la columna URL (token de descarga).
       - name: Descargar la lista real de feeds de Awin
         shell: bash
         run: |
           set -e
-          code=$(curl -sS -o /tmp/awin-list.csv -w "%{http_code}" --max-time 60 "https://productdata.awin.com/datafeed/list/apikey/${AWIN_DATAFEED_API_KEY}")
+          if [ -n "$AWIN_DATAFEED_LIST_URL" ]; then
+            target="$AWIN_DATAFEED_LIST_URL"
+          else
+            target="https://productdata.awin.com/datafeed/list/apikey/${AWIN_DATAFEED_API_KEY}"
+          fi
+          code=$(curl -sS -o /tmp/awin-list.csv -w "%{http_code}" --max-time 60 "$target")
           echo "HTTP status: $code"
           if [ "$code" != "200" ]; then
-            echo "::error::La lista de feeds de Awin no respondió 200 (clave inválida/caducada, o problema de red)."
+            echo "::error::La lista de feeds de Awin no respondió 200 (clave/URL inválida o caducada, cuenta sin acceso Legacy, o problema de red)."
             exit 1
           fi
           echo "Tamaño: $(wc -c < /tmp/awin-list.csv) bytes"
