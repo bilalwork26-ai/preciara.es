@@ -73,6 +73,7 @@ function setConfigEnv() {
 function clearConfigEnv() {
   delete process.env.AWIN_DATAFEED_API_KEY;
   delete process.env.AWIN_DATAFEED_LIST_URL;
+  delete process.env.AWIN_DEACTIVATE_STALE_AFTER_HOURS;
 }
 
 function postRequest(body: unknown, headers: Record<string, string> = {}) {
@@ -162,7 +163,7 @@ describe("POST /api/jobs/awin-sync (disparador privado de sincronización)", () 
     expect(body).toEqual({ accepted: true, dryRun: true });
 
     await flushAfterTasks();
-    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: true });
+    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: true, deactivateStaleAfterHours: undefined });
   });
 
   it("firma válida y dryRun=false: la petición en segundo plano pasa dryRun=false a runAwinCatalogSyncCycle", async () => {
@@ -177,7 +178,38 @@ describe("POST /api/jobs/awin-sync (disparador privado de sincronización)", () 
     expect((await response.json()).dryRun).toBe(false);
 
     await flushAfterTasks();
-    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: false });
+    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: false, deactivateStaleAfterHours: undefined });
+  });
+
+  it("con AWIN_DEACTIVATE_STALE_AFTER_HOURS válida, se pasa tal cual a runAwinCatalogSyncCycle", async () => {
+    setConfigEnv();
+    process.env.AWIN_DEACTIVATE_STALE_AFTER_HOURS = "72";
+    verifyAwinSyncSignatureMock.mockReturnValue(true);
+    runAwinCatalogSyncCycleMock.mockResolvedValue(buildSummary({ dryRun: false }));
+
+    const request = postRequest({ dryRun: false });
+    const response = await POST(request);
+    expect(response.status).toBe(202);
+
+    await flushAfterTasks();
+    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: false, deactivateStaleAfterHours: 72 });
+  });
+
+  it("con AWIN_DEACTIVATE_STALE_AFTER_HOURS inválida (p. ej. negativa o no numérica), nunca bloquea el ciclo: se ignora (se trata como ausente) y se registra un aviso", async () => {
+    setConfigEnv();
+    process.env.AWIN_DEACTIVATE_STALE_AFTER_HOURS = "no-es-un-numero";
+    verifyAwinSyncSignatureMock.mockReturnValue(true);
+    runAwinCatalogSyncCycleMock.mockResolvedValue(buildSummary({ dryRun: false }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const request = postRequest({ dryRun: false });
+    const response = await POST(request);
+    expect(response.status).toBe(202);
+
+    await flushAfterTasks();
+    expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: false, deactivateStaleAfterHours: undefined });
+    expect(warnSpy).toHaveBeenCalledWith(expect.objectContaining({ event: "awin_sync_invalid_deactivate_stale_config" }));
+    warnSpy.mockRestore();
   });
 
   it("la respuesta HTTP nunca expone la API key ni la URL del feed, aunque runAwinCatalogSyncCycle falle después", async () => {

@@ -81,6 +81,13 @@
 import { randomUUID } from "node:crypto";
 import { prisma, isDatabaseConfigured } from "../src/server/db/client";
 import { runAwinCatalogSyncCycle, summarizeAwinFeedFailures, AwinOrchestratorLockBusyError, type AwinOrchestratorSummary } from "../src/server/catalogSync/awinOrchestrator";
+import {
+  MAX_DEACTIVATE_STALE_AFTER_HOURS,
+  InvalidDeactivateStaleAfterHoursError,
+  readDeactivateStaleAfterHours as readDeactivateStaleAfterHoursShared,
+} from "../src/server/catalogSync/deactivationConfig";
+
+export { MAX_DEACTIVATE_STALE_AFTER_HOURS };
 
 type LogEvent = Record<string, unknown> & { level: "info" | "warn" | "error"; event: string };
 
@@ -97,9 +104,6 @@ export class AwinSyncConfigError extends Error {
     super(message);
   }
 }
-
-/** Acotado con margen generoso (1 año) a propósito: nunca un valor absurdo por error de tecleo (p. ej. un cero de más), pero sin restringir ningún uso real razonable. */
-export const MAX_DEACTIVATE_STALE_AFTER_HOURS = 24 * 365;
 
 /**
  * `--dry-run` se reconoce ÚNICAMENTE como flag simple — nunca con un
@@ -142,18 +146,23 @@ export function readAwinFeedListUrl(env: Record<string, string | undefined>): st
   return trimmed || undefined;
 }
 
-/** `undefined` (ausente o vacía) es la opción más segura por defecto: ningún anunciante desactiva nada. Si se aporta, debe ser un número finito, positivo y acotado — cualquier otro valor lanza `AwinSyncConfigError`, nunca se redondea ni se sustituye en silencio. */
+/**
+ * `undefined` (ausente o vacía) es la opción más segura por defecto:
+ * ningún anunciante desactiva nada. Delega el parseo/validación real en
+ * `deactivationConfig.ts` (compartido con `route.ts`, el disparador HTTP
+ * que usa GitHub Actions) y traduce su error a `AwinSyncConfigError` para
+ * conservar exactamente el mismo código de salida (3) y el mismo
+ * comportamiento de siempre en esta CLI.
+ */
 export function readDeactivateStaleAfterHours(env: Record<string, string | undefined>): number | undefined {
-  const raw = env.AWIN_DEACTIVATE_STALE_AFTER_HOURS;
-  if (raw === undefined || raw.trim() === "") return undefined;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0 || value > MAX_DEACTIVATE_STALE_AFTER_HOURS) {
-    throw new AwinSyncConfigError(
-      "INVALID_DEACTIVATE_STALE_AFTER_HOURS",
-      `AWIN_DEACTIVATE_STALE_AFTER_HOURS debe ser un número finito, positivo y como mucho ${MAX_DEACTIVATE_STALE_AFTER_HOURS} (un año) — el valor recibido no es válido.`
-    );
+  try {
+    return readDeactivateStaleAfterHoursShared(env);
+  } catch (error) {
+    if (error instanceof InvalidDeactivateStaleAfterHoursError) {
+      throw new AwinSyncConfigError("INVALID_DEACTIVATE_STALE_AFTER_HOURS", error.message);
+    }
+    throw error;
   }
-  return value;
 }
 
 export type AwinSyncCliDeps = {

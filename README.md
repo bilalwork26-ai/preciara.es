@@ -4,14 +4,18 @@ Comparador de precios y afiliación para el mercado español. Este repositorio
 contiene el sitio web (Next.js), construido para desplegarse en Hostinger
 sobre Node.js.
 
-**Estado actual: Fase 2B** — motor interno completo (base de datos MySQL +
-Prisma, importador CSV, panel técnico privado) construido y probado, y la
-portada pública y el buscador ya leen de esa base de datos a través de
-`src/server/dataSource/*`, sin cambios visuales respecto al diseño
-aprobado. Sin `DATABASE_URL`, con la base vacía, o si la conexión falla, la
+**Estado actual: Fase 3** — motor interno completo (base de datos MySQL +
+Prisma, importador CSV, panel técnico privado), portada pública y buscador
+leyendo de esa base de datos a través de `src/server/dataSource/*` (sin
+cambios visuales respecto al diseño aprobado), y **sincronización automática
+real con Awin** ya conectada mediante GitHub Actions (ver
+[Sincronización automática con Awin](#sincronización-automática-con-awin)
+más abajo). Sin `DATABASE_URL`, con la base vacía, o si la conexión falla, la
 web sigue funcionando automáticamente con los datos de demostración de
 `src/data/demo/*` (ver [Cómo funciona el respaldo a datos de
-demostración](#cómo-funciona-el-respaldo-a-datos-de-demostración)).
+demostración](#cómo-funciona-el-respaldo-a-datos-de-demostración)); lo mismo
+ocurre mientras Awin no tenga ningún anunciante aprobado todavía: cero
+productos reales importados es el estado correcto, no un fallo.
 
 ## Stack técnico
 
@@ -21,6 +25,7 @@ demostración](#cómo-funciona-el-respaldo-a-datos-de-demostración)).
 - [lucide-react](https://lucide.dev) para iconografía
 - [Prisma 6](https://www.prisma.io) + MySQL (Fase 2A)
 - [Vitest](https://vitest.dev) para pruebas
+- Sincronización de catálogo con [Awin](https://www.awin.com) (Fase 3, `src/server/catalogSync/*`)
 
 ## Desarrollo local
 
@@ -59,16 +64,33 @@ scripts/
   build-migrate.ts    Paso automático del build: migra la BD si hay DATABASE_URL
   db-check.ts          CLI de `npm run db:check`
   db-prepare.ts         CLI de `npm run db:prepare`
+  sync-awin.ts           Ejecutor CLI alternativo de un ciclo de Awin
+                        (`npm run catalog:sync:awin`) — no es la vía que usa
+                        GitHub Actions hoy, ver "Sincronización automática
+                        con Awin" más abajo
   lib/dbConnection.ts    Comprobación de conexión compartida (build-migrate/db-check)
   lib/sanitizeError.ts    Oculta credenciales de cualquier mensaje de error
 src/
   app/
-    (site)/          Grupo de rutas públicas: portada, /buscar, legales
+    (site)/          Grupo de rutas públicas: portada, /categoria/[slug],
+                      /producto/[slug], /categorias, /buscar, /guias,
+                      /sobre-preciara, /para-tiendas, /contacto,
+                      /metodologia, páginas legales
                       (comparte layout con Header/Footer; las URLs no cambian)
-    admin/            Panel técnico privado (/admin/**), layout propio
+    admin/            Panel técnico privado (/admin/**), layout propio:
+                      resumen, productos, ofertas, comercios, importar,
+                      importaciones, errores, sincronizacion (Awin/eBay)
     api/admin/         Endpoints protegidos usados por el panel
                       (import/ para subir CSV, import/template/ para la plantilla)
+    api/jobs/awin-sync/ Endpoint que GitHub Actions dispara (firmado por HMAC)
+                      para ejecutar un ciclo de sincronización de Awin
+                      dentro del proceso de Hostinger — ver "Sincronización
+                      automática con Awin" más abajo
+    api/ebay/marketplace-account-deletion/ Endpoint de cumplimiento
+                      obligatorio de eBay (Marketplace Account Deletion);
+                      NO es una fuente de productos
     robots.ts          Bloquea /admin y /api/ para buscadores
+    sitemap.ts          Sitemap dinámico (páginas estáticas + categorías/productos reales)
     layout.tsx          Layout raíz: fuentes, metadatos, globals.css
   proxy.ts             Protege /admin y /api/admin (ver "Panel técnico")
   components/
@@ -79,19 +101,31 @@ src/
   server/
     db/client.ts         Cliente Prisma compartido + fallback sin BD
     repositories/         Consultas tipadas (categorías, productos, ofertas,
-                          historial, estado del sistema, panel técnico)
+                          historial, estado del sistema, panel técnico,
+                          resumen de sincronizaciones — syncOverview.ts)
     importer/              Parser CSV, validación, orquestación de la
                           importación, detección/desactivación de ofertas viejas,
-                          bloqueo contra ejecuciones simultáneas
+                          bloqueo contra ejecuciones simultáneas (importador manual)
+    catalogSync/            Núcleo de sincronización multi-fuente y adaptador de
+                          Awin (parsers, transporte, validación, GTIN, políticas
+                          de metadatos, orquestador) — ver "Sincronización
+                          automática con Awin" más abajo
+    jobs/                    Verificación HMAC de la petición firmada que
+                          GitHub Actions envía al endpoint de Awin
+    ebay/                    Verificación de firmas/OAuth para el endpoint
+                          de cumplimiento de eBay
     dataSource/             Capa que decide BD vs. demostración para la portada
                           pública y el buscador, y adapta los datos de Prisma
                           a los tipos que ya esperan los componentes
     admin/auth.ts           Autenticación del panel técnico (sin tabla de usuarios)
     admin/rateLimit.ts       Límite de intentos fallidos en /admin/login
   data/demo/            Datos de demostración, centralizados y fáciles de sustituir
-  lib/                   Utilidades (formato de precios, etc.)
+  lib/                   Utilidades (formato de precios, contacto, SEO, etc.)
   types/                  Tipos del dominio usados por los componentes actuales
   generated/prisma/       Cliente de Prisma generado (NO se commitea)
+.github/workflows/
+  ci.yml                Validación en cada PR/push a main
+  awin-catalog-sync.yml Disparador de la sincronización de Awin (cron + manual)
 ```
 
 ## Datos de demostración
@@ -121,8 +155,13 @@ Nunca subas `.env` ni `.env.local` al repositorio: ya están ignorados en
 | `DATABASE_URL` | No | Conexión MySQL. Sin ella, todo sigue funcionando con datos de demostración. |
 | `ADMIN_PASSWORD` | Solo para abrir `/admin` | Contraseña del panel técnico. Sin ella (o sin `ADMIN_SESSION_SECRET`), `/admin` y `/api/admin` responden 404 siempre. |
 | `ADMIN_SESSION_SECRET` | Solo para abrir `/admin` | Secreto para firmar la cookie de sesión del panel. Genera un valor propio con `openssl rand -hex 32`. |
-| `OFFER_STALE_AFTER_HOURS` | No (por defecto 72) | Horas sin revisar una oferta antes de considerarla "vieja". |
-| `SYNC_JOB_SECRET` | No (Fase 3, aún sin usar) | Reservada para un futuro endpoint de sincronización automática. |
+| `OFFER_STALE_AFTER_HOURS` | No (por defecto 72) | Horas sin revisar una oferta del importador CSV antes de considerarla "vieja" (`--deactivate-stale` de `scripts/import-csv.ts`). No afecta a Awin, que tiene su propia variable (`AWIN_DEACTIVATE_STALE_AFTER_HOURS`, ver abajo). |
+| `GOOGLE_SITE_VERIFICATION` | No | Código de verificación de propiedad de Google Search Console (método "etiqueta HTML"). Sin ella, la etiqueta `<meta name="google-site-verification">` simplemente no aparece. |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | No | Correo de contacto público mostrado en `/contacto`. Sin ella (o con un valor inválido), `/contacto` muestra "canal en preparación" en vez de un enlace roto. |
+| `AWIN_DATAFEED_API_KEY` | Solo para sincronizar Awin de verdad | API key de "Product Feed List Download" de Awin. Es también el secreto HMAC compartido con GitHub Actions para autorizar `POST /api/jobs/awin-sync` — ver [Sincronización automática con Awin](#sincronización-automática-con-awin). Ausente, vacía o solo espacios: el endpoint responde 404 siempre y el script CLI se detiene antes de tocar Awin. |
+| `AWIN_DATAFEED_LIST_URL` | No | Enlace completo de "Descargar lista" de la interfaz nueva de Awin. Opcional para instalaciones Legacy (se construye a partir de `AWIN_DATAFEED_API_KEY`). |
+| `AWIN_DEACTIVATE_STALE_AFTER_HOURS` | No | Horas sin refrescar una oferta de Awin antes de que pueda desactivarse en la pasada final de cada anunciante. **Si se omite (opción por defecto), ningún ciclo de Awin desactiva nada**, sin importar lo demás — ver la regla conservadora en [Sincronización automática con Awin](#sincronización-automática-con-awin). Un valor inválido (no numérico, ≤0, o mayor de un año) nunca detiene el ciclo: se registra un aviso y se trata como si estuviera ausente. |
+| `EBAY_MARKETPLACE_DELETION_ENDPOINT` / `EBAY_MARKETPLACE_DELETION_VERIFICATION_TOKEN` / `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` | Solo para el endpoint de cumplimiento de eBay | Requisito obligatorio de eBay (`/api/ebay/marketplace-account-deletion`) — NO es una fuente de productos. Ver `.env.example` para el detalle de cada una. |
 
 ## Base de datos (MySQL + Prisma)
 
@@ -357,10 +396,14 @@ salida:
 - `2` = no se pudo obtener el bloqueo (ya hay otra importación en curso)
 - `3` = error de uso (argumentos, fichero no encontrado, falta `DATABASE_URL`)
 
-Todavía **no** hay ningún cron ni GitHub Action conectado: esto es
-preparación para la Fase 3. Tampoco hay scraping ni integraciones con
-Amazon/Awin/etc. — solo el circuito CSV, listo para enchufar una fuente
-oficial más adelante.
+Este importador CSV concreto sigue siendo siempre manual — no hay ningún
+cron ni GitHub Action que lo dispare automáticamente, ni scraping, ni
+integración con Amazon. La Fase 3 sí conectó una fuente oficial real y
+automática (Awin, mediante GitHub Actions) usando el núcleo de
+sincronización aparte de `src/server/catalogSync/*` — ver [Sincronización
+automática con Awin](#sincronización-automática-con-awin) — sin tocar
+este circuito CSV manual, que sigue disponible para catálogo cargado a
+mano.
 
 ## Panel técnico (`/admin`)
 
@@ -385,10 +428,14 @@ oficial más adelante.
   ofertas sin revisar, estado de la BD y si la portada usa BD o el
   fallback demo — esto último depende de `realOffers`, nunca cuenta las
   ofertas demo como catálogo real), y listados de productos, comercios,
-  ofertas, historial de importaciones (con detalle por ejecución) y
-  errores. Los listados sí muestran también lo marcado como demo, siempre
-  con su insignia "Demo" bien visible — solo la portada pública y el
-  buscador lo excluyen.
+  ofertas, historial de importaciones CSV (`/admin/importaciones`, con
+  detalle por ejecución) y errores. `/admin/sincronizacion` muestra por
+  separado el estado de las fuentes automáticas (Awin/eBay): última
+  ejecución, estado, duración y el historial paginado de sus propios
+  `ImportRun` — ver [Sincronización automática con
+  Awin](#sincronización-automática-con-awin). Los listados sí muestran
+  también lo marcado como demo, siempre con su insignia "Demo" bien
+  visible — solo la portada pública y el buscador lo excluyen.
 
 Acceso: entra en `/admin`, introduce la contraseña de `ADMIN_PASSWORD`.
 "Cerrar sesión" en la cabecera borra la cookie.
@@ -462,24 +509,201 @@ npm run db:prepare    # aplica solo migraciones pendientes + resumen (--seed opc
 
 ### Integración continua (GitHub Actions)
 
-`.github/workflows/ci.yml` ejecuta automáticamente, en cada pull request
-hacia `main` y en cada push a `main`, prácticamente los mismos pasos de
-esta sección: `npm ci`, `prisma migrate deploy` + `prisma generate` +
-`next typegen` contra una MariaDB efímera y sintética (credenciales fijas,
-exclusivas del job, nunca las de Hostinger), `tsc --noEmit`, `npm run
-lint`, `npx vitest run`, `npm audit --audit-level=high` y `npm run build`.
-No ejecuta el seed de demostración, no despliega nada y no escribe en
-ningún servicio externo — solo valida. Las ejecuciones anteriores de la
-misma rama se cancelan automáticamente al llegar un push nuevo.
+Dos workflows en `.github/workflows/`:
 
-## Preparación para tareas programadas
+- **`ci.yml`**: en cada pull request hacia `main` y en cada push a `main`,
+  ejecuta prácticamente los mismos pasos de esta sección: `npm ci`,
+  `prisma migrate deploy` + `prisma generate` + `next typegen` contra una
+  MariaDB efímera y sintética (credenciales fijas, exclusivas del job,
+  nunca las de Hostinger), `tsc --noEmit`, `npm run lint`, `npx vitest
+  run`, `npm audit --audit-level=high` y `npm run build` (el mismo
+  script que usa Hostinger, con Webpack). No ejecuta el seed de
+  demostración, no despliega nada y no escribe en ningún servicio
+  externo — solo valida. Las ejecuciones anteriores de la misma rama se
+  cancelan automáticamente al llegar un push nuevo.
+- **`awin-catalog-sync.yml`**: dispara la sincronización real del catálogo
+  de Awin — ver la siguiente sección.
 
-`scripts/import-csv.ts` está pensado para invocarse desde un cron o una
-GitHub Action en una fase posterior (Fase 3), sin cambios: acepta un
-fichero local, usa bloqueo distribuido para evitar solapes, y
-`--deactivate-stale` puede ejecutarse aparte para desactivar (nunca
-borrar) ofertas más viejas que `OFFER_STALE_AFTER_HOURS`. Esta fase
-**no** activa ningún cron ni scraping real — solo deja el comando listo.
+## Sincronización automática con Awin
+
+Preciara importa su catálogo real desde [Awin](https://www.awin.com), la
+red de afiliación, de forma completamente automática: en cuanto Awin
+aprueba un anunciante (`Membership Status: Joined`), sus productos se
+descargan, validan y publican sin ninguna intervención manual. Mientras
+ningún anunciante esté aprobado, el sistema sigue funcionando y termina
+cada ciclo en verde como un "no-op" informativo — cero productos
+importados es el estado correcto, nunca un fallo.
+
+### Arquitectura del disparador (por qué GitHub Actions no toca la base de datos)
+
+GitHub Actions **nunca** se conecta a MySQL ni ejecuta la sincronización
+por sí mismo — actúa solo como reloj. En cada disparo:
+
+1. `.github/workflows/awin-catalog-sync.yml` firma el cuerpo `{"dryRun": true|false}`
+   con HMAC-SHA256, usando `AWIN_DATAFEED_API_KEY` como secreto compartido
+   (`secrets.AWIN_DATAFEED_API_KEY` en GitHub, la misma variable de entorno
+   en Hostinger — nunca viajan valores distintos a cada lado).
+2. Hace `POST https://preciara.es/api/jobs/awin-sync` con las cabeceras
+   `x-preciara-timestamp` y `x-preciara-signature`.
+3. `src/app/api/jobs/awin-sync/route.ts` verifica esa firma
+   (`src/server/jobs/awinSyncRequestAuth.ts`, ventana de 5 minutos),
+   responde `202 Accepted` de inmediato, y continúa el trabajo real **dentro
+   del proceso Next.js de Hostinger** mediante la API `after()` de Next.js
+   — así GitHub Actions no necesita mantener una conexión abierta ni
+   acceso de red a la base de datos.
+4. Dentro de ese proceso, `runAwinCatalogSyncCycle()`
+   (`src/server/catalogSync/awinOrchestrator.ts`) ejecuta el ciclo completo:
+   descarga la lista de feeds, selecciona solo los `Joined`, agrupa por
+   anunciante, descarga y valida cada feed de productos, y crea/actualiza
+   productos y ofertas en la base de datos.
+
+Sin `AWIN_DATAFEED_API_KEY` configurada, el endpoint responde `404` siempre
+(cerrado por defecto, sin revelar que la integración existe).
+
+### Frecuencia de ejecución
+
+`awin-catalog-sync.yml` se dispara de dos formas:
+
+- **Programada** (`schedule`): dos veces al día, `17 4 * * *` y
+  `17 16 * * *` (≈06:17 y ≈18:17 en Madrid en horario de verano). Ambas
+  son sincronizaciones **reales** (`dryRun: false`) — nunca simulacros.
+  Antes de una ejecución programada, el workflow espera aleatoriamente
+  entre 10 y 120 segundos para no coincidir siempre con el pico de otros
+  publicadores de Awin.
+- **Manual** (`workflow_dispatch`, desde la pestaña Actions de GitHub):
+  con una casilla `dry_run`, **marcada `true` por defecto** — hay que
+  desmarcarla explícitamente para forzar una sincronización real a mano.
+
+`concurrency: { group: awin-catalog-sync, cancel-in-progress: false }`
+evita que dos ejecuciones del workflow corran a la vez (una nueva espera
+en cola, nunca cancela la anterior a medias); `timeout-minutes: 10` acota
+cada intento.
+
+### Reintentos ante un rechazo transitorio
+
+Si Hostinger (o una capa delante de la aplicación) rechaza la petición
+firmada con algo distinto de `202`, el workflow reintenta hasta 3 veces,
+**recalculando la firma HMAC en cada intento** (nunca reenvía una firma ya
+usada, para no caer fuera de la ventana de 5 minutos), con una espera de
+5 s y luego 15 s entre intentos. Se registra un fragmento truncado (300
+caracteres) del cuerpo de la respuesta de Hostinger para ayudar a
+diagnosticar — ese cuerpo nunca puede contener la API key, la genera
+Hostinger/la capa que bloquea, no la propia ruta. Si los 3 intentos
+fallan, la ejecución de GitHub Actions termina en rojo — visible en la
+pestaña Actions.
+
+### `dryRun`: cómo funciona
+
+`dryRun: true` (el modo por defecto en la ejecución manual) recorre
+exactamente el mismo código real de descubrimiento, descarga, validación
+y aplicación de filas — **nunca escribe nada en la base de datos**: ni
+crea ni actualiza productos, comercios u ofertas, ni desactiva nada, ni
+crea ningún `ImportRun`. Sirve para comprobar de forma segura qué haría
+un ciclo real (cuántos feeds se descubren/aprueban, cuántas filas serían
+válidas) sin ningún riesgo. Las ejecuciones programadas **nunca** son
+`dryRun`: siempre son sincronizaciones reales.
+
+### Bloqueo contra ejecuciones simultáneas
+
+Dos niveles de bloqueo distribuido (modelo `SyncLock`, lease con
+caducidad — nunca `GET_LOCK` de MySQL, incompatible con el pool de
+conexiones de Prisma; ver `src/server/importer/distributedLock.ts`):
+
+- **Por fuente** (`preciara_catalog_sync:AWIN`): lo adquiere cada llamada
+  individual a `runCatalogSync` (`src/server/catalogSync/syncRun.ts`),
+  para que dos aplicaciones de filas nunca se pisen.
+- **De ciclo completo** (`preciara_catalog_cycle:AWIN`, nombre distinto a
+  propósito para no autobloquearse): lo adquiere `runAwinCatalogSyncCycle`
+  ANTES de descargar la lista de feeds y lo mantiene hasta terminar todos
+  los anunciantes — evita que dos ciclos completos de Awin se
+  intercalen entre sí.
+
+Si un bloqueo ya está ocupado, el ciclo nuevo se aborta limpiamente sin
+tocar nada (nunca corrompe ni deja a medias el trabajo del que ya estaba
+en curso); si el proceso muere sin liberar el lease, este caduca solo
+(nunca queda retenido para siempre).
+
+### Protección ante feeds incompletos, vacíos o inválidos
+
+- Un fallo al descargar la lista completa de feeds aborta todo el ciclo
+  **antes de tocar ningún producto**.
+- Un fallo en un feed individual (transporte, parser, filas rechazadas)
+  no impide procesar los demás feeds ni los demás anunciantes.
+- Un feed vacío (0 filas válidas) nunca se trata como si el anunciante ya
+  no tuviera productos: solo bloquea la desactivación de ese anunciante
+  (ver más abajo), nunca borra ni desactiva nada por sí solo.
+
+### Desactivación de ofertas antiguas de Awin
+
+Existe una regla **deliberadamente conservadora** para desactivar (nunca
+borrar) ofertas de Awin que llevan mucho tiempo sin verse en un feed. Un
+anunciante concreto solo desactiva sus ofertas obsoletas si **TODAS**
+estas condiciones se cumplen a la vez en un mismo ciclo (ver
+`evaluateDeactivationEligibility` en `awinOrchestrator.ts`):
+
+1. No es `dryRun`.
+2. Se definió explícitamente `AWIN_DEACTIVATE_STALE_AFTER_HOURS` — **si se
+   omite, ningún ciclo desactiva nada, sin importar lo demás** (opción por
+   defecto, la más segura).
+3. La lista global de feeds no tuvo ninguna fila inválida.
+4. **Todos** los feeds de ese anunciante concreto terminaron completos, sin
+   fallos.
+5. **Ninguno** de sus feeds llegó vacío.
+6. **Ninguna** fila de ese anunciante fue inválida.
+
+Un fallo parcial, un feed vacío o una respuesta inesperada de Awin nunca
+desactivan nada — como mucho, bloquean la desactivación de ese ciclo. Si
+`AWIN_DEACTIVATE_STALE_AFTER_HOURS` tiene un valor inválido (no numérico,
+≤0, o más de un año), el ciclo **nunca se bloquea ni falla** por eso: se
+registra un aviso y se trata como si la variable no estuviera definida
+(ningún anunciante desactiva nada ese ciclo).
+
+### Cómo revisar una ejecución
+
+- **Panel técnico** (`/admin/sincronizacion`, requiere `ADMIN_PASSWORD`):
+  última ejecución por fuente (Awin/eBay), su estado, duración, y el
+  historial paginado de ejecuciones — cada fila es un `ImportRun` con su
+  `source` en forma `sync:awin:feed:<advertiserId>:<feedId>` (identifica
+  anunciante y feed exactos), contadores (`productsCreated`,
+  `productsUpdated`, `offersCreated`, `offersUpdated`, `rowsRejected`) y
+  `errorSummary` si algo falló.
+- **Logs estructurados** (pestaña Actions de GitHub, o el log del proceso
+  de Hostinger): cada ciclo completo termina con un evento
+  `awin_sync_job_done` (disparo HTTP) o `awin_sync_done` (CLI) en JSON de
+  una sola línea, con los agregados de TODO el ciclo — no solo de un
+  feed: `feedsDiscovered`, `feedsApproved`, `advertisersProcessed`,
+  `validRowsTotal`, `invalidRowsTotal`, `productsCreatedTotal`,
+  `productsUpdatedTotal`, `offersCreatedTotal`, `offersUpdatedTotal`,
+  `staleDeactivatedTotal`, `deactivateStaleAfterHoursConfigured`,
+  `durationMs`, y `feedFailures` (motivo por feed fallido, sin datos
+  sensibles). Ninguno de estos logs contiene nunca la API key ni la URL
+  real de un feed.
+- **Señal mínima de éxito**: con al menos un anunciante aprobado,
+  `feedsApproved` > 0 y `validRowsTotal` > 0 confirman que el feed se
+  descargó y validó correctamente; `productsCreatedTotal`/
+  `offersCreatedTotal` > 0 confirman que además se escribió en la base de
+  datos. `ok: true` en el propio evento resume que ningún feed falló y
+  ningún anunciante quedó incompleto ese ciclo.
+
+### Ejecución manual alternativa (CLI)
+
+`npm run catalog:sync:awin` (`scripts/sync-awin.ts`, con `-- --dry-run`
+opcional) invoca exactamente el mismo `runAwinCatalogSyncCycle()` desde la
+línea de comandos, pensado para un cron propio de Hostinger si alguna vez
+se prefiere esa vía en vez del endpoint HTTP — hoy la vía real en
+producción es el endpoint disparado por GitHub Actions. Usa las mismas
+variables de entorno (`AWIN_DATAFEED_API_KEY`, `AWIN_DATAFEED_LIST_URL`,
+`AWIN_DEACTIVATE_STALE_AFTER_HOURS`) leídas directamente del proceso, y
+termina con códigos de salida propios (0 = correcto, 1 = con fallos, 2 =
+bloqueo de ciclo ocupado, 3 = error de configuración).
+
+### `scripts/import-csv.ts` (importador CSV, sin cron propio)
+
+A diferencia de Awin, el importador CSV histórico (ver
+[Importador CSV](#importador-csv) más abajo) sigue siendo siempre manual —
+no está conectado a ningún workflow ni cron automático. `--deactivate-stale`
+puede ejecutarse aparte para desactivar (nunca borrar) ofertas del CSV más
+viejas que `OFFER_STALE_AFTER_HOURS`.
 
 ## Despliegue en Hostinger
 
@@ -490,9 +714,14 @@ línea de comandos, sin depender de esa integración.
 1. Hostinger despliega automáticamente al recibir cambios en `main` (ya
    configurado).
 2. El propio `npm run build` (`prisma generate && tsx scripts/build-migrate.ts
-   && next build`) ya prepara la base de datos automáticamente en cada
-   despliegue — no hace falta ningún comando manual aparte ni un *post-deploy*
-   configurado en Hostinger:
+   && next build --webpack`) ya prepara la base de datos automáticamente en
+   cada despliegue — no hace falta ningún comando manual aparte ni un
+   *post-deploy* configurado en Hostinger. El build usa Webpack de forma
+   explícita (`--webpack`) en vez del Turbopack por defecto de Next 16: en
+   el entorno de build de Hostinger, Turbopack falla con
+   `TurbopackInternalError` al procesar `src/app/globals.css` (un fallo del
+   binario nativo de Turbopack en ese entorno concreto, no un error real de
+   CSS) — Webpack no tiene ese problema.
    - **Sin `DATABASE_URL`**: el paso se omite sin más y el build continúa
      normalmente; la web pública sigue sirviendo datos de demostración.
    - **Con `DATABASE_URL`**: comprueba la conexión primero (sin escribir
@@ -632,7 +861,14 @@ insignia "Demo".
   la base de datos a través de `src/server/dataSource/*`, con respaldo
   automático y probado a datos de demostración, sin cambios visuales.
   *(hecho — ver estado arriba)*
-- **Fase 3**: integración con una fuente de datos real y autorizada,
-  automatización programada (cron/GitHub Actions) sobre
-  `scripts/import-csv.ts`.
-- **Fase 4**: más tiendas, alertas de precio, usuarios, blog.
+- **Fase 3**: integración con una fuente de datos real y autorizada
+  (Awin), con sincronización automática programada vía GitHub Actions —
+  ver [Sincronización automática con Awin](#sincronización-automática-con-awin).
+  *(hecho — conectado y en producción; cero productos reales importados
+  mientras Awin no tenga ningún anunciante aprobado es el estado correcto,
+  no un fallo pendiente)*. También en esta fase: endpoint de cumplimiento
+  obligatorio de eBay (Marketplace Account Deletion) — NO es una fuente de
+  catálogo, solo un requisito de la API de eBay. *(hecho)*
+- **Fase 4**: más fuentes de catálogo (p. ej. eBay como fuente real de
+  productos, hoy solo reservado en el esquema), alertas de precio, cuentas
+  de usuario, blog. *(pendiente)*
