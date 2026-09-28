@@ -2,8 +2,10 @@
  * Parser y selección automática de la lista de feeds de Awin ("Product
  * Feed List Download"): transforma cada fila válida de esa lista en una
  * estructura tipada (`AwinFeedListEntry`) y selecciona automáticamente
- * SOLO los feeds con `Membership Status: Joined` — sin que ningún humano
- * elija comercios, productos ni ofertas a mano (objetivo del producto).
+ * SOLO los feeds con `Membership Status` aprobado — "Joined" (formato
+ * Legacy) o "active" (formato de la interfaz nueva de Awin, ver
+ * `APPROVED_MEMBERSHIP_STATUSES` más abajo) — sin que ningún humano elija
+ * comercios, productos ni ofertas a mano (objetivo del producto).
  * Reutiliza `parseCsvStream` de `streamingCsv.ts` (nunca un segundo parser
  * CSV) y sigue el mismo patrón que `awinFeedParser.ts`: streaming real
  * (nunca carga la lista entera en memoria), y separa con claridad un
@@ -98,7 +100,7 @@ export type AwinFeedListEntry = {
   advertiserId: string;
   advertiserName: string;
   primaryRegion: string | null;
-  /** Texto EXACTO tal como venía en la columna (ya recortado de espacios), conservado para diagnóstico — el filtro de selección usa una comparación normalizada aparte, ver `isJoined`. */
+  /** Texto EXACTO tal como venía en la columna (ya recortado de espacios), conservado para diagnóstico — el filtro de selección usa una comparación normalizada aparte, ver `isApprovedMembershipStatus`. */
   membershipStatus: string;
   feedId: string;
   feedName: string;
@@ -111,7 +113,7 @@ export type AwinFeedListEntry = {
 
 export type AwinFeedListResult =
   | { status: "approved"; rowNumber: number; feed: AwinFeedListEntry }
-  /** Fila estructuralmente válida, pero su `Membership Status` no es "Joined" — nunca se selecciona automáticamente, pero tampoco desaparece en silencio: se reporta para que quede constancia de que existe. */
+  /** Fila estructuralmente válida, pero su `Membership Status` no es una de `APPROVED_MEMBERSHIP_STATUSES` ("Joined"/"active") — nunca se selecciona automáticamente, pero tampoco desaparece en silencio: se reporta para que quede constancia de que existe. */
   | { status: "skipped"; rowNumber: number; reason: "not_joined"; advertiserId: string; feedId: string; membershipStatus: string }
   | { status: "invalid"; rowNumber: number; code: string; message: string };
 
@@ -209,9 +211,22 @@ function computeFeedIdentity(params: { advertiserId: string; feedId: string; lan
   return [params.advertiserId, params.feedId, params.language, params.vertical, params.primaryRegion].map(normalizeIdentityComponent).map(encodeIdentityComponent).join("");
 }
 
-/** `true` solo si el texto, tras recortar espacios exteriores e ignorar mayúsculas/minúsculas, es exactamente "joined" — nunca una coincidencia parcial ("Not Joined" NO debe colar aquí). */
-function isJoined(rawMembershipStatus: string): boolean {
-  return rawMembershipStatus.trim().toLowerCase() === "joined";
+/**
+ * Valores de `Membership Status` que Awin considera una cuenta aprobada —
+ * "joined" (formato Legacy, el único documentado originalmente en este
+ * fichero) y "active" (formato de la lista que devuelve la URL de la
+ * interfaz NUEVA de Awin, `AWIN_DATAFEED_LIST_URL` — confirmado contra la
+ * lista REAL de producción: "adidas ES", Advertiser ID 77008, aparece con
+ * `Membership Status: "active"`, nunca literalmente "Joined", lo que hacía
+ * que `feedsApproved` fuera siempre 0 y ningún feed llegara nunca a
+ * descargarse). Mantener ambos valores conserva la compatibilidad con
+ * cuentas/entornos que sigan usando el formato Legacy.
+ */
+const APPROVED_MEMBERSHIP_STATUSES: ReadonlySet<string> = new Set(["joined", "active"]);
+
+/** `true` solo si el texto, tras recortar espacios exteriores e ignorar mayúsculas/minúsculas, es EXACTAMENTE uno de `APPROVED_MEMBERSHIP_STATUSES` — nunca una coincidencia parcial ("Not Joined"/"Inactive" NO deben colar aquí). */
+function isApprovedMembershipStatus(rawMembershipStatus: string): boolean {
+  return APPROVED_MEMBERSHIP_STATUSES.has(rawMembershipStatus.trim().toLowerCase());
 }
 
 function isHttpUrl(value: string): boolean {
@@ -347,11 +362,12 @@ function normalizeFeedListRow(record: Record<string, string>, headerIndex: Map<s
 
 /**
  * Parsea la lista de feeds de Awin en streaming, fila a fila, y clasifica
- * cada una en `"approved"` (Joined, lista para un bloque posterior),
- * `"skipped"` (válida pero no Joined — nunca se selecciona sola) o
- * `"invalid"` (fila rechazada, con código/mensaje que NUNCA incluye la
- * URL). Nunca escribe en la base de datos ni hace ninguna petición de
- * red: produce únicamente la clasificación en memoria.
+ * cada una en `"approved"` (Membership Status aprobado — "Joined" o
+ * "active", ver `APPROVED_MEMBERSHIP_STATUSES`), lista para un bloque
+ * posterior), `"skipped"` (válida pero no aprobada — nunca se selecciona
+ * sola) o `"invalid"` (fila rechazada, con código/mensaje que NUNCA
+ * incluye la URL). Nunca escribe en la base de datos ni hace ninguna
+ * petición de red: produce únicamente la clasificación en memoria.
  */
 export async function* parseAwinFeedList(input: AsyncIterable<string> | string): AsyncGenerator<AwinFeedListResult> {
   const source = typeof input === "string" ? singleChunk(input) : input;
@@ -382,7 +398,7 @@ export async function* parseAwinFeedList(input: AsyncIterable<string> | string):
 
     try {
       const feed = normalizeFeedListRow(record, headerIndex!);
-      if (isJoined(feed.membershipStatus)) {
+      if (isApprovedMembershipStatus(feed.membershipStatus)) {
         yield { status: "approved", rowNumber, feed };
       } else {
         yield { status: "skipped", rowNumber, reason: "not_joined", advertiserId: feed.advertiserId, feedId: feed.feedId, membershipStatus: feed.membershipStatus };
