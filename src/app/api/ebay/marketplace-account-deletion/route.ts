@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { computeChallengeResponse } from "@/server/ebay/challengeResponse";
@@ -60,30 +61,60 @@ export async function GET(request: NextRequest) {
  * 200/204 sin haber verificado de verdad ambas cosas.
  */
 export async function POST(request: NextRequest) {
+  // Identificador de correlación de ESTA petición — solo para poder
+  // relacionar, en los logs, la recepción del webhook con las fases de
+  // verificación de signatureVerification.ts (ver su comentario de
+  // cabecera, "Instrumentación de correlación por `requestId`"). Nunca se
+  // persiste, nunca se expone al cliente (eBay recibe únicamente el status
+  // HTTP), y no participa en ninguna decisión de aceptación/rechazo.
+  const requestId = randomUUID();
+
   // Se lee el cuerpo BRUTO, sin volver a serializarlo (ni `request.json()`
   // seguido de un `JSON.stringify`): es exactamente lo que exige la firma
   // de eBay, y Preciara nunca inspecciona ni guarda el contenido de estas
-  // notificaciones de todos modos.
+  // notificaciones de todos modos. Es también la PRIMERA lectura del body
+  // en todo el circuito: no hay `middleware.ts` en el proyecto, y el único
+  // proxy propio (`src/proxy.ts`) tiene `matcher: ["/admin/:path*",
+  // "/api/admin/:path*"]` — nunca se ejecuta para esta ruta.
   let rawBody: string;
   try {
     rawBody = await request.text();
   } catch (error) {
     console.error(
-      "[ebay:marketplace-account-deletion] No se pudo leer el cuerpo de la notificación:",
+      `[ebay:marketplace-account-deletion] [${requestId}] No se pudo leer el cuerpo de la notificación:`,
       error instanceof Error ? error.message : "error desconocido"
     );
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
   }
+
+  // Instrumentación mínima y segura, ANTES de cualquier parseo/transformación
+  // (para poder distinguir "bytes recibidos" de la cadena que luego use
+  // `createVerify().update()` o del objeto JSON parseado, ver
+  // signatureVerification.ts): solo longitud en bytes y SHA-256 del cuerpo
+  // bruto (un hash no permite recuperar el contenido), `content-length`/
+  // `content-type` recibidos, y si la cabecera de firma está presente y su
+  // longitud — NUNCA el cuerpo, la firma, tokens ni la clave pública.
+  console.info({
+    event: "ebay_webhook_received",
+    requestId,
+    rawBodyByteLength: Buffer.byteLength(rawBody, "utf8"),
+    rawBodySha256: createHash("sha256").update(rawBody, "utf8").digest("hex"),
+    contentLengthHeader: request.headers.get("content-length"),
+    contentTypeHeader: request.headers.get("content-type"),
+    userAgentHeader: request.headers.get("user-agent"),
+    signatureHeaderPresent: request.headers.has("x-ebay-signature"),
+    signatureHeaderLength: request.headers.get("x-ebay-signature")?.length ?? null,
+  });
 
   const signatureHeader = request.headers.get("x-ebay-signature");
   const oauthCredentials = getEbayOAuthCredentials();
 
   let result: SignatureVerificationResult;
   try {
-    result = await verifyEbaySignature({ rawBody, signatureHeader, oauthCredentials });
+    result = await verifyEbaySignature({ rawBody, signatureHeader, oauthCredentials, requestId });
   } catch (error) {
     console.error(
-      "[ebay:marketplace-account-deletion] Error inesperado verificando la firma:",
+      `[ebay:marketplace-account-deletion] [${requestId}] Error inesperado verificando la firma:`,
       error instanceof Error ? error.message : "error desconocido"
     );
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
@@ -101,7 +132,9 @@ export async function POST(request: NextRequest) {
     const statusSuffix = result.httpStatus !== undefined ? ` [HTTP ${result.httpStatus}]` : "";
     const nodeErrorSuffix = result.nodeErrorCode !== undefined ? ` [${result.nodeErrorCode}]` : "";
     const diagnosticsSuffix = result.diagnostics !== undefined ? ` diagnostics=${JSON.stringify(result.diagnostics)}` : "";
-    console.warn(`[ebay:marketplace-account-deletion] Firma no verificada (${result.reason}${statusSuffix}${nodeErrorSuffix}). Notificación rechazada.${diagnosticsSuffix}`);
+    console.warn(
+      `[ebay:marketplace-account-deletion] [${requestId}] Firma no verificada (${result.reason}${statusSuffix}${nodeErrorSuffix}). Notificación rechazada.${diagnosticsSuffix}`
+    );
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
   }
 
@@ -112,13 +145,13 @@ export async function POST(request: NextRequest) {
   // cuerpo ni ningún dato personal.
   const payloadCheck = validateMarketplaceAccountDeletionPayload(rawBody);
   if (!payloadCheck.valid) {
-    console.warn(`[ebay:marketplace-account-deletion] Firma válida pero payload rechazado (${payloadCheck.reason}). Notificación rechazada.`);
+    console.warn(`[ebay:marketplace-account-deletion] [${requestId}] Firma válida pero payload rechazado (${payloadCheck.reason}). Notificación rechazada.`);
     return new NextResponse(null, { status: 412, headers: NO_STORE_HEADERS });
   }
 
   // Firma y payload válidos: "procesar" la notificación. Preciara no
   // almacena username/userId/eiasToken ni ningún otro dato personal de
   // eBay, así que no hay nada que borrar ni persistir — solo se reconoce.
-  console.info("[ebay:marketplace-account-deletion] Notificación verificada y reconocida (sin persistir datos personales).");
+  console.info(`[ebay:marketplace-account-deletion] [${requestId}] Notificación verificada y reconocida (sin persistir datos personales).`);
   return new NextResponse(null, { status: 204, headers: NO_STORE_HEADERS });
 }

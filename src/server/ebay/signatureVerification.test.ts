@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSign, generateKeyPairSync } from "node:crypto";
+import { createHash, createSign, generateKeyPairSync } from "node:crypto";
 import { verifyEbaySignature } from "./signatureVerification";
 import type { EbayOAuthCredentials } from "./config";
 
@@ -142,6 +142,63 @@ describe("verifyEbaySignature", () => {
 
     const result = await verifyEbaySignature({ rawBody: tamperedBody, signatureHeader: header, oauthCredentials: freshCredentials() });
     expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
+  });
+
+  // Fixtures OFICIALES del SDK de eBay (`event-notification-nodejs-sdk`,
+  // paquete npm publicado por eBay, MIT — `test/test.json`), NO generados
+  // por nosotros: cabecera de firma base64, clave pública EC/P-256 tal cual
+  // la devuelve el endpoint real de eBay (con las cabeceras PEM "pegadas"
+  // al cuerpo, sin salto de línea) y mensaje JSON, todo copiado tal cual.
+  // Sirven de prueba de fuego independiente de nuestro propio código de
+  // firmado en las pruebas de arriba/abajo: si algún día `attemptVerify`
+  // deja de aceptar una firma que eBay considera válida, o empieza a
+  // aceptar una que eBay marca como inválida, esta prueba lo detecta sin
+  // depender de que nuestras propias funciones de firmado sigan siendo
+  // fieles al formato real de eBay.
+  describe("fixtures oficiales de eBay (event-notification-nodejs-sdk, test/test.json)", () => {
+    const OFFICIAL_PUBLIC_KEY =
+      "-----BEGIN PUBLIC KEY-----MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZhhxXKtR+TOvtDbgTPCkSof02qgBB7IsYOyf76ilExJ/upAa/vKIKheOoCyOpcLmi4t0b4uepb7LLjmMr90FUg==-----END PUBLIC KEY-----";
+    const OFFICIAL_MESSAGE = {
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION", schemaVersion: "1.0", deprecated: false },
+      notification: {
+        notificationId: "49feeaeb-4982-42d9-a377-9645b8479411_33f7e043-fed8-442b-9d44-791923bd9a6d",
+        eventDate: "2021-03-19T20:43:59.462Z",
+        publishDate: "2021-03-19T20:43:59.679Z",
+        publishAttemptCount: 1,
+        data: {
+          username: "test_user",
+          userId: "ma8vp1jySJC",
+          eiasToken: "nY+sHZ2PrBmdj6wVnY+sEZ2PrA2dj6wJnY+gAZGEpwmdj6x9nY+seQ==",
+        },
+      },
+    };
+    const OFFICIAL_RAW_BODY = JSON.stringify(OFFICIAL_MESSAGE);
+
+    it("caso VALID oficial: firma real de eBay sobre el mensaje real de eBay -> verified: true", async () => {
+      const officialValidSignatureHeader =
+        "eyJhbGciOiJlY2RzYSIsImtpZCI6Ijk5MzYyNjFhLTdkN2ItNDYyMS1hMGYxLTk2Y2NiNDI4YWY0OSIsInNpZ25hdHVyZSI6Ik1FWUNJUUNmeGZJV3V4bVdjSUJRSjljNS9YN2lHREpxczJSQ0dzQkVhQWppbnlycmZBSWhBSVY2d0djVGlCdVY1S0pVaWYyaG9reXJMK1E5c3NIa2FkK214Mm5FRTI1dyIsImRpZ2VzdCI6IlNIQTEifQ==";
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: OFFICIAL_PUBLIC_KEY } } });
+
+      const result = await verifyEbaySignature({
+        rawBody: OFFICIAL_RAW_BODY,
+        signatureHeader: officialValidSignatureHeader,
+        oauthCredentials: freshCredentials(),
+      });
+      expect(result).toEqual({ verified: true });
+    });
+
+    it("caso SIGNATURE_MISMATCH oficial: misma clave y mismo mensaje, firma real de eBay pero NO coincidente -> verified: false, reason: signature_mismatch", async () => {
+      const officialMismatchSignatureHeader =
+        "eyJhbGciOiJlY2RzYSIsImtpZCI6Ijk5MzYyNjFhLTdkN2ItNDYyMS1hMGYxLTk2Y2NiNDI4YWY0OSIsInNpZ25hdHVyZSI6Ik1FVUNJUUNHY1NubUFrVGZyK1paMlZnMGJXRW9zOGEvdGVCcWk3UGU2OCtoR21MTUNRSWdlRnZrcnRvKzhkczhSVndJM0dnbjFtTUdDck5NRVpKM1NSbE8yZngveHFJPSIsImRpZ2VzdCI6IlNIQTEifQ==";
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: OFFICIAL_PUBLIC_KEY } } });
+
+      const result = await verifyEbaySignature({
+        rawBody: OFFICIAL_RAW_BODY,
+        signatureHeader: officialMismatchSignatureHeader,
+        oauthCredentials: freshCredentials(),
+      });
+      expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
+    });
   });
 
   describe("clave EC (prime256v1 / P-256, ECDSA) — el tipo de clave que usan las notificaciones ACTUALES de eBay", () => {
@@ -867,5 +924,173 @@ describe("verifyEbaySignature", () => {
       // a los 61 minutos sigue vigente, así que solo la clave se repite.
       expect(calls.filter((c) => c.url.includes("/oauth2/token"))).toHaveLength(1);
     });
+  });
+});
+
+// Instrumentación de correlación por `requestId` (ver comentario de
+// cabecera de signatureVerification.ts): confirma que (a) sin `requestId`
+// el comportamiento es IDÉNTICO al de antes — cero logs adicionales — y
+// (b) con `requestId`, los eventos emitidos correlacionan las fases de la
+// verificación y nunca contienen el cuerpo, la firma, el `kid`, la clave
+// pública (PEM/DER) ni ningún token — solo longitudes, hashes SHA-256 y
+// booleanos.
+describe("instrumentación de correlación (requestId)", () => {
+  function spyConsole() {
+    return {
+      info: vi.spyOn(console, "info").mockImplementation(() => undefined),
+      warn: vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      error: vi.spyOn(console, "error").mockImplementation(() => undefined),
+    };
+  }
+
+  function loggedText(spies: ReturnType<typeof spyConsole>): string {
+    const allCalls = [...spies.info.mock.calls, ...spies.warn.mock.calls, ...spies.error.mock.calls];
+    return allCalls.map((args) => args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")).join("\n");
+  }
+
+  it("sin requestId: no emite ningún console.info adicional (comportamiento idéntico a antes de esta instrumentación)", async () => {
+    const rawBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { data: {} } });
+    const signature = signBody(rawBody, ecPrivateKey);
+    const header = buildSignatureHeader("kid-sin-request-id", signature);
+    mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+    const spies = spyConsole();
+
+    try {
+      const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials() });
+      expect(result).toEqual({ verified: true });
+      expect(spies.info).not.toHaveBeenCalled();
+    } finally {
+      spies.info.mockRestore();
+      spies.warn.mockRestore();
+      spies.error.mockRestore();
+    }
+  });
+
+  it("con requestId y firma válida (1er intento, cuerpo bruto): emite ebay_signature_extraction, ebay_public_key_selection y ebay_verify_attempt_result, todos con el mismo requestId, con hash/longitud correctos y sin exponer secretos", async () => {
+    const rawBody = JSON.stringify({
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+      notification: { data: { username: "secreto-instrumentacion", eiasToken: "TOKEN-SECRETO-INSTRUMENTACION" } },
+    });
+    const kid = "kid-secreto-que-nunca-debe-aparecer-en-logs";
+    const signature = signBody(rawBody, ecPrivateKey);
+    const header = buildSignatureHeader(kid, signature);
+    mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+    const spies = spyConsole();
+    const requestId = "test-request-id-12345";
+
+    try {
+      const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials(), requestId });
+      expect(result).toEqual({ verified: true });
+
+      const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+      expect(infoCalls.every((call) => call.requestId === requestId)).toBe(true);
+
+      const events = infoCalls.map((call) => call.event);
+      expect(events).toContain("ebay_signature_extraction");
+      expect(events).toContain("ebay_public_key_selection");
+      expect(events).toContain("ebay_verify_attempt_result");
+
+      const extraction = infoCalls.find((call) => call.event === "ebay_signature_extraction")!;
+      expect(extraction).toMatchObject({ headerPresent: true, parsedOk: true });
+
+      const keySelection = infoCalls.find((call) => call.event === "ebay_public_key_selection")!;
+      expect(keySelection).toMatchObject({ ok: true, cacheHit: false });
+
+      const verifyResult = infoCalls.find((call) => call.event === "ebay_verify_attempt_result")!;
+      expect(verifyResult).toMatchObject({ verified: true, matchedAttempt: "raw" });
+      expect(verifyResult.rawBodyByteLength).toBe(Buffer.byteLength(rawBody, "utf8"));
+      expect(verifyResult.rawBodySha256).toBe(createHash("sha256").update(rawBody, "utf8").digest("hex"));
+
+      // Nunca el cuerpo, el kid, la clave (PEM/DER) ni la firma en ningún log.
+      const text = loggedText(spies);
+      expect(text).not.toContain("secreto-instrumentacion");
+      expect(text).not.toContain("TOKEN-SECRETO-INSTRUMENTACION");
+      expect(text).not.toContain(kid);
+      expect(text).not.toContain(signature);
+      expect(text).not.toContain(ecPublicKey);
+      expect(text).not.toContain(rawBody);
+    } finally {
+      spies.info.mockRestore();
+      spies.warn.mockRestore();
+      spies.error.mockRestore();
+    }
+  });
+
+  it("con requestId y signature_mismatch: ebay_verify_attempt_result refleja verified:false/matchedAttempt:none con hashes de ambas representaciones, sin exponer el cuerpo ni la clave", async () => {
+    const signedBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { data: { username: "no-deberia-salir" } } });
+    const tamperedBody = JSON.stringify({ metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" }, notification: { data: { username: "no-deberia-salir-2" } } });
+    const signature = signBody(signedBody, ecPrivateKey);
+    const header = buildSignatureHeader("kid-mismatch-instrumentado", signature);
+    mockFetchSequence({ keyResponse: { status: 200, body: { key: ecPublicKey } } });
+    const spies = spyConsole();
+    const requestId = "test-request-id-mismatch";
+
+    try {
+      const result = await verifyEbaySignature({ rawBody: tamperedBody, signatureHeader: header, oauthCredentials: freshCredentials(), requestId });
+      expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
+
+      const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+      const verifyResult = infoCalls.find((call) => call.event === "ebay_verify_attempt_result")!;
+      expect(verifyResult).toMatchObject({ verified: false, matchedAttempt: "none", stage: "signature_mismatch" });
+      expect(verifyResult.rawBodySha256).toBe(createHash("sha256").update(tamperedBody, "utf8").digest("hex"));
+      // tamperedBody ya es JSON canónico (JSON.stringify de un objeto simple) -> canonicalBody === rawBody, mismo hash.
+      expect(verifyResult.canonicalBodySha256).toBe(createHash("sha256").update(JSON.stringify(JSON.parse(tamperedBody)), "utf8").digest("hex"));
+
+      const text = loggedText(spies);
+      expect(text).not.toContain("no-deberia-salir");
+      expect(text).not.toContain(signedBody);
+      expect(text).not.toContain(tamperedBody);
+      expect(text).not.toContain(ecPublicKey);
+    } finally {
+      spies.info.mockRestore();
+      spies.warn.mockRestore();
+      spies.error.mockRestore();
+    }
+  });
+
+  it("con requestId y cabecera ausente/malformada: ebay_signature_extraction refleja el fallo sin necesitar red, sin exponer la cabecera recibida", async () => {
+    const spies = spyConsole();
+    const requestId = "test-request-id-malformed";
+    try {
+      const result = await verifyEbaySignature({
+        rawBody: "cuerpo",
+        signatureHeader: Buffer.from(JSON.stringify({ foo: "bar-secreto" })).toString("base64"),
+        oauthCredentials: freshCredentials(),
+        requestId,
+      });
+      expect(result).toEqual({ verified: false, reason: "malformed_header" });
+
+      const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+      expect(infoCalls).toHaveLength(1);
+      expect(infoCalls[0]).toMatchObject({ event: "ebay_signature_extraction", requestId, headerPresent: true, parsedOk: false });
+      expect(loggedText(spies)).not.toContain("bar-secreto");
+    } finally {
+      spies.info.mockRestore();
+      spies.warn.mockRestore();
+      spies.error.mockRestore();
+    }
+  });
+
+  it("con requestId y fallo de red al pedir la clave pública: ebay_public_key_selection refleja ok:false con el motivo, sin credenciales ni URL", async () => {
+    const rawBody = "cuerpo cualquiera";
+    const header = buildSignatureHeader("kid-fallo-red", signBody(rawBody, ecPrivateKey));
+    mockFetchSequence({ networkFailureOn: "public_key" });
+    const spies = spyConsole();
+    const requestId = "test-request-id-network-failure";
+
+    try {
+      const result = await verifyEbaySignature({ rawBody, signatureHeader: header, oauthCredentials: freshCredentials(), requestId });
+      expect(result).toMatchObject({ verified: false, reason: "public_key_http_error" });
+
+      const infoCalls = spies.info.mock.calls.map((args) => args[0] as Record<string, unknown>);
+      const keySelection = infoCalls.find((call) => call.event === "ebay_public_key_selection")!;
+      expect(keySelection).toMatchObject({ requestId, ok: false, reason: "public_key_http_error" });
+      // No debe haberse llegado a intentar la verificación criptográfica.
+      expect(infoCalls.some((call) => call.event === "ebay_verify_attempt_result")).toBe(false);
+    } finally {
+      spies.info.mockRestore();
+      spies.warn.mockRestore();
+      spies.error.mockRestore();
+    }
   });
 });

@@ -110,8 +110,35 @@
  * `verified: true` ni cambiar el 412, porque esta instrumentación solo
  * rellena `diagnostics` sobre un `signature_mismatch` que el llamador ya
  * decidió antes de invocarla.
+ *
+ * Instrumentación de correlación por `requestId` (esta ronda): con las tres
+ * rondas anteriores habiendo descartado ya el algoritmo, el encoding y la
+ * vinculación kid→clave contra fixtures OFICIALES de eBay (ver
+ * `signatureVerification.test.ts`, describe "fixtures oficiales de eBay"),
+ * la única hipótesis que queda sin poder confirmarse o descartarse desde el
+ * código es que los bytes que recibe esta ruta en producción no sean
+ * exactamente los que eBay firmó (una capa intermedia — Hostinger u otra —
+ * podría alterarlos de forma invisible a nivel JSON). `verifyEbaySignature`
+ * acepta ahora un `requestId` OPCIONAL (generado por quien llama, ver
+ * `route.ts`) que, SOLO si se indica, activa logs adicionales
+ * (`ebay_signature_extraction`, `ebay_public_key_selection`,
+ * `ebay_verify_attempt_result`) para poder correlacionar, con ese mismo id,
+ * la recepción del webhook (loguéada aparte en `route.ts`, con
+ * `sha256(rawBody)` y su longitud en bytes ANTES de esta función) con cada
+ * fase de la verificación — incluida una comparación directa, en el propio
+ * log, del hash de la cadena EXACTA que `createVerify().update()` usa en
+ * cada intento frente al hash logueado en la recepción. Si algún día
+ * difieren, eso por sí solo demuestra una mutación DENTRO de nuestro propio
+ * proceso (algo que la lectura de código ya descarta); si siempre coinciden
+ * pero la firma sigue sin verificar, la mutación — si la hay — ocurre ANTES
+ * de que Next.js reciba la petición. Cuando `requestId` no se indica (todas
+ * las llamadas existentes, incluidos los tests de arriba), el comportamiento
+ * y el resultado son IDÉNTICOS a antes de esta ronda — no se ejecuta ningún
+ * log ni cálculo adicional. Nunca se registra el cuerpo, la firma, `kid`, el
+ * PEM de la clave ni ningún token — solo longitudes, hashes SHA-256 (que no
+ * permiten recuperar el contenido) y booleanos.
  */
-import { createPublicKey, createVerify } from "node:crypto";
+import { createHash, createPublicKey, createVerify } from "node:crypto";
 import type { EbayOAuthCredentials } from "./config";
 import { normalizeEbayPublicKey, EbayPublicKeyFormatError } from "./publicKeyFormat";
 
@@ -304,6 +331,24 @@ function extractNodeErrorCode(error: unknown): string | undefined {
     if (typeof code === "string") return code;
   }
   return undefined;
+}
+
+/** SHA-256 en hexadecimal de una cadena — solo para instrumentación/correlación (nunca decide el resultado de verificación, que sigue siendo EXCLUSIVAMENTE SHA-1 sobre la firma real, ver `SIGNATURE_DIGEST`). Un hash no permite recuperar el contenido original. */
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+/**
+ * Log de instrumentación de UNA fase de `verifyEbaySignature`, SOLO cuando
+ * `requestId` está presente (si no, no hace nada — comportamiento idéntico
+ * al de antes de esta ronda). `fields` debe limitarse SIEMPRE a longitudes,
+ * hashes SHA-256 y booleanos — nunca al cuerpo, la firma, `kid`, la clave
+ * pública ni ningún token; quien llama a esta función es responsable de esa
+ * regla (ver los puntos de llamada en `verifyEbaySignature`).
+ */
+function logInstrumentationEvent(requestId: string | undefined, event: string, fields: Record<string, unknown>): void {
+  if (!requestId) return;
+  console.info({ event, requestId, ...fields });
 }
 
 /** Resultado de UN intento de verificación criptográfica contra una representación concreta del cuerpo. */
@@ -540,12 +585,24 @@ export async function verifyEbaySignature(params: {
   rawBody: string;
   signatureHeader: string | null;
   oauthCredentials: EbayOAuthCredentials | null;
+  /**
+   * Identificador de correlación OPCIONAL (ver comentario de cabecera del
+   * fichero, "Instrumentación de correlación por `requestId`"). Generado
+   * por quien llama (ver `route.ts`) — nunca por esta función. Cuando se
+   * omite (todas las llamadas de antes de esta ronda), el comportamiento es
+   * idéntico: ni un log ni un cálculo adicional.
+   */
+  requestId?: string;
 }): Promise<SignatureVerificationResult> {
-  const { rawBody, signatureHeader, oauthCredentials } = params;
+  const { rawBody, signatureHeader, oauthCredentials, requestId } = params;
 
-  if (!signatureHeader) return { verified: false, reason: "missing_header" };
+  if (!signatureHeader) {
+    logInstrumentationEvent(requestId, "ebay_signature_extraction", { headerPresent: false, parsedOk: false });
+    return { verified: false, reason: "missing_header" };
+  }
 
   const parsed = parseSignatureHeader(signatureHeader);
+  logInstrumentationEvent(requestId, "ebay_signature_extraction", { headerPresent: true, parsedOk: parsed !== null });
   if (!parsed) return { verified: false, reason: "malformed_header" };
 
   if (!oauthCredentials) return { verified: false, reason: "oauth_not_configured" };
@@ -556,8 +613,10 @@ export async function verifyEbaySignature(params: {
     const fetched = await fetchPublicKey(parsed.kid, oauthCredentials);
     publicKeyPem = fetched.pem;
     publicKeyCacheHit = fetched.cacheHit;
+    logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: true, cacheHit: publicKeyCacheHit });
   } catch (error) {
     if (error instanceof EbayFetchError) {
+      logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: error.reason });
       return {
         verified: false,
         reason: error.reason,
@@ -567,15 +626,36 @@ export async function verifyEbaySignature(params: {
     }
     // No debería ocurrir (fetchPublicKey solo lanza EbayFetchError), pero
     // ante cualquier excepción no prevista se falla cerrado igualmente.
+    logInstrumentationEvent(requestId, "ebay_public_key_selection", { ok: false, reason: "public_key_http_error" });
     return { verified: false, reason: "public_key_http_error" };
   }
+
+  // Instrumentación (solo si `requestId`): longitud en bytes y SHA-256 de
+  // la cadena EXACTA que se pasa a `createVerify().update()` en el 1er
+  // intento — que es literalmente la misma variable `rawBody` recibida por
+  // esta función, sin ninguna transformación intermedia (se calcula aparte
+  // aquí, y no se reutiliza el hash de la recepción en `route.ts`, para que
+  // ambos puedan compararse de forma independiente por quien lea los logs).
+  const rawBodyByteLength = requestId !== undefined ? Buffer.byteLength(rawBody, "utf8") : undefined;
+  const rawBodySha256 = requestId !== undefined ? sha256Hex(rawBody) : undefined;
 
   // 1º intento: el cuerpo bruto tal cual se recibió.
   const rawBodyAttempt = attemptVerify(rawBody, publicKeyPem, parsed.signature);
   if (rawBodyAttempt.threw) {
+    logInstrumentationEvent(requestId, "ebay_verify_attempt_result", {
+      verified: false,
+      matchedAttempt: "none",
+      stage: "raw_threw",
+      rawBodyByteLength,
+      rawBodySha256,
+      nodeErrorCode: rawBodyAttempt.nodeErrorCode,
+    });
     return { verified: false, reason: "verify_error", ...(rawBodyAttempt.nodeErrorCode !== undefined ? { nodeErrorCode: rawBodyAttempt.nodeErrorCode } : {}) };
   }
-  if (rawBodyAttempt.matched) return { verified: true };
+  if (rawBodyAttempt.matched) {
+    logInstrumentationEvent(requestId, "ebay_verify_attempt_result", { verified: true, matchedAttempt: "raw", rawBodyByteLength, rawBodySha256 });
+    return { verified: true };
+  }
 
   // 2º y ÚLTIMO intento — SOLO porque el 1º devolvió "no coincide" (nunca
   // si lanzó una excepción): la representación que usa el SDK oficial de
@@ -588,14 +668,46 @@ export async function verifyEbaySignature(params: {
     canonicalBody = undefined;
   }
 
+  const canonicalBodyByteLength = requestId !== undefined && canonicalBody !== undefined ? Buffer.byteLength(canonicalBody, "utf8") : undefined;
+  const canonicalBodySha256 = requestId !== undefined && canonicalBody !== undefined ? sha256Hex(canonicalBody) : undefined;
+
   if (canonicalBody !== undefined) {
     const canonicalAttempt = attemptVerify(canonicalBody, publicKeyPem, parsed.signature);
     if (canonicalAttempt.threw) {
+      logInstrumentationEvent(requestId, "ebay_verify_attempt_result", {
+        verified: false,
+        matchedAttempt: "none",
+        stage: "canonical_threw",
+        rawBodyByteLength,
+        rawBodySha256,
+        canonicalBodyByteLength,
+        canonicalBodySha256,
+        nodeErrorCode: canonicalAttempt.nodeErrorCode,
+      });
       return { verified: false, reason: "verify_error", ...(canonicalAttempt.nodeErrorCode !== undefined ? { nodeErrorCode: canonicalAttempt.nodeErrorCode } : {}) };
     }
-    if (canonicalAttempt.matched) return { verified: true };
+    if (canonicalAttempt.matched) {
+      logInstrumentationEvent(requestId, "ebay_verify_attempt_result", {
+        verified: true,
+        matchedAttempt: "canonical",
+        rawBodyByteLength,
+        rawBodySha256,
+        canonicalBodyByteLength,
+        canonicalBodySha256,
+      });
+      return { verified: true };
+    }
   }
 
+  logInstrumentationEvent(requestId, "ebay_verify_attempt_result", {
+    verified: false,
+    matchedAttempt: "none",
+    stage: "signature_mismatch",
+    rawBodyByteLength,
+    rawBodySha256,
+    canonicalBodyByteLength,
+    canonicalBodySha256,
+  });
   return {
     verified: false,
     reason: "signature_mismatch",
