@@ -144,6 +144,63 @@ describe("verifyEbaySignature", () => {
     expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
   });
 
+  // Fixtures OFICIALES del SDK de eBay (`event-notification-nodejs-sdk`,
+  // paquete npm publicado por eBay, MIT — `test/test.json`), NO generados
+  // por nosotros: cabecera de firma base64, clave pública EC/P-256 tal cual
+  // la devuelve el endpoint real de eBay (con las cabeceras PEM "pegadas"
+  // al cuerpo, sin salto de línea) y mensaje JSON, todo copiado tal cual.
+  // Sirven de prueba de fuego independiente de nuestro propio código de
+  // firmado en las pruebas de arriba/abajo: si algún día `attemptVerify`
+  // deja de aceptar una firma que eBay considera válida, o empieza a
+  // aceptar una que eBay marca como inválida, esta prueba lo detecta sin
+  // depender de que nuestras propias funciones de firmado sigan siendo
+  // fieles al formato real de eBay.
+  describe("fixtures oficiales de eBay (event-notification-nodejs-sdk, test/test.json)", () => {
+    const OFFICIAL_PUBLIC_KEY =
+      "-----BEGIN PUBLIC KEY-----MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZhhxXKtR+TOvtDbgTPCkSof02qgBB7IsYOyf76ilExJ/upAa/vKIKheOoCyOpcLmi4t0b4uepb7LLjmMr90FUg==-----END PUBLIC KEY-----";
+    const OFFICIAL_MESSAGE = {
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION", schemaVersion: "1.0", deprecated: false },
+      notification: {
+        notificationId: "49feeaeb-4982-42d9-a377-9645b8479411_33f7e043-fed8-442b-9d44-791923bd9a6d",
+        eventDate: "2021-03-19T20:43:59.462Z",
+        publishDate: "2021-03-19T20:43:59.679Z",
+        publishAttemptCount: 1,
+        data: {
+          username: "test_user",
+          userId: "ma8vp1jySJC",
+          eiasToken: "nY+sHZ2PrBmdj6wVnY+sEZ2PrA2dj6wJnY+gAZGEpwmdj6x9nY+seQ==",
+        },
+      },
+    };
+    const OFFICIAL_RAW_BODY = JSON.stringify(OFFICIAL_MESSAGE);
+
+    it("caso VALID oficial: firma real de eBay sobre el mensaje real de eBay -> verified: true", async () => {
+      const officialValidSignatureHeader =
+        "eyJhbGciOiJlY2RzYSIsImtpZCI6Ijk5MzYyNjFhLTdkN2ItNDYyMS1hMGYxLTk2Y2NiNDI4YWY0OSIsInNpZ25hdHVyZSI6Ik1FWUNJUUNmeGZJV3V4bVdjSUJRSjljNS9YN2lHREpxczJSQ0dzQkVhQWppbnlycmZBSWhBSVY2d0djVGlCdVY1S0pVaWYyaG9reXJMK1E5c3NIa2FkK214Mm5FRTI1dyIsImRpZ2VzdCI6IlNIQTEifQ==";
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: OFFICIAL_PUBLIC_KEY } } });
+
+      const result = await verifyEbaySignature({
+        rawBody: OFFICIAL_RAW_BODY,
+        signatureHeader: officialValidSignatureHeader,
+        oauthCredentials: freshCredentials(),
+      });
+      expect(result).toEqual({ verified: true });
+    });
+
+    it("caso SIGNATURE_MISMATCH oficial: misma clave y mismo mensaje, firma real de eBay pero NO coincidente -> verified: false, reason: signature_mismatch", async () => {
+      const officialMismatchSignatureHeader =
+        "eyJhbGciOiJlY2RzYSIsImtpZCI6Ijk5MzYyNjFhLTdkN2ItNDYyMS1hMGYxLTk2Y2NiNDI4YWY0OSIsInNpZ25hdHVyZSI6Ik1FVUNJUUNHY1NubUFrVGZyK1paMlZnMGJXRW9zOGEvdGVCcWk3UGU2OCtoR21MTUNRSWdlRnZrcnRvKzhkczhSVndJM0dnbjFtTUdDck5NRVpKM1NSbE8yZngveHFJPSIsImRpZ2VzdCI6IlNIQTEifQ==";
+      mockFetchSequence({ keyResponse: { status: 200, body: { key: OFFICIAL_PUBLIC_KEY } } });
+
+      const result = await verifyEbaySignature({
+        rawBody: OFFICIAL_RAW_BODY,
+        signatureHeader: officialMismatchSignatureHeader,
+        oauthCredentials: freshCredentials(),
+      });
+      expect(result).toMatchObject({ verified: false, reason: "signature_mismatch" });
+    });
+  });
+
   describe("clave EC (prime256v1 / P-256, ECDSA) — el tipo de clave que usan las notificaciones ACTUALES de eBay", () => {
     it("firma real EC+SHA-1 sobre el cuerpo JSON bruto exacto: verified: true", async () => {
       const rawBody = JSON.stringify({
