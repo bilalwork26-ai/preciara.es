@@ -1,7 +1,27 @@
 import { after, NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AwinOrchestratorLockBusyError, runAwinCatalogSyncCycle, summarizeAwinFeedFailures } from "@/server/catalogSync/awinOrchestrator";
+import { InvalidDeactivateStaleAfterHoursError, readDeactivateStaleAfterHours } from "@/server/catalogSync/deactivationConfig";
 import { verifyAwinSyncSignature } from "@/server/jobs/awinSyncRequestAuth";
+
+/**
+ * Nunca deja que un valor inválido de `AWIN_DEACTIVATE_STALE_AFTER_HOURS`
+ * tumbe ni bloquee la sincronización: la opción más segura por defecto
+ * (`undefined` = ningún anunciante desactiva nada este ciclo) es también
+ * la que se usa si la variable está mal escrita — se registra un aviso
+ * para que sea visible, pero jamás impide el resto del ciclo.
+ */
+function resolveDeactivateStaleAfterHours(): number | undefined {
+  try {
+    return readDeactivateStaleAfterHours(process.env);
+  } catch (error) {
+    if (error instanceof InvalidDeactivateStaleAfterHoursError) {
+      console.warn({ event: "awin_sync_invalid_deactivate_stale_config", message: error.message });
+      return undefined;
+    }
+    throw error;
+  }
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,14 +85,16 @@ export async function POST(request: NextRequest) {
   }
 
   const { dryRun } = payload;
+  const deactivateStaleAfterHours = resolveDeactivateStaleAfterHours();
   after(async () => {
     const startedAt = Date.now();
     try {
-      const summary = await runAwinCatalogSyncCycle({ apiKey, feedListUrl, dryRun });
+      const summary = await runAwinCatalogSyncCycle({ apiKey, feedListUrl, dryRun, deactivateStaleAfterHours });
       console.log({
         event: "awin_sync_job_done",
         durationMs: Date.now() - startedAt,
         dryRun: summary.dryRun,
+        deactivateStaleAfterHoursConfigured: deactivateStaleAfterHours !== undefined,
         ok: !summary.listFatalError && summary.feedsFailed === 0 && summary.advertisersIncomplete === 0,
         feedsDiscovered: summary.feedsDiscovered,
         feedsApproved: summary.feedsApproved,
