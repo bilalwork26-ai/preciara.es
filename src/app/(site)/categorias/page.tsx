@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getCategoriesIndex } from "@/server/dataSource/category";
+import { DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { Container } from "@/components/ui/Container";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
   title: "Categorías",
   description: "Explora todas las categorías de productos con ofertas activas en Preciara.",
   alternates: { canonical: "/categorias" },
-  openGraph: { title: "Categorías — Preciara", type: "website" },
+  openGraph: { title: "Categorías — Preciara", type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
+  twitter: { card: "summary_large_image", title: "Categorías — Preciara", images: [DEFAULT_OG_IMAGE_PATH] },
 };
 
 export default async function CategoriesIndexPage() {

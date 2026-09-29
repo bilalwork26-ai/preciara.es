@@ -8,6 +8,18 @@ import type { Merchant, Offer, Product } from "@/types";
 
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://preciara.es";
 
+/**
+ * Imagen de Open Graph/Twitter por defecto (ver `src/app/og/route.tsx`),
+ * para cualquier página que defina su propio `openGraph`/`twitter` sin una
+ * foto real propia. Necesaria porque Next.js NUNCA fusiona `openGraph`
+ * entre segmentos anidados: en cuanto una página devuelve su propio objeto
+ * `openGraph`, sustituye por completo (no solo actualiza) el de
+ * `layout.tsx`, incluida `images` — así que cada página que defina
+ * `openGraph` propio debe aportar también su propia imagen (real, si la
+ * tiene, o esta por defecto).
+ */
+export const DEFAULT_OG_IMAGE_PATH = "/og";
+
 export type BreadcrumbItem = { name: string; path: string };
 
 export function buildBreadcrumbList(items: BreadcrumbItem[]) {
@@ -65,6 +77,11 @@ export function buildProductJsonLd(product: Product, merchants: Merchant[], cano
     "@type": "Product",
     name: product.name,
     url,
+    // Solo si el producto tiene una foto real: Google recomienda `image`
+    // para la elegibilidad a resultados enriquecidos, pero nunca se
+    // inventa una URL cuando no hay ninguna (mismo criterio que el resto
+    // de este constructor: sin aggregateRating/review/brand ficticios).
+    ...(product.imageUrl ? { image: product.imageUrl } : {}),
     offers: offersNode,
   };
 }

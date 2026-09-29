@@ -46,9 +46,9 @@ export function VerifiedDealsGrid({
         aria-label="Productos con bajada de precio hoy"
         tabIndex={0}
       >
-        {products.map((product) => (
+        {products.map((product, index) => (
           <div key={product.id} className="w-[220px] shrink-0 snap-start sm:w-auto">
-            <ProductDealCard product={product} merchants={merchants} />
+            <ProductDealCard product={product} merchants={merchants} highlight={index === 0} />
           </div>
         ))}
       </div>

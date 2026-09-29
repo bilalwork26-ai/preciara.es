@@ -164,6 +164,12 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
  *    categoría, cada una ordenada por descuento relativo descendente),
  *    para no llenar la cuadrícula con un único tipo de producto aunque
  *    hoy solo haya un anunciante real aprobado.
+ * 3. Con el conjunto diverso ya decidido, lo reordena por descuento
+ *    relativo descendente antes de devolverlo: el reparto por categoría de
+ *    arriba decide QUÉ productos entran, pero el orden final que ve la
+ *    persona (y en particular la primera tarjeta, destacada en la
+ *    portada — ver `VerifiedDealsGrid`) siempre refleja la bajada de
+ *    precio real, nunca el orden de intercalado por categoría.
  */
 export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
   const bestPerGroup = new Map<string, ProductWithOffers>();
@@ -193,6 +199,7 @@ export function selectDiverseDeals(products: ProductWithOffers[], limit: number)
       if (round < list.length) result.push(list[round]);
     }
   }
+  result.sort((a, b) => bestDiscountPercent(b) - bestDiscountPercent(a));
   return result;
 }
 

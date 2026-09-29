@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import "./globals.css";
 
 /**
@@ -59,6 +60,11 @@ export const metadata: Metadata = {
     locale: "es_ES",
     siteName: "Preciara",
     type: "website",
+    images: [DEFAULT_OG_IMAGE_PATH],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: [DEFAULT_OG_IMAGE_PATH],
   },
   ...(googleSiteVerification ? { verification: { google: googleSiteVerification } } : {}),
 };

@@ -59,6 +59,36 @@ describe("buildProductJsonLd", () => {
     expect(jsonLd.offers).toMatchObject({ "@type": "AggregateOffer", lowPrice: 10, highPrice: 15, offerCount: 2 });
   });
 
+  it("incluye image cuando el producto tiene una foto real (imageUrl)", () => {
+    const product: Product = {
+      id: "p4",
+      slug: "producto-cuatro",
+      name: "Producto Cuatro",
+      categoryId: "cat",
+      icon: "Tag",
+      imageUrl: "https://merchant.example.invalid/foto.jpg",
+      priceHistory: [],
+      offers: [{ id: "o1", merchantId: "m1", price: 10, currency: "EUR", url: "#", inStock: true, verified: false, lastCheckedLabel: "x" }],
+    };
+    const jsonLd = buildProductJsonLd(product, merchants, "/producto/producto-cuatro");
+    expect(jsonLd.image).toBe("https://merchant.example.invalid/foto.jpg");
+  });
+
+  it("nunca inventa image cuando el producto no tiene ninguna foto real", () => {
+    const product: Product = {
+      id: "p5",
+      slug: "producto-cinco",
+      name: "Producto Cinco",
+      categoryId: "cat",
+      icon: "Tag",
+      imageUrl: null,
+      priceHistory: [],
+      offers: [{ id: "o1", merchantId: "m1", price: 10, currency: "EUR", url: "#", inStock: true, verified: false, lastCheckedLabel: "x" }],
+    };
+    const jsonLd = buildProductJsonLd(product, merchants, "/producto/producto-cinco");
+    expect(jsonLd).not.toHaveProperty("image");
+  });
+
   it("nunca incluye campos inventados como aggregateRating o brand", () => {
     const product: Product = {
       id: "p3",
