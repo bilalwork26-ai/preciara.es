@@ -5,6 +5,7 @@ import {
   iconForCategorySlug,
   relativeLabel,
   toLegacyOffer,
+  toLegacyProduct,
   toPricePoint,
 } from "./transform";
 
@@ -116,5 +117,29 @@ describe("toLegacyOffer: conversión Decimal -> number sin pérdida", () => {
 
   it("merchantId usa el slug del comercio, no su id numérico interno", () => {
     expect(toLegacyOffer(baseOffer()).merchantId).toBe("tienda-x");
+  });
+});
+
+describe("toLegacyProduct: propagación de imageUrl", () => {
+  function baseProduct(overrides: Partial<Parameters<typeof toLegacyProduct>[0]> = {}) {
+    return {
+      slug: "prod-x",
+      name: "Producto X",
+      imageUrl: null,
+      category: { id: 1, slug: "moda", name: "Moda" },
+      offers: [],
+      ...overrides,
+    } as Parameters<typeof toLegacyProduct>[0];
+  }
+
+  it("propaga imageUrl tal cual cuando la fila de BD la trae (foto real del feed)", () => {
+    const product = toLegacyProduct(baseProduct({ imageUrl: "https://cdn.example.invalid/foto.jpg" }));
+    expect(product.imageUrl).toBe("https://cdn.example.invalid/foto.jpg");
+  });
+
+  it("imageUrl queda null cuando el producto no tiene foto; el icono de categoría sigue siendo el fallback", () => {
+    const product = toLegacyProduct(baseProduct({ imageUrl: null }));
+    expect(product.imageUrl).toBeNull();
+    expect(product.icon).toBe("Shirt");
   });
 });

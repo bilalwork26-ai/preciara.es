@@ -106,6 +106,7 @@ export function toLegacyProduct(product: ProductWithOffers, priceHistory: PriceP
     name: product.name,
     categoryId: product.category.slug,
     icon: iconForCategorySlug(product.category.slug),
+    imageUrl: product.imageUrl,
     priceHistory,
     offers: product.offers.map(toLegacyOffer),
   };

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SearchX } from "lucide-react";
 import { formatPrice } from "@/lib/format";
 import { Container } from "@/components/ui/Container";
@@ -57,22 +58,29 @@ export default async function BuscarPage({
             const bestOffer = [...product.offers].sort((a, b) => a.price - b.price)[0];
             const merchant = data.merchants.find((m) => m.id === bestOffer?.merchantId);
             return (
-              <li
-                key={product.id}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm"
-              >
-                <ProductGlyph icon={product.icon} className="h-14 w-14 shrink-0" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-navy-900">{product.name}</p>
-                  {bestOffer && (
-                    <>
-                      <p className="mt-0.5 text-base font-semibold text-navy-900">
-                        {formatPrice(bestOffer.price)}
-                      </p>
-                      <p className="text-xs text-navy-300">Mejor precio en {merchant?.name}</p>
-                    </>
-                  )}
-                </div>
+              <li key={product.id}>
+                <Link
+                  href={`/producto/${product.slug}`}
+                  className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
+                >
+                  <ProductGlyph
+                    icon={product.icon}
+                    imageUrl={product.imageUrl}
+                    alt={product.name}
+                    className="h-14 w-14 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-navy-900">{product.name}</p>
+                    {bestOffer && (
+                      <>
+                        <p className="mt-0.5 text-base font-semibold text-navy-900">
+                          {formatPrice(bestOffer.price)}
+                        </p>
+                        <p className="text-xs text-navy-300">Mejor precio en {merchant?.name}</p>
+                      </>
+                    )}
+                  </div>
+                </Link>
               </li>
             );
           })}
