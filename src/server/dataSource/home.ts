@@ -150,13 +150,21 @@ export function collapseProductVariants(products: ProductWithOffers[]): ProductW
  *    categoría, cada una ordenada por descuento relativo descendente),
  *    para no llenar la cuadrícula con un único tipo de producto aunque
  *    hoy solo haya un anunciante real aprobado.
- * 3. Con el conjunto diverso ya decidido, lo reordena por descuento
- *    relativo descendente antes de devolverlo: el reparto por categoría de
- *    arriba decide QUÉ productos entran, pero el orden final que ve la
- *    persona (y en particular la primera tarjeta, destacada en la
- *    portada — ver `VerifiedDealsGrid`) siempre refleja la bajada de
- *    precio real, nunca el orden de intercalado por categoría.
+ * 3. Con el conjunto diverso ya decidido, lo reordena antes de
+ *    devolverlo: el reparto por categoría de arriba decide QUÉ productos
+ *    entran, pero el orden final que ve la persona (y en particular la
+ *    primera tarjeta, destacada en la portada — ver `VerifiedDealsGrid`)
+ *    siempre sigue la regla global de "mejores chollos primero" — mayor
+ *    descuento relativo descendente y, entre descuentos iguales (o sin
+ *    descuento), el producto actualizado más recientemente — nunca el
+ *    orden de intercalado por categoría. Mismo criterio, y mismo motivo
+ *    (que funcione igual de bien con miles de productos), que el ranking
+ *    en SQL de `getRankedProductIds` (`server/repositories/products.ts`).
  */
+function compareByDealRank(a: ProductWithOffers, b: ProductWithOffers): number {
+  return bestDiscountPercent(b) - bestDiscountPercent(a) || b.updatedAt.getTime() - a.updatedAt.getTime();
+}
+
 export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
   const byCategory = new Map<number, ProductWithOffers[]>();
   for (const product of collapseProductVariants(products)) {
@@ -166,7 +174,7 @@ export function selectDiverseDeals(products: ProductWithOffers[], limit: number)
   }
   const categoryLists = [...byCategory.values()];
   for (const list of categoryLists) {
-    list.sort((a, b) => bestDiscountPercent(b) - bestDiscountPercent(a));
+    list.sort(compareByDealRank);
   }
 
   const result: ProductWithOffers[] = [];
@@ -176,7 +184,7 @@ export function selectDiverseDeals(products: ProductWithOffers[], limit: number)
       if (round < list.length) result.push(list[round]);
     }
   }
-  result.sort((a, b) => bestDiscountPercent(b) - bestDiscountPercent(a));
+  result.sort(compareByDealRank);
   return result;
 }
 
