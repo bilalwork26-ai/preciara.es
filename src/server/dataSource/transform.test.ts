@@ -144,7 +144,7 @@ describe("toLegacyProduct: propagación de imageUrl", () => {
   });
 });
 
-describe("toLegacyProduct: deduplicación de ofertas idénticas", () => {
+describe("toLegacyProduct: colapsa ofertas activas repetidas del mismo comercio", () => {
   function offerRow(overrides: Partial<Parameters<typeof toLegacyOffer>[0]> = {}) {
     return {
       id: 1,
@@ -170,7 +170,7 @@ describe("toLegacyProduct: deduplicación de ofertas idénticas", () => {
     } as Parameters<typeof toLegacyProduct>[0];
   }
 
-  it("elimina registros del mismo comercio con el mismo precio (reimportación duplicada, caso real 'adidas ES')", () => {
+  it("elimina registros del mismo comercio con el mismo precio, sin inventar ningún descuento (reimportación duplicada, caso real 'adidas ES')", () => {
     const product = toLegacyProduct(
       baseProduct([
         offerRow({ id: 1 }),
@@ -179,13 +179,30 @@ describe("toLegacyProduct: deduplicación de ofertas idénticas", () => {
       ])
     );
     expect(product.offers).toHaveLength(1);
+    expect(product.offers[0].previousPrice).toBeUndefined();
   });
 
-  it("conserva ofertas del mismo comercio con precios distintos (no son duplicados)", () => {
+  it("colapsa ofertas del mismo comercio con precios distintos en una sola, con el precio más alto como previousPrice (caso real: 'Pantalón Firebird Utility' con adidas ES a 45€ y a 90€ a la vez)", () => {
     const product = toLegacyProduct(
-      baseProduct([offerRow({ id: 1, currentPrice: new Prisma.Decimal("120.00") }), offerRow({ id: 2, currentPrice: new Prisma.Decimal("99.00") })])
+      baseProduct([
+        offerRow({ id: 1, currentPrice: new Prisma.Decimal("90.00") }), // oferta vieja, externalId de Awin que rotó y nunca se desactivó
+        offerRow({ id: 2, currentPrice: new Prisma.Decimal("45.00") }), // oferta vigente
+      ])
     );
-    expect(product.offers).toHaveLength(2);
+    expect(product.offers).toHaveLength(1);
+    expect(product.offers[0].price).toBe(45);
+    expect(product.offers[0].previousPrice).toBe(90);
+  });
+
+  it("usa el previousPrice ya registrado en la oferta más barata si es mayor que el precio de la otra oferta del grupo", () => {
+    const product = toLegacyProduct(
+      baseProduct([
+        offerRow({ id: 1, currentPrice: new Prisma.Decimal("45.00"), previousPrice: new Prisma.Decimal("120.00") }),
+        offerRow({ id: 2, currentPrice: new Prisma.Decimal("50.00") }), // oferta vieja del mismo comercio, precio menor que el previousPrice ya registrado
+      ])
+    );
+    expect(product.offers).toHaveLength(1);
+    expect(product.offers[0].previousPrice).toBe(120);
   });
 
   it("conserva ofertas de comercios distintos con el mismo precio (no son duplicados)", () => {
