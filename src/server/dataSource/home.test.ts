@@ -85,9 +85,20 @@ describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => 
     expect(a).toContain("5"); // el "5" del modelo tampoco se quita
   });
 
-  it("una talla suelta fuera del rango EU de adulto (30-50) no se quita: nunca confunde un número de modelo corto con una talla", () => {
+  it("un número de modelo/versión al final del nombre, sin nada detrás, nunca se confunde con una talla infantil aunque caiga en su mismo rango (16-29)", () => {
+    // "Ultraboost 22" es un nombre de modelo real (versión "22" de
+    // Ultraboost), no una talla — al no tener nada detrás del número, se
+    // conserva igual que un "42" o "45" de adulto al final del nombre.
     expect(dealsGridGroupKey({ name: "Ultraboost 22" })).toContain("22");
     expect(dealsGridGroupKey({ name: "Pureboost 5" })).toContain("5");
+    expect(dealsGridGroupKey({ name: "Modelo 17" })).toContain("17");
+  });
+
+  it("dos nombres reales de Awin que solo difieren en una talla infantil/junior (16-29) con color detrás dan la misma clave (caso real: 'Zapatilla Tensaur Hook and Loop' en varias tallas de niño)", () => {
+    const a = dealsGridGroupKey({ name: "Zapatilla Tensaur Hook and Loop 22 Cloud White Niño" });
+    const b = dealsGridGroupKey({ name: "Zapatilla Tensaur Hook and Loop 27 Cloud White Niño" });
+    expect(a).toBe(b);
+    expect(a).toContain("cloud white"); // el color nunca se quita, solo la talla
   });
 });
 
@@ -139,6 +150,25 @@ describe("collapseProductVariants", () => {
 
   it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
     expect(collapseProductVariants([])).toEqual([]);
+  });
+
+  it("el resultado sale ordenado por descuento real, no por el orden de llegada de la primera variante vista de cada grupo", () => {
+    // A propósito, la PRIMERA variante de "Zapatilla X" que llega (talla
+    // XS, sin descuento) va ANTES que "Producto Y" en la lista de
+    // entrada, aunque la variante ganadora de "Zapatilla X" (talla S,
+    // 60%) llegue después. Antes de este arreglo, `Map.set` sobre una
+    // clave ya existente actualizaba el VALOR pero conservaba la
+    // POSICIÓN de la primera aparición — así que "Zapatilla X" habría
+    // salido en la posición de su variante SIN descuento (la primera
+    // vista), por delante de "Producto Y" (30%), aunque su descuento
+    // real ganador (60%) debería ir primero.
+    const products = [
+      fakeProduct({ name: "Zapatilla X XS", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "50" }] }), // 0%, primera vista
+      fakeProduct({ name: "Producto Y", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "70" }] }), // 30%
+      fakeProduct({ name: "Zapatilla X S", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "40" }] }), // 60%, la variante ganadora
+    ];
+    const collapsed = collapseProductVariants(products);
+    expect(collapsed.map((p) => p.name)).toEqual(["Zapatilla X S", "Producto Y"]);
   });
 });
 

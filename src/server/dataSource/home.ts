@@ -88,19 +88,23 @@ const DEALS_GRID_POOL_SIZE = 200;
  * Es una heurística sobre el texto real que sirve Awin (no hay un campo
  * de "modelo base" ni de talla por separado en el feed) — nunca se
  * guarda, solo decide qué mostrar en "Bajadas destacadas". La talla
- * suelta solo se quita en el rango 30-50 (tallas EU de adulto habituales
- * en zapatilla/ropa) para no confundir un número de modelo corto como el
- * "5" de "Pureboost 5", que nunca cae en ese rango; un token de una
- * letra ("M"/"L") o un número de modelo real de dos cifras dentro de ese
- * rango podría, en teoría, quitarse por error — el riesgo se acepta a
- * propósito: es mucho menos grave que repetir la misma prenda en varias
- * tarjetas.
+ * suelta de adulto (30-50) se quita siempre que aparece; un número de
+ * modelo corto como el "5" de "Pureboost 5" nunca cae en ese rango, así
+ * que no hace falta más cautela ahí. Las tallas infantiles/junior EU
+ * (16-29 — caso real: "Zapatilla Tensaur Hook and Loop" en tallas 22 a
+ * 27, seis tarjetas idénticas del mismo modelo en la parrilla) SÍ entran
+ * en el mismo rango que usan bastantes nombres de modelo con un año o
+ * versión al final ("Ultraboost 22"), así que solo se quitan cuando les
+ * sigue más texto (color, género...) — el patrón real de Awin para
+ * tallas sueltas ("42 Cloud White Hombre") siempre trae algo detrás; un
+ * número de modelo al final del nombre, sin nada después, nunca se toca.
  */
 export function dealsGridGroupKey(product: Pick<ProductWithOffers, "name">): string {
   return product.name
     .replace(/\b\d{1,3}-\d{1,3}\b/g, "")
     .replace(/\b\d{1,2}\s+\d\/\d\b/g, "")
     .replace(/\b(?:3\d|4\d|50)\b/g, "")
+    .replace(/\b(?:1[6-9]|2\d)\b(?=\s)/g, "")
     .replace(/\b\d{0,2}X{0,3}(?:S|M|L)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim()
@@ -130,6 +134,18 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
  * filtrado, no un top acotado), pero sí el mismo criterio de "una sola
  * tarjeta por modelo" — repetirlo ahí sería el mismo bug de variantes
  * duplicadas que esta función ya resuelve aquí.
+ *
+ * El resultado se reordena por `compareByDealRank` antes de devolverlo a
+ * propósito: `Map.set` sobre una clave YA existente actualiza el valor
+ * pero conserva la posición de inserción ORIGINAL (la de la primera
+ * variante vista de ese grupo, no la de la variante ganadora que
+ * finalmente se muestra) — sin este reordenado final, `/categoria/[slug]`
+ * y `/buscar` (que no vuelven a ordenar el resultado de esta función)
+ * podían mostrar productos sin descuento por delante de otros con un
+ * descuento real, simplemente porque su grupo se vio antes en el orden
+ * de llegada. `selectDiverseDeals` ya reordenaba el suyo al final por su
+ * cuenta, pero corregirlo aquí, en el origen, evita depender de que cada
+ * consumidor futuro se acuerde de hacerlo también.
  */
 export function collapseProductVariants(products: ProductWithOffers[]): ProductWithOffers[] {
   const bestPerGroup = new Map<string, ProductWithOffers>();
@@ -140,7 +156,7 @@ export function collapseProductVariants(products: ProductWithOffers[]): ProductW
       bestPerGroup.set(key, product);
     }
   }
-  return [...bestPerGroup.values()];
+  return [...bestPerGroup.values()].sort(compareByDealRank);
 }
 
 /**
