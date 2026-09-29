@@ -69,6 +69,19 @@ describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => 
     expect(a).toBe(b);
     expect(a).toContain("5"); // el "5" del modelo (Pureboost 5) nunca se quita, solo la talla
   });
+
+  it("una talla suelta de dos cifras (ej. '42') se quita igual que una con fracción, sin confundirla con el color que va justo detrás", () => {
+    const a = dealsGridGroupKey({ name: "adidasZapatilla Pureboost 5 Running 38 2/3 Cloud White Hombre" });
+    const b = dealsGridGroupKey({ name: "adidasZapatilla Pureboost 5 Running 42 Cloud White Hombre" });
+    expect(a).toBe(b);
+    expect(a).toContain("cloud white"); // el color nunca se quita, solo la talla
+    expect(a).toContain("5"); // el "5" del modelo tampoco se quita
+  });
+
+  it("una talla suelta fuera del rango EU de adulto (30-50) no se quita: nunca confunde un número de modelo corto con una talla", () => {
+    expect(dealsGridGroupKey({ name: "Ultraboost 22" })).toContain("22");
+    expect(dealsGridGroupKey({ name: "Pureboost 5" })).toContain("5");
+  });
 });
 
 describe("bestDiscountPercent", () => {
