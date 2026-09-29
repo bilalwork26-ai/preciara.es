@@ -1,12 +1,115 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
+import { Prisma } from "@/generated/prisma";
+import type { ProductWithOffers } from "@/server/repositories/products";
 import { prisma } from "@/server/db/client";
 import { getActiveCategories } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers } from "@/server/repositories/products";
-import { getHomeCategories, getDealsGridBundle, getFeaturedBundle } from "./home";
+import {
+  bestDiscountPercent,
+  dealsGridGroupKey,
+  getHomeCategories,
+  getDealsGridBundle,
+  getFeaturedBundle,
+  selectDiverseDeals,
+} from "./home";
 
 const PREFIX = "test-home-datasource";
+
+/** Producto mínimo con solo los campos que leen dealsGridGroupKey/bestDiscountPercent/selectDiverseDeals. */
+function fakeProduct(overrides: {
+  name: string;
+  categoryId: number;
+  offers?: { previousPrice: string | null; currentPrice: string }[];
+}): ProductWithOffers {
+  const offers = (overrides.offers ?? [{ previousPrice: null, currentPrice: "10" }]).map((o) => ({
+    previousPrice: o.previousPrice === null ? null : new Prisma.Decimal(o.previousPrice),
+    currentPrice: new Prisma.Decimal(o.currentPrice),
+  }));
+  return { name: overrides.name, categoryId: overrides.categoryId, offers } as unknown as ProductWithOffers;
+}
+
+describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => {
+  it("dos nombres que solo difieren en un rango de talla dan la misma clave", () => {
+    const a = dealsGridGroupKey({ name: "adidasPantalón Firebird Utility 23-34 Black Mujer" });
+    const b = dealsGridGroupKey({ name: "adidasPantalón Firebird Utility 24-30 Black Mujer" });
+    expect(a).toBe(b);
+  });
+
+  it("es insensible a mayúsculas/minúsculas y a espacios repetidos", () => {
+    expect(dealsGridGroupKey({ name: "Camiseta  Running" })).toBe(dealsGridGroupKey({ name: "camiseta running" }));
+  });
+
+  it("dos nombres genuinamente distintos (sin rango de talla) dan claves distintas", () => {
+    const a = dealsGridGroupKey({ name: "Auriculares inalámbricos Pro" });
+    const b = dealsGridGroupKey({ name: "Portátil 14 16GB 512GB" });
+    expect(a).not.toBe(b);
+  });
+
+  it("un número que no tiene forma de rango (sin guion) no se quita del nombre", () => {
+    expect(dealsGridGroupKey({ name: "Auriculares modelo 500" })).toContain("500");
+  });
+});
+
+describe("bestDiscountPercent", () => {
+  it("devuelve 0 cuando ninguna oferta tiene previousPrice", () => {
+    const product = fakeProduct({ name: "X", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] });
+    expect(bestDiscountPercent(product)).toBe(0);
+  });
+
+  it("calcula el descuento relativo correcto cuando hay previousPrice", () => {
+    const product = fakeProduct({ name: "X", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "75" }] });
+    expect(bestDiscountPercent(product)).toBeCloseTo(25);
+  });
+
+  it("con varias ofertas, usa el mayor descuento relativo entre todas", () => {
+    const product = fakeProduct({
+      name: "X",
+      categoryId: 1,
+      offers: [
+        { previousPrice: "100", currentPrice: "90" }, // 10%
+        { previousPrice: "100", currentPrice: "50" }, // 50%
+      ],
+    });
+    expect(bestDiscountPercent(product)).toBeCloseTo(50);
+  });
+});
+
+describe("selectDiverseDeals", () => {
+  it("nunca incluye dos variantes (talla) del mismo modelo: se queda con la de mayor descuento", () => {
+    const products = [
+      fakeProduct({ name: "Pantalón X 23-34", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "90" }] }),
+      fakeProduct({ name: "Pantalón X 24-30", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "60" }] }),
+      fakeProduct({ name: "Pantalón X 24-32", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }),
+    ];
+    const selected = selectDiverseDeals(products, 24);
+    expect(selected).toHaveLength(1);
+    expect(selected[0].name).toBe("Pantalón X 24-30"); // 40% de descuento, el mayor de las tres
+  });
+
+  it("reparte el resultado entre categorías distintas en vez de agotar una sola", () => {
+    const products = [
+      fakeProduct({ name: "A1", categoryId: 1 }),
+      fakeProduct({ name: "A2", categoryId: 1 }),
+      fakeProduct({ name: "A3", categoryId: 1 }),
+      fakeProduct({ name: "B1", categoryId: 2 }),
+    ];
+    const selected = selectDiverseDeals(products, 2);
+    const categoryIds = selected.map((p) => p.categoryId).sort();
+    expect(categoryIds).toEqual([1, 2]); // no las 2 primeras de la categoría 1
+  });
+
+  it("nunca devuelve más de `limit` productos", () => {
+    const products = Array.from({ length: 10 }, (_, i) => fakeProduct({ name: `P${i}`, categoryId: 1 }));
+    expect(selectDiverseDeals(products, 3)).toHaveLength(3);
+  });
+
+  it("con menos productos distintos que `limit`, devuelve todos los que haya sin lanzar", () => {
+    const products = [fakeProduct({ name: "Único", categoryId: 1 })];
+    expect(selectDiverseDeals(products, 24)).toHaveLength(1);
+  });
+});
 
 // Ver la nota equivalente en search.test.ts / db/client.test.ts: Prisma
 // recarga .env al importarse, así que "sin DATABASE_URL" solo se puede
@@ -218,6 +321,35 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: destacado y cuadrí
     // El producto real de este mismo bloque sigue apareciendo con normalidad.
     if (bundle.source === "database") {
       expect(bundle.data.products.find((p) => p.slug === productSlug)).toBeDefined();
+    }
+  });
+
+  it("varias tallas del mismo modelo (mismo nombre salvo el rango de talla) nunca aparecen juntas en la cuadrícula", async () => {
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    const sizeVariantSlugs = [`${PREFIX}-talla-23-34`, `${PREFIX}-talla-24-30`, `${PREFIX}-talla-24-32`];
+    for (const slug of sizeVariantSlugs) {
+      const size = slug.split("-talla-")[1];
+      const variant = await prisma!.product.create({
+        data: { slug, name: `Pantalón de prueba ${size} Black Mujer`, categoryId },
+      });
+      await prisma!.offer.create({
+        data: {
+          productId: variant.id,
+          merchantId: merchant.id,
+          currentPrice: 29.99,
+          productUrl: `https://example.invalid/talla-${size}`,
+          availability: "IN_STOCK",
+          lastCheckedAt: new Date(),
+          isActive: true,
+        },
+      });
+    }
+
+    const bundle = await getDealsGridBundle();
+    const present = sizeVariantSlugs.filter((slug) => bundle.data.products.some((p) => p.slug === slug));
+    if (bundle.source === "database") {
+      // Como mucho una de las tres tallas, nunca varias tarjetas del mismo modelo.
+      expect(present.length).toBeLessThanOrEqual(1);
     }
   });
 });
