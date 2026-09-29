@@ -169,6 +169,21 @@ describe("selectDiverseDeals", () => {
     const products = [fakeProduct({ name: "Único", categoryId: 1 })];
     expect(selectDiverseDeals(products, 24)).toHaveLength(1);
   });
+
+  it("el resultado final está ordenado por % de descuento real descendente, no por el reparto de categorías", () => {
+    // A propósito, la categoría 1 aporta el mayor Y el menor descuento de
+    // todos: si el resultado se quedara en el orden de intercalado por
+    // categoría (ronda a ronda), "A1" (90%) saldría primero pero "A2"
+    // (5%) saldría antes que "B1" (50%) solo por turno de ronda, nunca
+    // por su descuento real.
+    const products = [
+      fakeProduct({ name: "A1", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
+      fakeProduct({ name: "A2", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }), // 5%
+      fakeProduct({ name: "B1", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+    ];
+    const selected = selectDiverseDeals(products, 3);
+    expect(selected.map((p) => p.name)).toEqual(["A1", "B1", "A2"]);
+  });
 });
 
 // Ver la nota equivalente en search.test.ts / db/client.test.ts: Prisma

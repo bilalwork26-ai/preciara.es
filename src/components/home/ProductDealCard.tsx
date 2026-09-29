@@ -2,24 +2,44 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Heart } from "lucide-react";
+import { Flame, Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { formatPrice, calcDiscountPercent, formatProductDisplayName } from "@/lib/format";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
-export function ProductDealCard({ product, merchants }: { product: Product; merchants: Merchant[] }) {
+export function ProductDealCard({
+  product,
+  merchants,
+  highlight = false,
+}: {
+  product: Product;
+  merchants: Merchant[];
+  /** true para la tarjeta de mayor bajada de precio de la cuadrícula (ver VerifiedDealsGrid) — nunca se aplica sin descuento real. */
+  highlight?: boolean;
+}) {
   const [saved, setSaved] = useState(false);
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
   const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
+  const isHighlighted = highlight && percent > 0;
   // Solo para mostrar: la búsqueda de "Comparar tiendas" más abajo sigue
   // usando product.name tal cual (sin formatear), para no romper la
   // coincidencia por texto contra el nombre real guardado en la BD.
   const displayName = formatProductDisplayName(product.name, product.brand);
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-border bg-white p-4 shadow-sm">
+    <div
+      className={`flex h-full flex-col rounded-2xl border bg-white p-4 ${
+        isHighlighted ? "border-coral-500 shadow-md ring-2 ring-coral-500/30" : "border-border shadow-sm"
+      }`}
+    >
+      {isHighlighted && (
+        <p className="mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-coral-600">
+          <Flame className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={2} />
+          Mayor bajada
+        </p>
+      )}
       <div className="relative">
         <Link href={`/producto/${product.slug}`} aria-label={`Ver detalle de ${displayName}`}>
           <ProductGlyph
