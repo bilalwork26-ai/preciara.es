@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Database, Layers, Link2, ShieldCheck, Store } from "lucide-react";
-import { buildBreadcrumbList, buildWebPageJsonLd } from "@/lib/seo";
+import { buildBreadcrumbList, buildWebPageJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
 
@@ -13,8 +13,8 @@ export const metadata: Metadata = {
   title,
   description,
   alternates: { canonical: "/para-tiendas" },
-  openGraph: { title, description, type: "website" },
-  twitter: { card: "summary", title, description },
+  openGraph: { title, description, type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
+  twitter: { card: "summary_large_image", title, description, images: [DEFAULT_OG_IMAGE_PATH] },
 };
 
 const respectItems = [

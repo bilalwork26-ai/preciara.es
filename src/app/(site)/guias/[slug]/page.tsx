@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, CheckCircle2, Clock } from "lucide-react";
 import { guides, getGuideBySlug } from "@/data/guides";
-import { buildArticleJsonLd, buildBreadcrumbList } from "@/lib/seo";
+import { buildArticleJsonLd, buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
 
@@ -25,8 +25,8 @@ export async function generateMetadata({ params }: PageProps<"/guias/[slug]">): 
     title: guide.title,
     description: guide.description,
     alternates: { canonical: `/guias/${guide.slug}` },
-    openGraph: { title: guide.title, description: guide.description, type: "article" },
-    twitter: { card: "summary", title: guide.title, description: guide.description },
+    openGraph: { title: guide.title, description: guide.description, type: "article", images: [DEFAULT_OG_IMAGE_PATH] },
+    twitter: { card: "summary_large_image", title: guide.title, description: guide.description, images: [DEFAULT_OG_IMAGE_PATH] },
   };
 }
 

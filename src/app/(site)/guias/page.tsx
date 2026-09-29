@@ -4,7 +4,7 @@ import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BookOpen, Clock, ArrowRight } from "lucide-react";
 import { guides } from "@/data/guides";
-import { buildBreadcrumbList } from "@/lib/seo";
+import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
 
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title,
   description,
   alternates: { canonical: "/guias" },
-  openGraph: { title, description, type: "website" },
-  twitter: { card: "summary", title, description },
+  openGraph: { title, description, type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
+  twitter: { card: "summary_large_image", title, description, images: [DEFAULT_OG_IMAGE_PATH] },
 };
 
 /**

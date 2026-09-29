@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCategoryDetail } from "@/server/dataSource/category";
 import { formatPrice } from "@/lib/format";
-import { buildBreadcrumbList } from "@/lib/seo";
+import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
@@ -22,8 +22,8 @@ export async function generateMetadata({ params }: PageProps<"/categoria/[slug]"
     description,
     alternates: { canonical: `/categoria/${category.slug}` },
     robots: source === "demo" ? { index: false, follow: false } : undefined,
-    openGraph: { title: category.name, description, type: "website" },
-    twitter: { card: "summary", title: category.name, description },
+    openGraph: { title: category.name, description, type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
+    twitter: { card: "summary_large_image", title: category.name, description, images: [DEFAULT_OG_IMAGE_PATH] },
   };
 }
 
