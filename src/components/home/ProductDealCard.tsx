@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Flame, Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
-import { formatPrice, bestOfferDiscountPercent, formatProductDisplayName } from "@/lib/format";
+import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
@@ -22,10 +22,13 @@ export function ProductDealCard({
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
   // El descuento puede estar en cualquier oferta, no solo en la de precio
-  // más bajo (ver bestOfferDiscountPercent) — así el badge nunca se queda
-  // sin mostrar una bajada real solo porque la tienda más barata no trae
-  // su propio previousPrice registrado.
-  const percent = bestOfferDiscountPercent(offers);
+  // más bajo (ver bestOfferDiscount) — así la pastilla y el precio tachado
+  // nunca se quedan sin mostrar una bajada real solo porque la tienda más
+  // barata no trae su propio previousPrice registrado. Se muestran juntos
+  // y a partir del MISMO dato (el previousPrice de esa oferta concreta),
+  // nunca mezclando el precio tachado de una oferta con el % de otra.
+  const discount = bestOfferDiscount(offers);
+  const percent = discount?.percent ?? 0;
   const isHighlighted = highlight && percent > 0;
   // Solo para mostrar: la búsqueda de "Ver ofertas" más abajo sigue usando
   // product.name tal cual (sin formatear), para no romper la coincidencia
@@ -83,8 +86,8 @@ export function ProductDealCard({
           entre tarjetas vecinas. */}
       <div className="mt-auto flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 pt-1 sm:gap-x-2 sm:pt-1.5">
         <span className="text-sm font-bold text-navy-900 sm:text-lg">{formatPrice(best.price)}</span>
-        {best.previousPrice && (
-          <del className="text-xs font-medium text-navy-400 line-through decoration-2 sm:text-sm">{formatPrice(best.previousPrice)}</del>
+        {discount && (
+          <del className="text-xs font-medium text-navy-400 line-through decoration-2 sm:text-sm">{formatPrice(discount.previousPrice)}</del>
         )}
       </div>
       {/* Información secundaria (tienda, resto de ofertas, frescura del

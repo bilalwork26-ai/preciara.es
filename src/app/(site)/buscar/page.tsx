@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SearchX } from "lucide-react";
-import { formatPrice, formatProductDisplayName } from "@/lib/format";
+import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { Container } from "@/components/ui/Container";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
+import { DiscountBadge } from "@/components/ui/DiscountBadge";
 import { SearchForm } from "@/components/home/SearchForm";
 import { searchHomeProducts } from "@/server/dataSource/search";
 
@@ -62,24 +63,40 @@ export default async function BuscarPage({
             const bestOffer = [...product.offers].sort((a, b) => a.price - b.price)[0];
             const merchant = data.merchants.find((m) => m.id === bestOffer?.merchantId);
             const displayName = formatProductDisplayName(product.name, product.brand);
+            // El descuento puede estar en cualquier oferta, no solo en la de
+            // precio más bajo — ver el mismo criterio, con más detalle, en
+            // bestOfferDiscount (src/lib/format.ts) y ProductDealCard.
+            const discount = bestOfferDiscount(product.offers);
             return (
               <li key={product.id} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
                 <Link
                   href={`/producto/${product.slug}`}
                   className="flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm transition-colors hover:border-teal-600 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
                 >
-                  <ProductGlyph
-                    icon={product.icon}
-                    imageUrl={product.imageUrl}
-                    alt={displayName}
-                    className="h-16 w-16 shrink-0 sm:h-14 sm:w-14"
-                  />
+                  <div className="relative shrink-0">
+                    <ProductGlyph
+                      icon={product.icon}
+                      imageUrl={product.imageUrl}
+                      alt={displayName}
+                      className="h-16 w-16 sm:h-14 sm:w-14"
+                    />
+                    {discount && (
+                      <div className="absolute left-0.5 top-0.5">
+                        <DiscountBadge percent={discount.percent} size="sm" />
+                      </div>
+                    )}
+                  </div>
                   <div className="min-w-0 w-full">
                     <p className="line-clamp-2 text-xs font-medium text-navy-900 sm:truncate sm:text-sm">{displayName}</p>
                     {bestOffer && (
                       <>
-                        <p className="mt-0.5 text-sm font-semibold text-navy-900 sm:text-base">
-                          {formatPrice(bestOffer.price)}
+                        <p className="mt-0.5 flex flex-wrap items-baseline justify-center gap-x-1.5 sm:justify-start">
+                          <span className="text-sm font-semibold text-navy-900 sm:text-base">
+                            {formatPrice(bestOffer.price)}
+                          </span>
+                          {discount && (
+                            <del className="text-xs font-medium text-navy-400 line-through decoration-2">{formatPrice(discount.previousPrice)}</del>
+                          )}
                         </p>
                         <p className="hidden text-xs text-navy-300 sm:block">Mejor precio en {merchant?.name}</p>
                       </>

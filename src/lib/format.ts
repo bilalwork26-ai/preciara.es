@@ -12,22 +12,36 @@ export function calcDiscountPercent(current: number, previous: number): number {
   return Math.round(((previous - current) / previous) * 100);
 }
 
+export type BestOfferDiscount = {
+  percent: number;
+  /** El `previousPrice` real de la oferta que produce ese % — el mismo dato que respalda la pastilla, para poder mostrarlo tachado junto al precio sin mezclarlo con el de otra oferta que no tuvo ese descuento. */
+  previousPrice: number;
+};
+
 /**
  * El descuento real de un producto puede estar en cualquiera de sus
  * ofertas, no necesariamente en la de precio más bajo (dos comercios
  * pueden tener `previousPrice` distinto, o solo uno de ellos lo trae
  * registrado) — mismo criterio que `bestDiscountPercent` en
  * server/dataSource/home.ts (decide qué tarjeta se destaca en portada),
- * aplicado aquí al tipo `Offer` ya convertido para el cliente.
+ * aplicado aquí al tipo `Offer` ya convertido para el cliente. `null` si
+ * ninguna oferta tiene un descuento real.
  */
-export function bestOfferDiscountPercent(offers: { price: number; previousPrice?: number }[]): number {
-  let max = 0;
+export function bestOfferDiscount(offers: { price: number; previousPrice?: number }[]): BestOfferDiscount | null {
+  let best: BestOfferDiscount | null = null;
   for (const offer of offers) {
     if (!offer.previousPrice) continue;
     const percent = calcDiscountPercent(offer.price, offer.previousPrice);
-    if (percent > max) max = percent;
+    if (percent > 0 && (!best || percent > best.percent)) {
+      best = { percent, previousPrice: offer.previousPrice };
+    }
   }
-  return max;
+  return best;
+}
+
+/** Atajo cuando solo hace falta el %, p. ej. para decidir si resaltar una tarjeta — ver `bestOfferDiscount`. */
+export function bestOfferDiscountPercent(offers: { price: number; previousPrice?: number }[]): number {
+  return bestOfferDiscount(offers)?.percent ?? 0;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestOfferDiscountPercent, calcDiscountPercent, formatPrice, formatProductDisplayName } from "./format";
+import { bestOfferDiscount, bestOfferDiscountPercent, calcDiscountPercent, formatPrice, formatProductDisplayName } from "./format";
 
 describe("formatPrice", () => {
   it("formatea en euros con el estilo es-ES", () => {
@@ -89,5 +89,24 @@ describe("bestOfferDiscountPercent", () => {
 
   it("devuelve 0 con una lista vacía de ofertas", () => {
     expect(bestOfferDiscountPercent([])).toBe(0);
+  });
+});
+
+describe("bestOfferDiscount", () => {
+  it("devuelve el % y el previousPrice de la oferta con mayor descuento (no la de precio más bajo)", () => {
+    const offers = [
+      { price: 45, previousPrice: undefined }, // la más barata, pero sin previousPrice registrado
+      { price: 50, previousPrice: 100 }, // la que sí trae un descuento real del 50%
+    ];
+    expect(bestOfferDiscount(offers)).toEqual({ percent: 50, previousPrice: 100 });
+  });
+
+  it("devuelve null cuando ninguna oferta tiene un descuento real", () => {
+    expect(bestOfferDiscount([{ price: 45, previousPrice: undefined }])).toBeNull();
+    expect(bestOfferDiscount([{ price: 100, previousPrice: 100 }])).toBeNull();
+  });
+
+  it("devuelve null con una lista vacía de ofertas", () => {
+    expect(bestOfferDiscount([])).toBeNull();
   });
 });

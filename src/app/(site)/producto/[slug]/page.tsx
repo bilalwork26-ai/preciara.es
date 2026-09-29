@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getProductDetail } from "@/server/dataSource/product";
-import { formatPrice, bestOfferDiscountPercent, formatProductDisplayName } from "@/lib/format";
+import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, buildProductJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
@@ -44,7 +44,8 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
   const { product, merchants, source } = result;
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
-  const percent = bestOfferDiscountPercent(offers);
+  const discount = bestOfferDiscount(offers);
+  const percent = discount?.percent ?? 0;
   const displayName = formatProductDisplayName(product.name, product.brand);
 
   const breadcrumbJsonLd = buildBreadcrumbList([
@@ -87,8 +88,8 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
           </h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:mt-2 sm:gap-3">
             <span className="text-lg font-bold text-navy-900 sm:text-2xl">{formatPrice(best.price)}</span>
-            {best.previousPrice && (
-              <span className="text-xs text-navy-300 line-through sm:text-sm">{formatPrice(best.previousPrice)}</span>
+            {discount && (
+              <span className="text-xs text-navy-300 line-through sm:text-sm">{formatPrice(discount.previousPrice)}</span>
             )}
             <DiscountBadge percent={percent} />
           </div>
