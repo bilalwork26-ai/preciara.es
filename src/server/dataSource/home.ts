@@ -160,27 +160,45 @@ export function collapseProductVariants(products: ProductWithOffers[]): ProductW
 }
 
 /**
- * Elige como máximo `limit` productos para "Bajadas destacadas":
- * 1. Deduplica variantes con `collapseProductVariants` (ver arriba).
- * 2. Reparte el resultado entre categorías distintas (ronda por
- *    categoría, cada una ordenada por descuento relativo descendente),
- *    para no llenar la cuadrícula con un único tipo de producto aunque
- *    hoy solo haya un anunciante real aprobado.
- * 3. Con el conjunto diverso ya decidido, lo reordena antes de
- *    devolverlo: el reparto por categoría de arriba decide QUÉ productos
- *    entran, pero el orden final que ve la persona (y en particular la
- *    primera tarjeta, destacada en la portada — ver `VerifiedDealsGrid`)
- *    siempre sigue la regla global de "mejores chollos primero" — mayor
- *    descuento relativo descendente y, entre descuentos iguales (o sin
- *    descuento), el producto actualizado más recientemente — nunca el
- *    orden de intercalado por categoría. Mismo criterio, y mismo motivo
- *    (que funcione igual de bien con miles de productos), que el ranking
- *    en SQL de `getRankedProductIds` (`server/repositories/products.ts`).
+ * Criterio global de "mejores chollos primero": mayor descuento relativo
+ * descendente y, entre descuentos iguales (o sin descuento), el producto
+ * actualizado más recientemente. Mismo criterio, y mismo motivo (que
+ * funcione igual de bien con miles de productos), que el ranking en SQL de
+ * `getRankedProductIds` (`server/repositories/products.ts`).
  */
 function compareByDealRank(a: ProductWithOffers, b: ProductWithOffers): number {
   return bestDiscountPercent(b) - bestDiscountPercent(a) || b.updatedAt.getTime() - a.updatedAt.getTime();
 }
 
+/**
+ * Cuántas tarjetas seguidas de la MISMA categoría deja pasar la
+ * cuadrícula antes de forzar que la siguiente sea de otra (si queda
+ * alguna con productos disponibles). `categoryId` es la única señal de
+ * "tipo de producto" que existe hoy en el esquema — no hay una
+ * subcategoría más fina que distinga, por ejemplo, calzado del resto de
+ * ropa dentro de una misma categoría ("Deporte") — así que este límite
+ * evita rachas de la misma categoría, no necesariamente del mismo tipo de
+ * prenda dentro de ella.
+ */
+const MAX_CONSECUTIVE_SAME_CATEGORY = 2;
+
+/**
+ * Elige como máximo `limit` productos para "Bajadas destacadas":
+ * 1. Deduplica variantes con `collapseProductVariants` (ver arriba).
+ * 2. Ordena el catálogo de cada categoría por `compareByDealRank`.
+ * 3. Intercala esas listas puesto a puesto: en cada posición elige, entre
+ *    TODAS las categorías, el producto con mejor descuento — salvo que
+ *    eso alargue una racha de la misma categoría más allá de
+ *    `MAX_CONSECUTIVE_SAME_CATEGORY`, en cuyo caso elige el mejor producto
+ *    de entre las demás categorías con productos pendientes. Solo si
+ *    TODAS las categorías con productos pendientes ya están en el límite
+ *    de racha (porque solo queda esa categoría con stock) se deja pasar
+ *    igualmente, para no acortar la cuadrícula por debajo de `limit`
+ *    teniendo catálogo de sobra. Con esto, la primera tarjeta (la
+ *    destacada — ver `VerifiedDealsGrid`) siempre es el mejor chollo
+ *    global, pero el resto de la parrilla queda repartida entre
+ *    categorías en vez de llenarse con un único tipo de producto.
+ */
 export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
   const byCategory = new Map<number, ProductWithOffers[]>();
   for (const product of collapseProductVariants(products)) {
@@ -193,14 +211,59 @@ export function selectDiverseDeals(products: ProductWithOffers[], limit: number)
     list.sort(compareByDealRank);
   }
 
+  return interleaveWithCategoryCap(categoryLists, limit, MAX_CONSECUTIVE_SAME_CATEGORY);
+}
+
+function interleaveWithCategoryCap(
+  categoryLists: ProductWithOffers[][],
+  limit: number,
+  maxConsecutive: number,
+): ProductWithOffers[] {
+  const cursors = categoryLists.map(() => 0);
   const result: ProductWithOffers[] = [];
-  for (let round = 0; result.length < limit && categoryLists.some((list) => round < list.length); round++) {
-    for (const list of categoryLists) {
-      if (result.length >= limit) break;
-      if (round < list.length) result.push(list[round]);
+  let lastCategoryId: number | null = null;
+  let streak = 0;
+
+  while (result.length < limit) {
+    let bestIndex = -1;
+    let bestIndexIgnoringCap = -1;
+
+    for (let i = 0; i < categoryLists.length; i++) {
+      const list = categoryLists[i];
+      if (cursors[i] >= list.length) continue;
+      const candidate = list[cursors[i]];
+
+      if (
+        bestIndexIgnoringCap === -1 ||
+        compareByDealRank(candidate, categoryLists[bestIndexIgnoringCap][cursors[bestIndexIgnoringCap]]) < 0
+      ) {
+        bestIndexIgnoringCap = i;
+      }
+
+      const wouldExceedCap = candidate.categoryId === lastCategoryId && streak >= maxConsecutive;
+      if (
+        !wouldExceedCap &&
+        (bestIndex === -1 || compareByDealRank(candidate, categoryLists[bestIndex][cursors[bestIndex]]) < 0)
+      ) {
+        bestIndex = i;
+      }
+    }
+
+    const chosenIndex = bestIndex !== -1 ? bestIndex : bestIndexIgnoringCap;
+    if (chosenIndex === -1) break; // ninguna categoría tiene ya productos pendientes
+
+    const chosen = categoryLists[chosenIndex][cursors[chosenIndex]];
+    cursors[chosenIndex] += 1;
+    result.push(chosen);
+
+    if (chosen.categoryId === lastCategoryId) {
+      streak += 1;
+    } else {
+      lastCategoryId = chosen.categoryId;
+      streak = 1;
     }
   }
-  result.sort(compareByDealRank);
+
   return result;
 }
 

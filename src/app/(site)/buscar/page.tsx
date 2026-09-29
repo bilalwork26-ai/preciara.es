@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   title: "Resultados de búsqueda",
 };
 
+/**
+ * Misma razón que en la portada (ver page.tsx): sin esto, Next podría
+ * prerenderizar esta página como HTML estático en el build y servir esa
+ * foto fija de resultados de siempre, en vez de ejecutar la búsqueda/el
+ * ranking SQL en cada visita.
+ */
+export const dynamic = "force-dynamic";
+
 export default async function BuscarPage({
   searchParams,
 }: PageProps<"/buscar">) {

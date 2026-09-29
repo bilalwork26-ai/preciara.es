@@ -184,16 +184,37 @@ describe("selectDiverseDeals", () => {
     expect(selected[0].name).toBe("Pantalón X 24-30"); // 40% de descuento, el mayor de las tres
   });
 
-  it("reparte el resultado entre categorías distintas en vez de agotar una sola", () => {
+  it("dentro del límite de racha (2 seguidas), sigue premiando el mayor descuento antes de ceder el turno a otra categoría", () => {
     const products = [
-      fakeProduct({ name: "A1", categoryId: 1 }),
-      fakeProduct({ name: "A2", categoryId: 1 }),
-      fakeProduct({ name: "A3", categoryId: 1 }),
-      fakeProduct({ name: "B1", categoryId: 2 }),
+      fakeProduct({ name: "A1", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
+      fakeProduct({ name: "A2", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "20" }] }), // 80%
+      fakeProduct({ name: "A3", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "30" }] }), // 70%
+      fakeProduct({ name: "B1", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
     ];
-    const selected = selectDiverseDeals(products, 2);
-    const categoryIds = selected.map((p) => p.categoryId).sort();
-    expect(categoryIds).toEqual([1, 2]); // no las 2 primeras de la categoría 1
+    // Con el límite de 2 tarjetas seguidas de la misma categoría, las dos
+    // primeras posiciones pueden ser ambas de la categoría 1 (son las de
+    // mayor descuento), pero la tercera SÍ debe ceder a la categoría 2 en
+    // vez de repetir una tercera vez la categoría 1 aunque "A3" (70%)
+    // siga teniendo mejor descuento que "B1" (50%).
+    const selected = selectDiverseDeals(products, 3);
+    expect(selected.map((p) => p.name)).toEqual(["A1", "A2", "B1"]);
+  });
+
+  it("nunca deja más de MAX_CONSECUTIVE_SAME_CATEGORY (2) tarjetas seguidas de la misma categoría, aunque esa categoría concentre todos los mejores descuentos", () => {
+    const products = [
+      ...[90, 80, 70, 60, 50].map((discount, i) =>
+        fakeProduct({ name: `Calzado${i}`, categoryId: 1, offers: [{ previousPrice: "100", currentPrice: String(100 - discount) }] }),
+      ),
+      fakeProduct({ name: "Ropa", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
+      fakeProduct({ name: "Accesorio", categoryId: 3, offers: [{ previousPrice: "100", currentPrice: "70" }] }), // 30%
+    ];
+    const selected = selectDiverseDeals(products, products.length);
+    expect(selected).toHaveLength(products.length); // reparte TODO el catálogo, no lo recorta
+    let run = 1;
+    for (let i = 1; i < selected.length; i++) {
+      run = selected[i].categoryId === selected[i - 1].categoryId ? run + 1 : 1;
+      expect(run).toBeLessThanOrEqual(2);
+    }
   });
 
   it("nunca devuelve más de `limit` productos", () => {
