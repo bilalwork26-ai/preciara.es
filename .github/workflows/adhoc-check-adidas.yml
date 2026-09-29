@@ -172,6 +172,37 @@ jobs:
             fi
           done < <(sort -u /tmp/product-links.txt | head -3)
 
+      # Comprobación puntual tras PR #42: confirma en producción (a) que el
+      # panel lateral "Compara. Ahorra. Compra mejor." (datos de demostración
+      # fijos) ya no aparece en la portada, y (b) que /categoria usa el
+      # contenedor ancho (max-w-none) en vez del max-w-7xl anterior.
+      - name: "PR #42: panel lateral retirado de la portada y contenedor ancho en /categoria"
+        shell: bash
+        run: |
+          set -e
+          if grep -q "Compara. Ahorra. Compra mejor." /tmp/home.html; then
+            echo "::error::La portada TODAVÍA muestra el panel lateral de demostración — el despliegue no ha recogido la PR #42."
+            exit 1
+          fi
+          echo "Panel lateral 'Compara. Ahorra. Compra mejor.': NO aparece (correcto, PR #42 ya en vivo)."
+
+          category_path=$(head -1 /tmp/product-links.txt | sed -E 's#^/producto/.*$##')
+          code=$(curl -sS -o /tmp/categorias-index.html -w "%{http_code}" --max-time 20 "https://preciara.es/categorias")
+          echo "HTTP /categorias: $code"
+          cat_path=$(grep -oE 'href="/categoria/[^"]+"' /tmp/categorias-index.html | head -1 | sed -E 's/^href="//; s/"$//')
+          if [ -z "$cat_path" ]; then
+            echo "::warning::No se encontró ningún enlace /categoria/[slug] en /categorias — no se puede verificar el contenedor ancho."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/categoria-check.html -w "%{http_code}" --max-time 20 "https://preciara.es${cat_path}")
+          echo "HTTP ${cat_path}: $code"
+          if grep -oE 'class="[^"]*max-w-none[^"]*"' /tmp/categoria-check.html | head -1; then
+            echo "Contenedor ancho (max-w-none) SÍ presente en ${cat_path} (correcto, PR #42 ya en vivo)."
+          else
+            echo "::error::No se encontró max-w-none en ${cat_path} — el despliegue no ha recogido la PR #42."
+            exit 1
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
