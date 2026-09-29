@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getProductDetail } from "@/server/dataSource/product";
-import { formatPrice, calcDiscountPercent, formatProductDisplayName } from "@/lib/format";
+import { formatPrice, bestOfferDiscountPercent, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, buildProductJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
@@ -44,7 +44,7 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
   const { product, merchants, source } = result;
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
-  const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
+  const percent = bestOfferDiscountPercent(offers);
   const displayName = formatProductDisplayName(product.name, product.brand);
 
   const breadcrumbJsonLd = buildBreadcrumbList([

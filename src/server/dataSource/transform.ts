@@ -99,6 +99,26 @@ export function toLegacyOffer(offer: OfferWithMerchant): Offer {
   };
 }
 
+/**
+ * El feed de un comercio puede dejar más de un registro `Offer` con el
+ * mismo comercio y el mismo precio (reimportaciones sin limpieza previa —
+ * caso real observado con "adidas ES" repetido 2-3 veces en la misma
+ * tarjeta): nunca se muestran como si fueran ofertas distintas. Se
+ * conserva solo la primera aparición de cada combinación comercio+precio,
+ * en el orden ya devuelto por la consulta.
+ */
+function dedupeOffers(offers: Offer[]): Offer[] {
+  const seen = new Set<string>();
+  const result: Offer[] = [];
+  for (const offer of offers) {
+    const key = `${offer.merchantId}:${offer.price}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(offer);
+  }
+  return result;
+}
+
 export function toLegacyProduct(product: ProductWithOffers, priceHistory: PricePoint[] = []): Product {
   return {
     id: product.slug,
@@ -109,7 +129,7 @@ export function toLegacyProduct(product: ProductWithOffers, priceHistory: PriceP
     imageUrl: product.imageUrl,
     brand: product.brand,
     priceHistory,
-    offers: product.offers.map(toLegacyOffer),
+    offers: dedupeOffers(product.offers.map(toLegacyOffer)),
   };
 }
 

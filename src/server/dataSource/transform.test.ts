@@ -144,6 +144,61 @@ describe("toLegacyProduct: propagación de imageUrl", () => {
   });
 });
 
+describe("toLegacyProduct: deduplicación de ofertas idénticas", () => {
+  function offerRow(overrides: Partial<Parameters<typeof toLegacyOffer>[0]> = {}) {
+    return {
+      id: 1,
+      merchant: { id: 1, slug: "adidas-es", name: "adidas ES" },
+      currentPrice: new Prisma.Decimal("120.00"),
+      previousPrice: null,
+      productUrl: "https://adidas.example.invalid/p",
+      affiliateUrl: null,
+      availability: "IN_STOCK",
+      lastCheckedAt: new Date(),
+      ...overrides,
+    } as Parameters<typeof toLegacyOffer>[0];
+  }
+
+  function baseProduct(offers: Parameters<typeof toLegacyOffer>[0][]) {
+    return {
+      slug: "prod-x",
+      name: "Producto X",
+      imageUrl: null,
+      brand: null,
+      category: { id: 1, slug: "moda", name: "Moda" },
+      offers,
+    } as Parameters<typeof toLegacyProduct>[0];
+  }
+
+  it("elimina registros del mismo comercio con el mismo precio (reimportación duplicada, caso real 'adidas ES')", () => {
+    const product = toLegacyProduct(
+      baseProduct([
+        offerRow({ id: 1 }),
+        offerRow({ id: 2 }), // mismo comercio, mismo precio: duplicado real
+        offerRow({ id: 3 }), // idem
+      ])
+    );
+    expect(product.offers).toHaveLength(1);
+  });
+
+  it("conserva ofertas del mismo comercio con precios distintos (no son duplicados)", () => {
+    const product = toLegacyProduct(
+      baseProduct([offerRow({ id: 1, currentPrice: new Prisma.Decimal("120.00") }), offerRow({ id: 2, currentPrice: new Prisma.Decimal("99.00") })])
+    );
+    expect(product.offers).toHaveLength(2);
+  });
+
+  it("conserva ofertas de comercios distintos con el mismo precio (no son duplicados)", () => {
+    const product = toLegacyProduct(
+      baseProduct([
+        offerRow({ id: 1, merchant: { id: 1, slug: "adidas-es", name: "adidas ES" } }),
+        offerRow({ id: 2, merchant: { id: 2, slug: "tienda-y", name: "Tienda Y" } }),
+      ])
+    );
+    expect(product.offers).toHaveLength(2);
+  });
+});
+
 describe("toLegacyProduct: propagación de brand", () => {
   function baseProduct(overrides: Partial<Parameters<typeof toLegacyProduct>[0]> = {}) {
     return {
