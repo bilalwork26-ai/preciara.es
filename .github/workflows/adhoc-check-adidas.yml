@@ -331,6 +331,46 @@ jobs:
             echo "::warning::No se encontró ningún <del> de precio anterior en /categoria en este momento — puede que esta categoría concreta no tenga ahora mismo ningún producto con descuento, no implica necesariamente que falte el despliegue."
           fi
 
+      # Comprobación puntual tras PR #47: ningún comercio debe aparecer
+      # repetido dentro del desglose de tiendas de una misma tarjeta (caso
+      # real "Pantalón Firebird Utility": "adidas ES" a la vez a 45,00 € y
+      # a 90,00 €). Invariante genérica sobre CUALQUIER tarjeta con más de
+      # una oferta, no atada a un producto concreto — sigue siendo válida
+      # aunque el catálogo real cambie.
+      - name: "PR #47: ningún comercio repetido en el desglose de tiendas"
+        shell: bash
+        run: |
+          set -e
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home.html", "utf8");
+          const ulRe = /<ul class="mt-2 hidden flex-col gap-1 border-t border-border pt-2 sm:flex">([\s\S]*?)<\/ul>/g;
+          const liNameRe = /<li class="flex items-center justify-between text-xs text-navy-500"><span>([^<]*)<\/span>/g;
+          let ulMatch;
+          let groupsChecked = 0;
+          let failed = false;
+          while ((ulMatch = ulRe.exec(html))) {
+            groupsChecked++;
+            const names = [];
+            let liMatch;
+            liNameRe.lastIndex = 0;
+            while ((liMatch = liNameRe.exec(ulMatch[1]))) names.push(liMatch[1]);
+            const unique = new Set(names);
+            if (unique.size !== names.length) {
+              failed = true;
+              console.log(`::error::Desglose de tiendas con un comercio repetido: [${names.join(", ")}] — el despliegue no ha recogido la PR #47.`);
+            }
+          }
+          console.log(`Grupos de desglose de tiendas comprobados en la portada: ${groupsChecked}`);
+          if (groupsChecked === 0) {
+            console.log("::warning::Ninguna tarjeta de la portada tiene más de una oferta ahora mismo — no se puede verificar la deduplicación por comercio.");
+          } else if (failed) {
+            process.exit(1);
+          } else {
+            console.log("Ningún comercio aparece repetido en el desglose de tiendas de ninguna tarjeta (correcto, PR #47 ya en vivo).");
+          }
+          NODE
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
