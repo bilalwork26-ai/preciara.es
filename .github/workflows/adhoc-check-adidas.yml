@@ -103,6 +103,24 @@ jobs:
             echo "::error::La portada no respondió 200."
             exit 1
           fi
+          # /tmp/home-visible.html: la misma portada SIN los <script>...
+          # (el payload RSC serializado para la hidratación del cliente,
+          # que repite dentro de una cadena JSON casi todo el texto/clases
+          # visibles — nombre de producto en el alt/aria-label además del
+          # título, clases con "bg-coral-500", etc). Contar coincidencias
+          # sobre el HTML crudo completo sobreestima estos casos (visto
+          # esta sesión: "Tensaur Hook and Loop" contaba 5 veces por 1
+          # sola tarjeta real, porque aparece en el alt de la imagen, el
+          # aria-label del enlace Y el título — cada uno además duplicado
+          # en el payload). Cualquier comprobación de "cuántas veces
+          # aparece X" debe usar este fichero, no /tmp/home.html, para dar
+          # un número que corresponda de verdad al DOM visible.
+          node -e '
+            const fs = require("node:fs");
+            const html = fs.readFileSync("/tmp/home.html", "utf8");
+            const visible = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+            fs.writeFileSync("/tmp/home-visible.html", visible);
+          '
           node <<'NODE'
           const fs = require("node:fs");
           const html = fs.readFileSync("/tmp/home.html", "utf8");
@@ -418,7 +436,7 @@ jobs:
           set -e
           node <<'NODE'
           const fs = require("node:fs");
-          const html = fs.readFileSync("/tmp/home.html", "utf8");
+          const html = fs.readFileSync("/tmp/home-visible.html", "utf8");
           const badgeRe = /<span class="[^"]*bg-coral-500[^"]*">([\s\S]*?)<\/span>/g;
           let m;
           const percents = [];
@@ -427,7 +445,7 @@ jobs:
             const pm = text.match(/(\d+)\s*%/);
             if (pm) percents.push(Number(pm[1]));
           }
-          console.log(`Pastillas de descuento encontradas en la portada, en orden: [${percents.join(", ")}]`);
+          console.log(`Pastillas de descuento encontradas en la portada (HTML visible, sin el payload de hidratación), en orden: [${percents.join(", ")}]`);
           if (percents.length === 0) {
             console.log("::warning::No hay ningún producto con descuento en la portada ahora mismo — no se puede verificar nada de orden.");
           } else {
@@ -435,7 +453,8 @@ jobs:
             if (percents[0] === max) {
               console.log(`La primera tarjeta SÍ tiene el mayor descuento (${max}%) de toda la portada (correcto).`);
             } else {
-              console.log(`::warning::La primera tarjeta tiene ${percents[0]}% pero el máximo encontrado es ${max}% — revisar si el despliegue ha recogido la PR #48/#50 (no falla el job: podría ser el propio catálogo cambiando entre la petición de la portada y este análisis).`);
+              console.log(`::error::La primera tarjeta tiene ${percents[0]}% pero el máximo encontrado es ${max}% — el despliegue no ha recogido la PR #48/#50.`);
+              process.exit(1);
             }
             const sorted = percents.every((p, i) => i === 0 || p <= percents[i - 1]);
             console.log(sorted
@@ -446,27 +465,35 @@ jobs:
 
       # Comprobación puntual tras PR #49: caso real reportado, "Zapatilla
       # Tensaur Hook and Loop" salía como 6 tarjetas duplicadas (una por
-      # talla de niño 22-27) en vez de colapsarse en una sola. Si ese
-      # producto concreto ya no está entre las "Bajadas destacadas" en
-      # este momento (el catálogo real cambia), no se puede verificar por
-      # este medio — aviso, no fallo. Umbral en 2 (no 1): Next.js incrusta
-      # el árbol serializado para la hidratación además del HTML visible,
-      # así que hasta un único título real aparece 2 veces en el HTML
-      # crudo — visto ya con "adidas ES" en el diagnóstico de la PR #47.
+      # talla de niño 22-27) en vez de colapsarse en una sola. Cuenta
+      # TARJETAS reales (mismo regex de título "line-clamp-2" que el paso
+      # de "Nombres reales" de más arriba), no apariciones de texto sin
+      # más: "Tensaur Hook and Loop" aparece en el alt de la imagen, el
+      # aria-label del enlace Y el título de UNA sola tarjeta real — contar
+      # el texto suelto (incluso ya sin el payload de hidratación) sigue
+      # dando un número >1 para un único producto, como se vio esta sesión.
       - name: "PR #49: 'Tensaur Hook and Loop' no sale duplicado por talla"
         shell: bash
         run: |
           set -e
-          count=$(grep -o "Tensaur Hook and Loop" /tmp/home.html | wc -l || true)
-          echo "Ocurrencias de 'Tensaur Hook and Loop' en la portada: ${count}"
-          if [ "$count" -eq 0 ]; then
-            echo "::warning::'Tensaur Hook and Loop' no está entre las tarjetas de la portada ahora mismo — no se puede verificar este caso concreto."
-          elif [ "$count" -le 2 ]; then
-            echo "Aparece una única tarjeta (correcto, PR #49 ya en vivo)."
-          else
-            echo "::error::'Tensaur Hook and Loop' aparece ${count} veces en la portada (más de una tarjeta real) — el despliegue no ha recogido la PR #49."
-            exit 1
-          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home-visible.html", "utf8");
+          const re = /<[a-z]+\b[^>]*\bclass="[^"]*\bline-clamp-2\b[^"]*"[^>]*>([^<]*)</gi;
+          let m;
+          const names = [];
+          while ((m = re.exec(html))) names.push(m[1].trim());
+          const count = names.filter((n) => n.includes("Tensaur Hook and Loop")).length;
+          console.log(`Tarjetas reales con "Tensaur Hook and Loop" en el título: ${count} (de ${names.length} tarjetas totales)`);
+          if (count === 0) {
+            console.log("::warning::'Tensaur Hook and Loop' no está entre las tarjetas de la portada ahora mismo — no se puede verificar este caso concreto.");
+          } else if (count === 1) {
+            console.log("Aparece una única tarjeta (correcto, PR #49 ya en vivo).");
+          } else {
+            console.log(`::error::'Tensaur Hook and Loop' aparece en ${count} tarjetas reales distintas — el despliegue no ha recogido la PR #49.`);
+            process.exit(1);
+          }
+          NODE
 
       # PR #50: comprobación general de que la portada sigue sirviendo
       # catálogo real, no el de demostración. Nota honesta: la PR #50
@@ -488,13 +515,13 @@ jobs:
         shell: bash
         run: |
           set -e
-          count=$(grep -o "Datos demo" /tmp/home.html | wc -l || true)
-          echo "Ocurrencias de la etiqueta dinámica 'Datos demo' en la portada: ${count}"
-          if [ "$count" -gt 2 ]; then
+          count=$(grep -o "Datos demo" /tmp/home-visible.html | wc -l || true)
+          echo "Ocurrencias de la etiqueta dinámica 'Datos demo' en la portada (HTML visible): ${count}"
+          if [ "$count" -gt 0 ]; then
             echo "::error::La portada está en modo demo — revisar DATABASE_URL/conectividad con la BD en Hostinger."
             exit 1
           else
-            echo "La portada usa catálogo real (etiqueta 'Datos demo' ausente o solo en el HTML de hidratación)."
+            echo "La portada usa catálogo real (etiqueta 'Datos demo' ausente)."
           fi
 
   awin_list:
