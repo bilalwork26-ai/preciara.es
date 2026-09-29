@@ -100,21 +100,46 @@ export function toLegacyOffer(offer: OfferWithMerchant): Offer {
 }
 
 /**
- * El feed de un comercio puede dejar más de un registro `Offer` con el
- * mismo comercio y el mismo precio (reimportaciones sin limpieza previa —
- * caso real observado con "adidas ES" repetido 2-3 veces en la misma
- * tarjeta): nunca se muestran como si fueran ofertas distintas. Se
- * conserva solo la primera aparición de cada combinación comercio+precio,
- * en el orden ya devuelto por la consulta.
+ * El feed de un comercio puede dejar más de un registro `Offer` ACTIVO
+ * para el mismo comercio y el mismo producto, por dos motivos reales
+ * observados:
+ *   1. Reimportaciones sin limpieza previa que dejan el precio repetido
+ *      (caso real: "adidas ES" ×2-3 con el mismo precio en la misma
+ *      tarjeta).
+ *   2. La identidad de una oferta de Awin es (source, comercio,
+ *      externalId) — ver `applyNormalizedOfferRow` en
+ *      `catalogSync/applyOffer.ts`. Si ese `externalId` cambia entre
+ *      sincronizaciones para lo que en realidad es el mismo anuncio
+ *      (listado que Awin renumera, variante que rota...), se crea una
+ *      oferta NUEVA en vez de actualizarse la anterior, que queda
+ *      activa con su precio antiguo hasta que el job de desactivación
+ *      por antigüedad la retire — si tarda, o si
+ *      `AWIN_DEACTIVATE_STALE_AFTER_HOURS` no está configurado en
+ *      producción, puede quedar activa indefinidamente (caso real:
+ *      "adidas ES" a la vez a 45,00 € y a 90,00 € para "Pantalón
+ *      Firebird Utility").
+ *
+ * En ambos casos, nunca se muestran como si fueran dos tiendas
+ * distintas: se conserva solo la oferta de precio más bajo por comercio.
+ * Si el precio más alto del grupo (o un `previousPrice` ya registrado
+ * explícitamente en la oferta que se conserva) es mayor que ese precio
+ * más bajo, se usa como su `previousPrice` — es un dato real que el
+ * propio comercio llegó a mostrar, nunca uno inventado; si son
+ * duplicados exactos (mismo precio), no se infiere ningún descuento.
  */
-function dedupeOffers(offers: Offer[]): Offer[] {
-  const seen = new Set<string>();
-  const result: Offer[] = [];
+function collapseOffersByMerchant(offers: Offer[]): Offer[] {
+  const byMerchant = new Map<string, Offer[]>();
   for (const offer of offers) {
-    const key = `${offer.merchantId}:${offer.price}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(offer);
+    const group = byMerchant.get(offer.merchantId) ?? [];
+    group.push(offer);
+    byMerchant.set(offer.merchantId, group);
+  }
+
+  const result: Offer[] = [];
+  for (const group of byMerchant.values()) {
+    const cheapest = group.reduce((a, b) => (b.price < a.price ? b : a));
+    const inferredPrevious = Math.max(cheapest.previousPrice ?? 0, ...group.map((offer) => offer.price));
+    result.push(inferredPrevious > cheapest.price ? { ...cheapest, previousPrice: inferredPrevious } : cheapest);
   }
   return result;
 }
@@ -129,7 +154,7 @@ export function toLegacyProduct(product: ProductWithOffers, priceHistory: PriceP
     imageUrl: product.imageUrl,
     brand: product.brand,
     priceHistory,
-    offers: dedupeOffers(product.offers.map(toLegacyOffer)),
+    offers: collapseOffersByMerchant(product.offers.map(toLegacyOffer)),
   };
 }
 
