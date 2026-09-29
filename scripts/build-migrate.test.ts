@@ -1,14 +1,38 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
-import { checkDatabaseConnection, isMigrationApplicable } from "./lib/dbConnection";
+import { checkDatabaseConnection, connectionTimeoutMs, isMigrationApplicable } from "./lib/dbConnection";
 import { runBuildMigration } from "./build-migrate";
 
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
+const ORIGINAL_DB_CONNECT_TIMEOUT_MS = process.env.DB_CONNECT_TIMEOUT_MS;
 
 afterEach(() => {
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
+  if (ORIGINAL_DB_CONNECT_TIMEOUT_MS === undefined) delete process.env.DB_CONNECT_TIMEOUT_MS;
+  else process.env.DB_CONNECT_TIMEOUT_MS = ORIGINAL_DB_CONNECT_TIMEOUT_MS;
+});
+
+describe("connectionTimeoutMs", () => {
+  it("usa 10000 ms por defecto sin DB_CONNECT_TIMEOUT_MS", () => {
+    delete process.env.DB_CONNECT_TIMEOUT_MS;
+    expect(connectionTimeoutMs()).toBe(10_000);
+  });
+
+  it("usa el valor de DB_CONNECT_TIMEOUT_MS cuando es un número positivo válido", () => {
+    process.env.DB_CONNECT_TIMEOUT_MS = "5000";
+    expect(connectionTimeoutMs()).toBe(5000);
+  });
+
+  it("cae al valor por defecto con un DB_CONNECT_TIMEOUT_MS inválido (nunca 0, negativo o no numérico)", () => {
+    process.env.DB_CONNECT_TIMEOUT_MS = "0";
+    expect(connectionTimeoutMs()).toBe(10_000);
+    process.env.DB_CONNECT_TIMEOUT_MS = "-100";
+    expect(connectionTimeoutMs()).toBe(10_000);
+    process.env.DB_CONNECT_TIMEOUT_MS = "no-es-un-numero";
+    expect(connectionTimeoutMs()).toBe(10_000);
+  });
 });
 
 describe("isMigrationApplicable", () => {
@@ -76,6 +100,15 @@ describe.skipIf(!process.env.DATABASE_URL)("checkDatabaseConnection / runBuildMi
     if (!result.ok) {
       expect(result.sanitizedMessage).not.toContain(fakePassword);
       expect(result.sanitizedMessage).not.toContain("mysql://");
+    }
+  });
+
+  it("con DB_CONNECT_TIMEOUT_MS muy bajo, una conexión que tardaría más falla rápido con un mensaje claro (nunca se queda colgada)", async () => {
+    process.env.DB_CONNECT_TIMEOUT_MS = "1";
+    const result = await checkDatabaseConnection();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.sanitizedMessage).toContain("Tiempo de espera agotado");
     }
   });
 });
