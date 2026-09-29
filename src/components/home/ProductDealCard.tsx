@@ -23,19 +23,19 @@ export function ProductDealCard({
   const best = offers[0];
   const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
   const isHighlighted = highlight && percent > 0;
-  // Solo para mostrar: la búsqueda de "Comparar tiendas" más abajo sigue
-  // usando product.name tal cual (sin formatear), para no romper la
-  // coincidencia por texto contra el nombre real guardado en la BD.
+  // Solo para mostrar: la búsqueda de "Ver ofertas" más abajo sigue usando
+  // product.name tal cual (sin formatear), para no romper la coincidencia
+  // por texto contra el nombre real guardado en la BD.
   const displayName = formatProductDisplayName(product.name, product.brand);
 
   return (
     <div
-      className={`flex h-full flex-col rounded-2xl border bg-white p-2.5 sm:p-4 ${
+      className={`flex h-full flex-col rounded-2xl border bg-white p-2 sm:p-4 ${
         isHighlighted ? "border-coral-500 shadow-md ring-2 ring-coral-500/30" : "border-border shadow-sm"
       }`}
     >
       {isHighlighted && (
-        <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-coral-600 sm:mb-2 sm:text-[11px]">
+        <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-coral-600 sm:mb-2 sm:text-[11px]">
           <Flame className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" strokeWidth={2} />
           Mayor bajada
         </p>
@@ -46,11 +46,11 @@ export function ProductDealCard({
             icon={product.icon}
             imageUrl={product.imageUrl}
             alt={displayName}
-            className="h-20 w-full rounded-lg sm:h-32 sm:rounded-xl"
-            iconClassName="h-8 w-8 text-navy-700 sm:h-12 sm:w-12"
+            className="h-16 w-full rounded-lg sm:h-32 sm:rounded-xl"
+            iconClassName="h-7 w-7 text-navy-700 sm:h-12 sm:w-12"
           />
         </Link>
-        <div className="absolute left-1.5 top-1.5 sm:left-2 sm:top-2">
+        <div className="absolute left-1 top-1 sm:left-2 sm:top-2">
           <DiscountBadge percent={percent} />
         </div>
         <button
@@ -58,7 +58,7 @@ export function ProductDealCard({
           onClick={() => setSaved((v) => !v)}
           aria-pressed={saved}
           aria-label={saved ? `Quitar ${displayName} de guardados` : `Guardar ${displayName}`}
-          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600 sm:right-2 sm:top-2 sm:h-8 sm:w-8"
+          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600 sm:right-2 sm:top-2 sm:h-8 sm:w-8"
         >
           <Heart className={`h-3 w-3 sm:h-4 sm:w-4 ${saved ? "fill-coral-500 text-coral-500" : ""}`} aria-hidden="true" strokeWidth={1.75} />
         </button>
@@ -66,12 +66,12 @@ export function ProductDealCard({
 
       <Link
         href={`/producto/${product.slug}`}
-        className="mt-1.5 block line-clamp-1 text-xs font-medium text-navy-900 hover:text-teal-700 sm:mt-3 sm:line-clamp-2 sm:text-sm"
+        className="mt-1 block line-clamp-1 text-xs font-medium text-navy-900 hover:text-teal-700 sm:mt-3 sm:line-clamp-2 sm:text-sm"
       >
         {displayName}
       </Link>
 
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:gap-x-2">
         <span className="text-sm font-bold text-navy-900 sm:text-lg">{formatPrice(best.price)}</span>
         {best.previousPrice && (
           <del className="text-xs font-medium text-navy-400 line-through decoration-2 sm:text-sm">{formatPrice(best.previousPrice)}</del>
@@ -107,9 +107,10 @@ export function ProductDealCard({
 
       <a
         href={`/buscar?q=${encodeURIComponent(product.name)}`}
-        className="mt-2 inline-flex items-center justify-center rounded-full border border-border py-1.5 text-[11px] font-semibold text-navy-700 transition-colors hover:border-teal-600 hover:text-teal-700 sm:mt-3 sm:py-2 sm:text-xs"
+        className="mt-1.5 inline-flex items-center justify-center gap-1 rounded-full bg-teal-600 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-teal-700 sm:mt-3 sm:py-2 sm:text-xs"
       >
-        Comparar tiendas
+        Ver ofertas
+        <span aria-hidden="true">→</span>
       </a>
     </div>
   );
