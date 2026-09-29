@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcDiscountPercent, formatPrice, formatProductDisplayName } from "./format";
+import { bestOfferDiscountPercent, calcDiscountPercent, formatPrice, formatProductDisplayName } from "./format";
 
 describe("formatPrice", () => {
   it("formatea en euros con el estilo es-ES", () => {
@@ -53,5 +53,41 @@ describe("formatProductDisplayName", () => {
 
   it("no toca el nombre si es exactamente igual a la marca (nada que reformatear)", () => {
     expect(formatProductDisplayName("adidas", "adidas")).toBe("adidas");
+  });
+
+  it("convierte un nombre completamente en mayúsculas a formato normal (caso real del feed)", () => {
+    expect(formatProductDisplayName("BOLSA DE VIAJE FAVORITE", null)).toBe("Bolsa de viaje favorite");
+  });
+
+  it("aplica el mismo arreglo de mayúsculas al 'resto' cuando también corrige la marca pegada", () => {
+    expect(formatProductDisplayName("ADIDASPANTALÓN TASTIGO 3 TRAINING XS", "adidas")).toBe(
+      "Adidas - Pantalón tastigo 3 training xs"
+    );
+  });
+
+  it("no toca un nombre en mayúsculas y minúsculas mezcladas (capitalización ya intencional)", () => {
+    expect(formatProductDisplayName("Smartphone 128 GB", null)).toBe("Smartphone 128 GB");
+  });
+
+  it("no confunde un nombre sin ninguna letra (solo números/símbolos) con mayúsculas gritando", () => {
+    expect(formatProductDisplayName("5,5 L", null)).toBe("5,5 L");
+  });
+});
+
+describe("bestOfferDiscountPercent", () => {
+  it("usa el mayor descuento entre TODAS las ofertas, no solo la de precio más bajo", () => {
+    const offers = [
+      { price: 45, previousPrice: undefined }, // la más barata, pero sin previousPrice registrado
+      { price: 50, previousPrice: 100 }, // la que sí trae un descuento real del 50%
+    ];
+    expect(bestOfferDiscountPercent(offers)).toBe(50);
+  });
+
+  it("devuelve 0 cuando ninguna oferta tiene previousPrice", () => {
+    expect(bestOfferDiscountPercent([{ price: 45, previousPrice: undefined }])).toBe(0);
+  });
+
+  it("devuelve 0 con una lista vacía de ofertas", () => {
+    expect(bestOfferDiscountPercent([])).toBe(0);
   });
 });

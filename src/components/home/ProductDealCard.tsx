@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Flame, Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
-import { formatPrice, calcDiscountPercent, formatProductDisplayName } from "@/lib/format";
+import { formatPrice, bestOfferDiscountPercent, formatProductDisplayName } from "@/lib/format";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
@@ -21,7 +21,11 @@ export function ProductDealCard({
   const [saved, setSaved] = useState(false);
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
-  const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
+  // El descuento puede estar en cualquier oferta, no solo en la de precio
+  // más bajo (ver bestOfferDiscountPercent) — así el badge nunca se queda
+  // sin mostrar una bajada real solo porque la tienda más barata no trae
+  // su propio previousPrice registrado.
+  const percent = bestOfferDiscountPercent(offers);
   const isHighlighted = highlight && percent > 0;
   // Solo para mostrar: la búsqueda de "Ver ofertas" más abajo sigue usando
   // product.name tal cual (sin formatear), para no romper la coincidencia
@@ -71,7 +75,13 @@ export function ProductDealCard({
         {displayName}
       </Link>
 
-      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+      {/* `mt-auto` ancla este bloque (precio + info secundaria + botón) al
+          fondo de la tarjeta: como las tarjetas de una misma fila se
+          estiran a la misma altura (flex/grid con stretch por defecto) y
+          el título puede ocupar 1 o 2 líneas según el producto, sin esto
+          el precio y el botón "Ver ofertas" quedarían a distinta altura
+          entre tarjetas vecinas. */}
+      <div className="mt-auto flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 pt-1 sm:gap-x-2 sm:pt-1.5">
         <span className="text-sm font-bold text-navy-900 sm:text-lg">{formatPrice(best.price)}</span>
         {best.previousPrice && (
           <del className="text-xs font-medium text-navy-400 line-through decoration-2 sm:text-sm">{formatPrice(best.previousPrice)}</del>
