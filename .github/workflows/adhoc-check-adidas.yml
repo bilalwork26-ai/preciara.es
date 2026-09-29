@@ -232,6 +232,34 @@ jobs:
             exit 1
           fi
 
+      # Comprobación puntual tras PR #44: confirma que las tarjetas más
+      # compactas y el nuevo botón "Ver ofertas" (relleno sólido teal-600)
+      # ya están en producción, en vez del antiguo botón blanco de solo
+      # borde con el texto "Comparar tiendas".
+      - name: "PR #44: tarjetas móviles compactas y CTA 'Ver ofertas' destacado"
+        shell: bash
+        run: |
+          set -e
+          if grep -q "Comparar tiendas" /tmp/home.html; then
+            echo "::error::La portada TODAVÍA muestra el botón antiguo 'Comparar tiendas' — el despliegue no ha recogido la PR #44."
+            exit 1
+          fi
+          echo "Texto antiguo 'Comparar tiendas': NO aparece (correcto)."
+
+          if grep -oE '<a[^>]*class="[^"]*bg-teal-600[^"]*"[^>]*>\s*Ver ofertas' /tmp/home.html | head -1; then
+            echo "Botón 'Ver ofertas' con relleno bg-teal-600 SÍ presente (correcto, PR #44 ya en vivo)."
+          else
+            echo "::error::No se encontró el botón 'Ver ofertas' con clase bg-teal-600 — el despliegue no ha recogido la PR #44."
+            exit 1
+          fi
+
+          if grep -oE 'class="flex h-full flex-col rounded-2xl border bg-white p-2 sm:p-4[^"]*"' /tmp/home.html | head -1; then
+            echo "Padding compacto de tarjeta (p-2) SÍ presente (correcto, PR #44 ya en vivo)."
+          else
+            echo "::error::No se encontró el padding compacto 'p-2' en las tarjetas — el despliegue no ha recogido la PR #44."
+            exit 1
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
