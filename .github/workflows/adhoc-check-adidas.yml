@@ -203,6 +203,35 @@ jobs:
             exit 1
           fi
 
+      # Comprobación puntual tras PR #43: confirma que la portada usa la
+      # rejilla de 2 columnas en móvil para "Bajadas destacadas"
+      # (`grid grid-cols-2 ... sm:flex`) en vez del scroll horizontal
+      # anterior, y que /categoria hace lo mismo.
+      - name: "PR #43: rejilla de 2 columnas en móvil (portada y /categoria)"
+        shell: bash
+        run: |
+          set -e
+          if grep -oE 'class="mt-5 grid grid-cols-2[^"]*"' /tmp/home.html | head -1; then
+            echo "Rejilla móvil de 2 columnas SÍ presente en la portada (correcto, PR #43 ya en vivo)."
+          else
+            echo "::error::No se encontró la rejilla 'grid grid-cols-2' en la portada — el despliegue no ha recogido la PR #43."
+            exit 1
+          fi
+          # `cat_path`/categoria-check.html vienen del paso "PR #42" anterior
+          # (mismo job, mismo runner) — cada paso es un shell nuevo, así que
+          # se relee el fichero en vez de depender de la variable de shell.
+          cat_path=$(grep -oE 'href="/categoria/[^"]+"' /tmp/categorias-index.html 2>/dev/null | head -1 | sed -E 's/^href="//; s/"$//')
+          if [ -z "$cat_path" ]; then
+            echo "::warning::No se encontró ningún enlace /categoria/[slug] — no se puede verificar la rejilla móvil de /categoria."
+            exit 0
+          fi
+          if grep -oE 'class="mt-8 grid grid-cols-2[^"]*"' /tmp/categoria-check.html | head -1; then
+            echo "Rejilla móvil de 2 columnas SÍ presente en ${cat_path} (correcto, PR #43 ya en vivo)."
+          else
+            echo "::error::No se encontró la rejilla 'grid grid-cols-2' en ${cat_path} — el despliegue no ha recogido la PR #43."
+            exit 1
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
