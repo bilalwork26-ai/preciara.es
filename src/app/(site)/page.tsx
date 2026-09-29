@@ -74,7 +74,7 @@ export default async function Home() {
         </div>
 
         <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">
-          <VerifiedDealsGrid products={dealsGrid.data.products} merchants={dealsGrid.data.merchants} />
+          <VerifiedDealsGrid products={dealsGrid.data.products} merchants={dealsGrid.data.merchants} source={dealsGrid.source} />
           <ComparisonPanel product={featured.data.product} merchants={featured.data.merchants} />
         </div>
       </Container>

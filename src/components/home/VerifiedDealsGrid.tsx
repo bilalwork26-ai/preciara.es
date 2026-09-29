@@ -3,7 +3,16 @@ import { ArrowRight, Tags } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { ProductDealCard } from "./ProductDealCard";
 
-export function VerifiedDealsGrid({ products, merchants }: { products: Product[]; merchants: Merchant[] }) {
+export function VerifiedDealsGrid({
+  products,
+  merchants,
+  source,
+}: {
+  products: Product[];
+  merchants: Merchant[];
+  /** De dónde vienen `products`/`merchants` (ver `SourcedResult` en `src/server/dataSource/withFallback.ts`): controla si se muestra la etiqueta "Datos demo", nunca se etiqueta catálogo real como demostración. */
+  source: "database" | "demo";
+}) {
   return (
     <section aria-labelledby="bajadas-heading">
       <div className="flex items-end justify-between gap-3">
@@ -11,12 +20,16 @@ export function VerifiedDealsGrid({ products, merchants }: { products: Product[]
           <h2 id="bajadas-heading" className="flex flex-wrap items-center gap-2 font-serif text-2xl font-bold text-navy-900">
             <Tags className="h-5 w-5 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
             Bajadas destacadas
-            <span className="rounded-full bg-beige px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-navy-500">
-              Datos demo
-            </span>
+            {source === "demo" && (
+              <span className="rounded-full bg-beige px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-navy-500">
+                Datos demo
+              </span>
+            )}
           </h2>
           <p className="mt-1 text-sm text-navy-500">
-            Ejemplo de comparación e historial con productos de demostración.
+            {source === "demo"
+              ? "Ejemplo de comparación e historial con productos de demostración."
+              : "Las mejores bajadas de precio de nuestro catálogo real, verificadas hoy."}
           </p>
         </div>
         <Link
