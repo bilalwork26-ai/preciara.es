@@ -246,14 +246,28 @@ jobs:
           fi
           echo "Texto antiguo 'Comparar tiendas': NO aparece (correcto)."
 
-          if grep -oE '<a[^>]*class="[^"]*bg-teal-600[^"]*"[^>]*>\s*Ver ofertas' /tmp/home.html | head -1; then
+          # `grep ... | head -1` dentro de un `if` con `pipefail` es una
+          # trampa real: si el patrón aparece varias veces en la página (una
+          # por tarjeta, como aquí), `head -1` cierra la tubería en cuanto
+          # lee la primera línea y `grep` puede recibir SIGPIPE al intentar
+          # escribir las siguientes — con `pipefail` eso cuenta como fallo
+          # del pipeline entero aunque SÍ hubiera encontrado una
+          # coincidencia real (visto en la ejecución anterior: el botón
+          # aparecía en el log y aun así el paso marcaba error). Capturar en
+          # una variable con `$(...)` y comprobar si quedó vacía evita el
+          # problema sin depender del código de salida de la tubería.
+          match=$(grep -oE '<a[^>]*class="[^"]*bg-teal-600[^"]*"[^>]*>\s*Ver ofertas' /tmp/home.html | head -1 || true)
+          if [ -n "$match" ]; then
+            echo "$match"
             echo "Botón 'Ver ofertas' con relleno bg-teal-600 SÍ presente (correcto, PR #44 ya en vivo)."
           else
             echo "::error::No se encontró el botón 'Ver ofertas' con clase bg-teal-600 — el despliegue no ha recogido la PR #44."
             exit 1
           fi
 
-          if grep -oE 'class="flex h-full flex-col rounded-2xl border bg-white p-2 sm:p-4[^"]*"' /tmp/home.html | head -1; then
+          match=$(grep -oE 'class="flex h-full flex-col rounded-2xl border bg-white p-2 sm:p-4[^"]*"' /tmp/home.html | head -1 || true)
+          if [ -n "$match" ]; then
+            echo "$match"
             echo "Padding compacto de tarjeta (p-2) SÍ presente (correcto, PR #44 ya en vivo)."
           else
             echo "::error::No se encontró el padding compacto 'p-2' en las tarjetas — el despliegue no ha recogido la PR #44."
