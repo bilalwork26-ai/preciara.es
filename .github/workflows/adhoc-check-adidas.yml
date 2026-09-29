@@ -294,6 +294,36 @@ jobs:
             exit 1
           fi
 
+      # Comprobación puntual tras PR #46: confirma que el precio anterior
+      # tachado (<del>) aparece junto al precio principal en la portada —
+      # depende de que exista al menos un producto real con descuento en
+      # "Bajadas destacadas" (ya confirmado en ejecuciones anteriores de
+      # este workflow), así que es señal fiable sin ser un marcador 100%
+      # independiente de los datos como el de la PR #45. La comprobación en
+      # /categoria (pastilla pequeña `size="sm"`) es más frágil aún — depende
+      # de que la categoría concreta que probamos tenga en ese momento un
+      # producto con descuento — así que se deja como aviso, no como fallo.
+      - name: "PR #46: precio anterior tachado junto al precio principal"
+        shell: bash
+        run: |
+          set -e
+          match=$(grep -oE '<del class="text-xs font-medium text-navy-400 line-through decoration-2[^"]*"' /tmp/home.html | head -1 || true)
+          if [ -n "$match" ]; then
+            echo "$match"
+            echo "Precio anterior tachado (<del>) SÍ presente en la portada (correcto, PR #46 ya en vivo)."
+          else
+            echo "::error::No se encontró ningún <del> de precio anterior en la portada — el despliegue no ha recogido la PR #46, o no hay ningún producto con descuento en este momento."
+            exit 1
+          fi
+
+          match=$(grep -oE '<del class="text-xs font-medium text-navy-400 line-through decoration-2[^"]*"' /tmp/categoria-check.html 2>/dev/null | head -1 || true)
+          if [ -n "$match" ]; then
+            echo "$match"
+            echo "Precio anterior tachado (<del>) SÍ presente en /categoria (correcto, PR #46 ya en vivo)."
+          else
+            echo "::warning::No se encontró ningún <del> de precio anterior en /categoria en este momento — puede que esta categoría concreta no tenga ahora mismo ningún producto con descuento, no implica necesariamente que falte el despliegue."
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
