@@ -137,9 +137,10 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const html = fs.readFileSync("/tmp/home.html", "utf8");
-          // Mismo className exacto que usa ProductDealCard.tsx para el nombre
-          // (combinación "mt-3 line-clamp-2" solo se usa ahí, en ningún otro sitio).
-          const re = /class="mt-3 line-clamp-2[^"]*">([^<]*)</g;
+          // "line-clamp-2" en el título del producto es la única combinación
+          // usada en la portada (evita depender del orden exacto de clases
+          // de Tailwind, que puede variar con cambios en el JSX).
+          const re = /<[a-z]+\b[^>]*\bclass="[^"]*\bline-clamp-2\b[^"]*"[^>]*>([^<]*)</gi;
           let m;
           const names = [];
           while ((m = re.exec(html))) names.push(m[1].trim());
