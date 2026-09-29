@@ -44,19 +44,31 @@ export type ProductWithOffers = Prisma.ProductGetPayload<typeof productWithOffer
  * completas (con ofertas/comercio incluidos) y las reordena según esta
  * lista — así el resto del código (colapsado de variantes, deduplicación
  * por comercio...) no cambia ni una línea.
+ *
+ * Los filtros opcionales (categoría, texto) se pasan como parámetros
+ * simples (`NULL` cuando no aplican) en vez de componer la consulta con
+ * fragmentos `Prisma.sql`/`Prisma.empty` interpolados dentro de este mismo
+ * `$queryRaw`: bajo el bundler de Next.js (Turbopack y Webpack, confirmado
+ * en ambos) ese patrón devolvía en producción/desarrollo un error de
+ * sintaxis SQL real (`?` literal donde debía ir el fragmento vacío), lo
+ * que hacía fallar SIEMPRE esta consulta y caer al catálogo de
+ * demostración — la causa real, no una caché de Next.js, del catálogo
+ * "viejo" que se seguía viendo en producción tras cada despliegue.
  */
 async function getRankedProductIds(
   db: PrismaClient,
   { limit, categoryId, query }: { limit: number; categoryId?: number; query?: string }
 ): Promise<number[]> {
+  const categoryFilter = categoryId ?? null;
+  const nameFilter = query ? `%${query}%` : null;
   const rows = await db.$queryRaw<{ id: number }[]>`
     SELECT p.id
     FROM products p
     INNER JOIN offers o ON o.productId = p.id AND o.isActive = true AND o.isDemo = false
     INNER JOIN merchants m ON m.id = o.merchantId AND m.isActive = true AND m.isDemo = false
     WHERE p.isActive = true AND p.isDemo = false
-      ${categoryId !== undefined ? Prisma.sql`AND p.categoryId = ${categoryId}` : Prisma.empty}
-      ${query ? Prisma.sql`AND p.name LIKE ${`%${query}%`}` : Prisma.empty}
+      AND (${categoryFilter} IS NULL OR p.categoryId = ${categoryFilter})
+      AND (${nameFilter} IS NULL OR p.name LIKE ${nameFilter})
     GROUP BY p.id
     ORDER BY
       MAX(CASE WHEN o.previousPrice IS NOT NULL AND o.previousPrice > o.currentPrice THEN 1 ELSE 0 END) DESC,
