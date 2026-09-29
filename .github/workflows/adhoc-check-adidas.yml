@@ -307,6 +307,13 @@ jobs:
         shell: bash
         run: |
           set -e
+          # Diagnóstico temporal: ¿existe SIQUIERA un badge de descuento
+          # (bg-coral-500, ya en vivo desde antes de esta PR) en la portada
+          # ahora mismo? Si no hay ninguno, la ausencia de <del> se explica
+          # por falta de datos con descuento, no por el despliegue.
+          badge_count=$(grep -oE 'bg-coral-500' /tmp/home.html | wc -l || true)
+          echo "Ocurrencias de 'bg-coral-500' (badges de descuento, con y sin este PR) en la portada: ${badge_count}"
+
           match=$(grep -oE '<del class="text-xs font-medium text-navy-400 line-through decoration-2[^"]*"' /tmp/home.html | head -1 || true)
           if [ -n "$match" ]; then
             echo "$match"
