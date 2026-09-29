@@ -23,6 +23,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Diagnóstico solicitado por el usuario: el registro de build de
+      # Hostinger para el commit 7cf7f1a (PR #50) muestra compilación,
+      # copia de ficheros y reinicio del proceso Node.js sin errores, pero
+      # la web en vivo sigue mostrando el comportamiento anterior a las
+      # PR #48/#49/#50 (orden de descuento roto, "Tensaur Hook and Loop"
+      # duplicado). Antes de tocar código de caché a ciegas, se capturan
+      # aquí las cabeceras HTTP reales de la portada: Cache-Control
+      # (¿qué instruye Next.js a cualquier proxy intermedio?) y cualquier
+      # cabecera identificable de CDN/proxy (age, x-cache, cf-*, server,
+      # x-vercel-*, via) — si hay una capa de caché delante de Hostinger
+      # ignorando el origen, debería verse aquí.
+      - name: "Diagnóstico: cabeceras HTTP reales de la portada (Cache-Control, CDN/proxy)"
+        shell: bash
+        run: |
+          set -e
+          curl -sS -D /tmp/home-headers.txt -o /dev/null --max-time 20 "https://preciara.es/"
+          echo "--- Cabeceras completas de la respuesta ---"
+          cat /tmp/home-headers.txt
+          echo "--- Cache-Control ---"
+          grep -i '^cache-control:' /tmp/home-headers.txt || echo "(ninguna cabecera Cache-Control presente)"
+          echo "--- Posibles cabeceras de CDN/proxy ---"
+          grep -iE '^(age|x-cache|cf-cache-status|cf-ray|server|x-vercel-cache|via|x-served-by):' /tmp/home-headers.txt || echo "(ninguna encontrada)"
+          echo "--- Segunda petición inmediata (comparar Age / si cambia) ---"
+          curl -sS -D - -o /dev/null --max-time 20 "https://preciara.es/" | grep -iE '^(age|x-cache|cf-cache-status|cache-control):' || echo "(ninguna encontrada en la segunda petición)"
+
       - name: sitemap.xml — productos reales indexados
         shell: bash
         run: |
