@@ -50,6 +50,25 @@ describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => 
   it("un número que no tiene forma de rango (sin guion) no se quita del nombre", () => {
     expect(dealsGridGroupKey({ name: "Auriculares modelo 500" })).toContain("500");
   });
+
+  it("dos nombres reales de Awin que solo difieren en una talla con fracción dan la misma clave", () => {
+    const a = dealsGridGroupKey({ name: "ZAPATILLA HANDBALL SPEZIAL 37 1/3" });
+    const b = dealsGridGroupKey({ name: "ZAPATILLA HANDBALL SPEZIAL 42 2/3" });
+    expect(a).toBe(b);
+  });
+
+  it("dos nombres reales de Awin que solo difieren en una talla por letra dan la misma clave", () => {
+    const a = dealsGridGroupKey({ name: "Camiseta running XS Maroon" });
+    const b = dealsGridGroupKey({ name: "Camiseta running 2XL Maroon" });
+    expect(a).toBe(b);
+  });
+
+  it("un número que forma parte real del nombre del modelo (no es una talla) se conserva y sigue agrupando igual entre variantes", () => {
+    const a = dealsGridGroupKey({ name: "Pureboost 5 Running 38 2/3" });
+    const b = dealsGridGroupKey({ name: "Pureboost 5 Running 40 2/3" });
+    expect(a).toBe(b);
+    expect(a).toContain("5"); // el "5" del modelo (Pureboost 5) nunca se quita, solo la talla
+  });
 });
 
 describe("bestDiscountPercent", () => {

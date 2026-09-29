@@ -57,17 +57,23 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
         Mejor precio en {merchants.find((m) => m.id === best.merchantId)?.name}
       </p>
 
-      <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
-        {offers.map((offer) => {
-          const merchant = merchants.find((m) => m.id === offer.merchantId);
-          return (
-            <li key={offer.id} className="flex items-center justify-between text-xs text-navy-500">
-              <span>{merchant?.name}</span>
-              <span className="font-medium text-navy-700">{formatPrice(offer.price)}</span>
-            </li>
-          );
-        })}
-      </ul>
+      {offers.length > 1 && (
+        // Solo tiene sentido listar el resto de tiendas cuando hay más de
+        // una oferta real: con una sola, repetiría la misma tienda y el
+        // mismo precio que ya se muestra arriba (p. ej. "adidas ES 120,00
+        // € / adidas ES 120,00 €"), que parece un error de duplicado.
+        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+          {offers.map((offer) => {
+            const merchant = merchants.find((m) => m.id === offer.merchantId);
+            return (
+              <li key={offer.id} className="flex items-center justify-between text-xs text-navy-500">
+                <span>{merchant?.name}</span>
+                <span className="font-medium text-navy-700">{formatPrice(offer.price)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <p className="mt-2 text-[11px] text-navy-300">Actualizado {best.lastCheckedLabel}</p>
 
