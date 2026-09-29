@@ -195,3 +195,31 @@ describe("resolveProductMetadata: canonicalGtin — misma regla backfill-only, e
     expect(result.canonicalGtin).toBe("00036000291452"); // estaba vacío: se rellena con lo entrante
   });
 });
+
+describe("resolveProductMetadata: una fuente ausente de SOURCE_PRIORITY (p. ej. AMAZON, todavía sin conectar) nunca lanza", () => {
+  it("una fuente desconocida no toma posesión de un producto de una fuente SÍ listada (prioridad mínima, nunca -1/crash)", () => {
+    const result = resolveProductMetadata(existing({ name: "Nombre Awin", metadataSource: OfferSource.AWIN }), {
+      source: OfferSource.AMAZON,
+      name: "Nombre Amazon",
+      brand: null,
+      model: null,
+      imageUrl: null,
+      normalizedGtin: null,
+    });
+    expect(result.metadataSource).toBe(OfferSource.AWIN); // sigue siendo dueño Awin, no Amazon
+    expect(result.name).toBe("Nombre Awin");
+  });
+
+  it("una fuente desconocida SÍ toma posesión si el producto todavía no tiene dueño", () => {
+    const result = resolveProductMetadata(existing({ metadataSource: null }), {
+      source: OfferSource.AMAZON,
+      name: "Nombre Amazon",
+      brand: null,
+      model: null,
+      imageUrl: null,
+      normalizedGtin: null,
+    });
+    expect(result.metadataSource).toBe(OfferSource.AMAZON);
+    expect(result.name).toBe("Nombre Amazon");
+  });
+});

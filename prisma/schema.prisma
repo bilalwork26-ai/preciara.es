@@ -118,14 +118,19 @@ enum Availability {
 
 /// Origen de una oferta: qué sistema la trajo. `CSV` es el importador manual
 /// ya existente (valor por defecto, incluido para todas las filas creadas
-/// antes de que este campo existiera). `AWIN`/`EBAY` son las fuentes
-/// previstas para el núcleo de sincronización — todavía sin conectar, ver
-/// src/server/catalogSync/*. Lista pensada para crecer (nuevo valor =
-/// migración aditiva, nunca rompe las filas existentes).
+/// antes de que este campo existiera). `AWIN` es la única fuente conectada
+/// hoy (ver src/server/catalogSync/*). `EBAY`/`AMAZON` son valores
+/// reservados para el mismo núcleo de sincronización — todavía sin
+/// conectar: no existe ningún adaptador que traiga filas reales de Amazon
+/// (no hay integración con la Product Advertising API ni ningún otro feed
+/// de Amazon), este valor solo deja preparado el hueco en el esquema.
+/// Lista pensada para crecer (nuevo valor = migración aditiva, nunca
+/// rompe las filas existentes).
 enum OfferSource {
   CSV
   AWIN
   EBAY
+  AMAZON
 }
 
 /// Oferta de un producto en un comercio concreto, proveniente de una fuente.

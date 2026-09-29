@@ -7,7 +7,7 @@ export const metadata = { title: "Sincronización — Panel técnico", robots: {
 
 const dateFormatter = new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short" });
 
-const SOURCE_LABEL: Record<OfferSource, string> = { CSV: "CSV", AWIN: "Awin", EBAY: "eBay" };
+const SOURCE_LABEL: Record<OfferSource, string> = { CSV: "CSV", AWIN: "Awin", EBAY: "eBay", AMAZON: "Amazon" };
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "SUCCESS") return <Badge tone="ok">Correcta</Badge>;
