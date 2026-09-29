@@ -125,6 +125,28 @@ jobs:
             echo "::warning::Al menos una imagen externa no respondió 200."
           fi
 
+      # Investigación puntual: el usuario reporta que "Bajadas destacadas"
+      # muestra el mismo producto repetido (solo cambia la talla). Antes de
+      # escribir ninguna lógica de deduplicación, se necesita ver el texto
+      # real de los nombres de producto tal como los sirve la portada real
+      # — nunca adivinar el formato exacto (con/sin "Talla", separador,
+      # posición del número) a ciegas.
+      - name: "Nombres reales de las tarjetas de 'Bajadas destacadas' (investigación de duplicados)"
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home.html", "utf8");
+          // Mismo className exacto que usa ProductDealCard.tsx para el nombre
+          // (combinación "mt-3 line-clamp-2" solo se usa ahí, en ningún otro sitio).
+          const re = /class="mt-3 line-clamp-2[^"]*">([^<]*)</g;
+          let m;
+          const names = [];
+          while ((m = re.exec(html))) names.push(m[1].trim());
+          console.log(`Tarjetas encontradas en "Bajadas destacadas": ${names.length}`);
+          names.forEach((n, i) => console.log(`  ${i + 1}. "${n}"`));
+          NODE
+
       - name: Comprobar que las fichas de detalle de producto responden (no 404) y también tienen imagen real
         shell: bash
         run: |
