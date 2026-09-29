@@ -59,7 +59,13 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
       )}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
-        <ProductGlyph icon={product.icon} className="h-32 w-32 rounded-2xl" iconClassName="h-14 w-14 text-navy-700" />
+        <ProductGlyph
+          icon={product.icon}
+          imageUrl={product.imageUrl}
+          alt={product.name}
+          className="h-32 w-32 rounded-2xl"
+          iconClassName="h-14 w-14 text-navy-700"
+        />
         <div>
           <h1 className="font-serif text-2xl font-bold text-navy-900 sm:text-3xl">{product.name}</h1>
           <div className="mt-2 flex items-center gap-3">

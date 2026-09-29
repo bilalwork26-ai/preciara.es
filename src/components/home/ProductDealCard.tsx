@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { formatPrice, calcDiscountPercent } from "@/lib/format";
@@ -16,11 +17,15 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
   return (
     <div className="flex h-full flex-col rounded-2xl border border-border bg-white p-3 shadow-sm">
       <div className="relative">
-        <ProductGlyph
-          icon={product.icon}
-          className="h-28 w-full rounded-xl"
-          iconClassName="h-11 w-11 text-navy-700"
-        />
+        <Link href={`/producto/${product.slug}`} aria-label={`Ver detalle de ${product.name}`}>
+          <ProductGlyph
+            icon={product.icon}
+            imageUrl={product.imageUrl}
+            alt={product.name}
+            className="h-28 w-full rounded-xl"
+            iconClassName="h-11 w-11 text-navy-700"
+          />
+        </Link>
         <div className="absolute left-2 top-2">
           <DiscountBadge percent={percent} />
         </div>
@@ -35,7 +40,12 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
         </button>
       </div>
 
-      <p className="mt-3 line-clamp-2 text-sm font-medium text-navy-900">{product.name}</p>
+      <Link
+        href={`/producto/${product.slug}`}
+        className="mt-3 block line-clamp-2 text-sm font-medium text-navy-900 hover:text-teal-700"
+      >
+        {product.name}
+      </Link>
 
       <div className="mt-1 flex items-baseline gap-2">
         <span className="text-lg font-bold text-navy-900">{formatPrice(best.price)}</span>

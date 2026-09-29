@@ -60,7 +60,12 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
                 href={`/producto/${product.slug}`}
                 className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
               >
-                <ProductGlyph icon={product.icon} className="h-14 w-14 shrink-0" />
+                <ProductGlyph
+                  icon={product.icon}
+                  imageUrl={product.imageUrl}
+                  alt={product.name}
+                  className="h-14 w-14 shrink-0"
+                />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-navy-900">{product.name}</p>
                   {best && (

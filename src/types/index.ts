@@ -51,8 +51,10 @@ export interface Product {
   slug: string;
   name: string;
   categoryId: string;
-  /** Nombre de icono de lucide-react usado como imagen ilustrativa. */
+  /** Nombre de icono de lucide-react usado como imagen ilustrativa (fallback si no hay `imageUrl`). */
   icon: string;
+  /** URL de la foto real del producto (feed del proveedor), si existe. */
+  imageUrl?: string | null;
   priceHistory: PricePoint[];
   offers: Offer[];
 }
