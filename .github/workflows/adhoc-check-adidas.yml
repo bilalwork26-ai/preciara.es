@@ -58,6 +58,97 @@ jobs:
           echo "HTTP status: $code"
           echo "Tamaño: $(wc -c < /tmp/categorias.html) bytes"
 
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Ronda de comprobación tras el merge de PR #32 (etiqueta "Datos demo"
+      # dinámica) y PR #30 (imágenes reales + enlaces a ficha de detalle):
+      # confirma en la portada real que la etiqueta ya no aparece con
+      # catálogo real, que hay imágenes externas (no solo el icono de
+      # categoría de respaldo) y que existen enlaces /producto/[slug].
+      - name: "Portada real: etiqueta 'Datos demo' e imágenes de producto"
+        shell: bash
+        run: |
+          set -e
+          code=$(curl -sS -o /tmp/home.html -w "%{http_code}" --max-time 20 "https://preciara.es/")
+          echo "HTTP status portada: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::La portada no respondió 200."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home.html", "utf8");
+
+          const hasDemoLabel = html.includes("Datos demo");
+          console.log(`¿Aparece el texto "Datos demo" en algún punto de la portada?: ${hasDemoLabel ? "SÍ" : "NO"}`);
+
+          const imgRe = /<img\b[^>]*\bsrc=["']([^"']*)["'][^>]*>/gi;
+          let m;
+          const imgs = [];
+          while ((m = imgRe.exec(html))) imgs.push(m[1]);
+          const empty = imgs.filter((s) => !s.trim());
+          const external = imgs.filter((s) => /^https?:\/\//i.test(s) && !s.includes("preciara.es"));
+          const internal = imgs.filter((s) => !/^https?:\/\//i.test(s) || s.includes("preciara.es"));
+          console.log(`Total <img> en la portada: ${imgs.length} (externas/reales: ${external.length}, internas/propias: ${internal.length}, con src vacío: ${empty.length})`);
+          console.log("Primeras imágenes externas encontradas:");
+          for (const s of external.slice(0, 5)) console.log(`  - ${s}`);
+
+          const linkRe = /href=["'](\/producto\/[^"'?#]+)["']/gi;
+          const links = new Set();
+          let lm;
+          while ((lm = linkRe.exec(html))) links.add(lm[1]);
+          console.log(`Enlaces /producto/[slug] encontrados en la portada: ${links.size}`);
+          for (const l of [...links].slice(0, 10)) console.log(`  - ${l}`);
+
+          fs.writeFileSync("/tmp/product-links.txt", [...links].join("\n"));
+          fs.writeFileSync("/tmp/external-images.txt", external.join("\n"));
+          NODE
+
+      - name: Comprobar que las imágenes externas de producto resuelven (HTTP 200)
+        shell: bash
+        run: |
+          if [ ! -s /tmp/external-images.txt ]; then
+            echo "No se encontraron imágenes externas en la portada — nada que comprobar aquí."
+            exit 0
+          fi
+          fail=0
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 -L "$url" || echo "000")
+            echo "$code  $url"
+            if [ "$code" != "200" ]; then fail=1; fi
+          done < <(sort -u /tmp/external-images.txt | head -10)
+          if [ "$fail" = "1" ]; then
+            echo "::warning::Al menos una imagen externa no respondió 200."
+          fi
+
+      - name: Comprobar que las fichas de detalle de producto responden (no 404) y también tienen imagen real
+        shell: bash
+        run: |
+          if [ ! -s /tmp/product-links.txt ]; then
+            echo "::warning::No se encontró ningún enlace /producto/[slug] en la portada — no se puede verificar el detalle."
+            exit 0
+          fi
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            url="https://preciara.es${path}"
+            code=$(curl -sS -o /tmp/detail.html -w "%{http_code}" --max-time 20 "$url")
+            echo "HTTP $code  $url"
+            if [ "$code" != "200" ]; then
+              echo "::error::La ficha de detalle $url no respondió 200."
+              exit 1
+            fi
+            ext=$(grep -oiE '<img[^>]+src="https?://[^"]*"' /tmp/detail.html | grep -vi 'preciara.es' | head -1 || true)
+            if [ -n "$ext" ]; then
+              echo "  Imagen externa encontrada en el detalle: sí"
+            else
+              echo "  Imagen externa encontrada en el detalle: no (puede estar usando el icono de categoría de respaldo)"
+            fi
+          done < <(sort -u /tmp/product-links.txt | head -3)
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
