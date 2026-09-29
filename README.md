@@ -715,14 +715,15 @@ línea de comandos, sin depender de esa integración.
 1. Hostinger despliega automáticamente al recibir cambios en `main` (ya
    configurado).
 2. El propio `npm run build` (`prisma generate && tsx scripts/build-migrate.ts
-   && next build --webpack`) ya prepara la base de datos automáticamente en
-   cada despliegue — no hace falta ningún comando manual aparte ni un
-   *post-deploy* configurado en Hostinger. El build usa Webpack de forma
-   explícita (`--webpack`) en vez del Turbopack por defecto de Next 16: en
-   el entorno de build de Hostinger, Turbopack falla con
-   `TurbopackInternalError` al procesar `src/app/globals.css` (un fallo del
-   binario nativo de Turbopack en ese entorno concreto, no un error real de
-   CSS) — Webpack no tiene ese problema.
+   && next build --webpack && tsx scripts/touch-passenger-restart.ts`) ya
+   prepara la base de datos automáticamente en cada despliegue — no hace
+   falta ningún comando manual aparte ni un *post-deploy* configurado en
+   Hostinger. El build usa Webpack de forma explícita (`--webpack`) en vez
+   del Turbopack por defecto de Next 16: en el entorno de build de
+   Hostinger, Turbopack falla con `TurbopackInternalError` al procesar
+   `src/app/globals.css` (un fallo del binario nativo de Turbopack en ese
+   entorno concreto, no un error real de CSS) — Webpack no tiene ese
+   problema.
    - **Sin `DATABASE_URL`**: el paso se omite sin más y el build continúa
      normalmente; la web pública sigue sirviendo datos de demostración.
    - **Con `DATABASE_URL`**: comprueba la conexión primero (sin escribir
@@ -734,6 +735,23 @@ línea de comandos, sin depender de esa integración.
      `npm run build` se detiene ahí mismo — `next build` ni siquiera llega
      a ejecutarse, así que Hostinger no sustituye la versión ya publicada;
      el sitio en producción sigue funcionando tal cual estaba.
+   - **Último paso, `tsx scripts/touch-passenger-restart.ts`**: crea o
+     actualiza `tmp/restart.txt`. El hosting de Node.js de Hostinger
+     (identificable por las cabeceras `panel: hpanel` / `server: hcdn` en
+     cualquier respuesta pública) funciona sobre Phusion Passenger, que NO
+     recarga el código en cada despliegue por sí solo: mantiene vivos los
+     procesos ya arrancados y solo los recicla cuando cambia la fecha de
+     modificación de ese fichero (mecanismo oficial de Passenger). Sin
+     este paso, un build sin ningún error puede dejar el sitio sirviendo
+     indefinidamente el proceso Node.js viejo — visto en producción tras
+     las PR #48/#49/#50 (el panel de Hostinger mostraba build y "reinicio"
+     sin errores, pero la portada seguía con el comportamiento de antes de
+     esas tres PRs; confirmado con las cabeceras HTTP reales de la
+     portada, que ya traían `Cache-Control: no-store` de Next.js y
+     `x-hcdn-cache-status: DYNAMIC` — descartando cualquier capa de caché,
+     de Next.js o de la CDN de Hostinger, como causa). Inofensivo en
+     cualquier otro hosting: solo crea/actualiza un fichero vacío dentro
+     de `tmp/` (en `.gitignore`, nunca se commitea).
 3. Para activar la base de datos en Hostinger:
    - Crea la base MySQL desde el panel de Hostinger (no reutilices la base
      de otro sitio ni la crees si ya existe una para Preciara).
