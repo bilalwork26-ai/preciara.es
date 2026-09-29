@@ -23,7 +23,7 @@ export default async function BuscarPage({
   const results = data.products;
 
   return (
-    <Container className="py-10">
+    <Container className="py-10" wide>
       <h1 className="font-serif text-2xl font-semibold text-navy-900 sm:text-3xl">
         {categoria ? categoria.name : "Buscar productos"}
       </h1>

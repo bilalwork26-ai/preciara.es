@@ -149,9 +149,6 @@ export const demoProducts: Product[] = [
   },
 ];
 
-/** Producto destacado: banner principal y panel de comparación. */
-export const demoFeaturedProduct = demoProducts[0];
-
 /**
  * Productos de la cuadrícula "Bajadas verificadas hoy": los 6 productos de
  * demostración pedidos, incluido el destacado del banner principal (igual

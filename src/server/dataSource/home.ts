@@ -2,30 +2,17 @@
  * Datos de la portada: un puñado de funciones, cada una con una sola
  * responsabilidad, todas pasando por `resolveWithFallback`. `src/app/(site)/page.tsx`
  * las llama en paralelo (Promise.all) para que la portada entera dispare
- * un número pequeño y fijo de consultas (hoy: 4), nunca una por
+ * un número pequeño y fijo de consultas (hoy: 2), nunca una por
  * componente ni una por producto.
  */
-import { demoDealsGrid, demoFeaturedProduct } from "@/data/demo/products";
+import { demoDealsGrid } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
-import { getActiveProductsWithOffers, getProductBySlug, type ProductWithOffers } from "@/server/repositories/products";
-import { getPriceHistoryForOffer } from "@/server/repositories/priceHistory";
+import { getActiveProductsWithOffers, type ProductWithOffers } from "@/server/repositories/products";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
 import { getDemoCategoriesWithProductCounts } from "./category";
-import { extractMerchants, toLegacyCategory, toLegacyProduct, toPricePoint } from "./transform";
-
-/**
- * Slug del producto destacado del panel de comparación (`ComparisonPanel`,
- * ver page.tsx). Es un hueco curado a propósito, no "la mejor oferta de lo
- * que haya": así el panel nunca muestra una foto/copy que no corresponda
- * al producto cuyo precio está enseñando. Coincide con el slug del seed.
- * (El hero de la portada es estático y genérico — ver
- * `src/components/home/Hero.tsx` — nunca muestra el precio de un único
- * producto, precisamente para no ser engañoso al representar un catálogo
- * con muchos productos de muchas categorías.)
- */
-const FEATURED_PRODUCT_SLUG = "auriculares-inalambricos-pro";
+import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
 /**
  * Curación histórica: este producto tenía su propio banner secundario en
@@ -68,28 +55,6 @@ export async function getHomeCategories(): Promise<SourcedResult<HomeCategoriesB
       };
     })(),
     isSufficient: (bundle) => bundle.categories.length > 0,
-  });
-}
-
-export type FeaturedBundle = { product: Product; merchants: Merchant[] };
-
-export async function getFeaturedBundle(): Promise<SourcedResult<FeaturedBundle>> {
-  return resolveWithFallback({
-    fetchFromDb: async () => {
-      const dbProduct = await getProductBySlug(FEATURED_PRODUCT_SLUG);
-      if (!dbProduct) return null; // null = BD no disponible; undefined = no existe todavía -> ambos caen al fallback
-      if (dbProduct.offers.length === 0) return null;
-
-      const cheapest = [...dbProduct.offers].sort((a, b) => a.currentPrice.comparedTo(b.currentPrice))[0];
-      const history = await getPriceHistoryForOffer(cheapest.id, 12);
-
-      return {
-        product: toLegacyProduct(dbProduct, (history ?? []).map(toPricePoint)),
-        merchants: extractMerchants([dbProduct]),
-      };
-    },
-    demoFallback: { product: demoFeaturedProduct, merchants: demoMerchants },
-    isSufficient: (bundle) => bundle.product.offers.length > 0 && bundle.product.priceHistory.length > 0,
   });
 }
 

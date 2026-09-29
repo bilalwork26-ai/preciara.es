@@ -40,7 +40,7 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
   ]);
 
   return (
-    <Container className="py-10">
+    <Container className="py-10" wide>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />
 
       <h1 className="font-serif text-2xl font-bold text-navy-900 sm:text-3xl">{category.name}</h1>

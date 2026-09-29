@@ -21,7 +21,7 @@ export async function getProductDetail(slug: string): Promise<ProductDetailResul
 
   // `dbProduct` con `offers.length === 0` es "insuficiente" con el mismo
   // criterio que el resto de `src/server/dataSource/*` (ver
-  // `getFeaturedBundle` en home.ts): puede ser un producto real ya sin
+  // `getDealsGridBundle` en home.ts): puede ser un producto real ya sin
   // ofertas activas, o la fila del propio seed de demostración (marcada
   // `isDemo: true`, con el mismo slug que `src/data/demo/products.ts` a
   // propósito) cuyas ofertas demo quedaron fuera del filtro de
