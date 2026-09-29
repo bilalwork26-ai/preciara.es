@@ -274,6 +274,26 @@ jobs:
             exit 1
           fi
 
+      # Comprobación puntual tras PR #45: confirma el marcador estructural
+      # de la alineación de precio+botón al fondo de la tarjeta (`mt-auto`,
+      # aparece en toda tarjeta sin importar los datos concretos) — a
+      # diferencia de los otros 3 arreglos de esa PR (mayúsculas, ofertas
+      # duplicadas, badge de descuento), que dependen de que el catálogo
+      # real tenga en ese momento un caso que los dispare, este marcador es
+      # la señal fiable de que el despliegue recogió la PR completa.
+      - name: "PR #45: bloque de precio+botón anclado al fondo de la tarjeta"
+        shell: bash
+        run: |
+          set -e
+          match=$(grep -oE 'class="mt-auto flex flex-wrap items-baseline[^"]*"' /tmp/home.html | head -1 || true)
+          if [ -n "$match" ]; then
+            echo "$match"
+            echo "Clase 'mt-auto' en el bloque de precio SÍ presente (correcto, PR #45 ya en vivo)."
+          else
+            echo "::error::No se encontró 'mt-auto' en el bloque de precio de las tarjetas — el despliegue no ha recogido la PR #45."
+            exit 1
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
