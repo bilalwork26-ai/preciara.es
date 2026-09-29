@@ -12,7 +12,6 @@ import {
   dealsGridGroupKey,
   getHomeCategories,
   getDealsGridBundle,
-  getFeaturedBundle,
   selectDiverseDeals,
 } from "./home";
 
@@ -230,16 +229,6 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     }
   });
 
-  it("getFeaturedBundle responde con demo sin lanzar", async () => {
-    vi.resetModules();
-    delete process.env.DATABASE_URL;
-    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
-    const { getFeaturedBundle: fn } = await import("./home");
-    const { source, data } = await fn();
-    expect(source).toBe("demo");
-    expect(data.product.offers.length).toBeGreaterThan(0);
-  });
-
   it("getDealsGridBundle responde con demo sin lanzar", async () => {
     vi.resetModules();
     delete process.env.DATABASE_URL;
@@ -294,7 +283,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
   });
 });
 
-describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: destacado y cuadrícula (integración)", () => {
+describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de bajadas (integración)", () => {
   const productSlug = `${PREFIX}-producto-destacado`;
   const merchantSlug = `${PREFIX}-comercio`;
   let categoryId: number;
@@ -360,15 +349,6 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: destacado y cuadrí
     const bundle = await getDealsGridBundle();
     expect(bundle.data.products.find((p) => p.slug === productSlug)).toBeUndefined();
     await prisma!.product.update({ where: { id: productId }, data: { isActive: true } }); // limpieza
-  });
-
-  it("getFeaturedBundle cae a demo si el slug destacado no existe en la BD de pruebas aislada", async () => {
-    // Usamos una BD real pero el slug fijo "auriculares-inalambricos-pro" puede
-    // no existir en un entorno de pruebas recién migrado: en ese caso, debe
-    // usar demo sin lanzar ningún error.
-    const bundle = await getFeaturedBundle();
-    expect(bundle.data.product.offers.length).toBeGreaterThan(0);
-    expect(bundle.data.product.priceHistory.length).toBeGreaterThan(0);
   });
 
   it("un producto marcado isDemo=true nunca aparece en la cuadrícula, aunque haya catálogo real junto a él", async () => {
