@@ -1,17 +1,38 @@
 import type { Metadata } from "next";
-import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const fraunces = Fraunces({
+/**
+ * Fraunces y Plus Jakarta Sans se sirven en local (`next/font/local`), no
+ * con `next/font/google`: ese segundo camino descarga los ficheros de
+ * fuente desde los servidores de Google DURANTE `next build`, y si el
+ * entorno de build de Hostinger no puede alcanzarlos, el build entero
+ * falla con "TypeError: Cannot read properties of null (reading '1')"
+ * (`next/dist/compiled/@next/font/dist/google/loader.js`) — sin que sea
+ * un error real de ningún fichero de la app. Los `.woff2` de aquí abajo
+ * son exactamente los mismos pesos/subset que se pedían antes
+ * (`subsets: ["latin"]`, mismos pesos), extraídos de los paquetes
+ * `@fontsource/fraunces`/`@fontsource/plus-jakarta-sans` (licencia SIL
+ * Open Font License, ver el `LICENSE` junto a cada fuente) — el build ya
+ * no depende de ninguna red externa para compilar.
+ */
+const fraunces = localFont({
   variable: "--font-fraunces",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  src: [
+    { path: "./fonts/fraunces/fraunces-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/fraunces/fraunces-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/fraunces/fraunces-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 });
 
-const jakarta = Plus_Jakarta_Sans({
+const jakarta = localFont({
   variable: "--font-jakarta",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  src: [
+    { path: "./fonts/plus-jakarta-sans/plus-jakarta-sans-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans/plus-jakarta-sans-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans/plus-jakarta-sans-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans/plus-jakarta-sans-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://preciara.es";
