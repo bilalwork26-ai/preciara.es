@@ -156,10 +156,31 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
 }
 
 /**
+ * Deduplica por `dealsGridGroupKey`, quedándose con la variante de mayor
+ * descuento relativo de cada grupo — nunca dos tarjetas de la misma
+ * prenda en distinta talla/color. Reutilizado por `selectDiverseDeals`
+ * (portada) y también, directamente, por `/categoria/[slug]` y `/buscar`
+ * (`category.ts`/`search.ts`): esos dos listados no necesitan el reparto
+ * por categoría ni el límite de abajo (muestran TODO el catálogo
+ * filtrado, no un top acotado), pero sí el mismo criterio de "una sola
+ * tarjeta por modelo" — repetirlo ahí sería el mismo bug de variantes
+ * duplicadas que esta función ya resuelve aquí.
+ */
+export function collapseProductVariants(products: ProductWithOffers[]): ProductWithOffers[] {
+  const bestPerGroup = new Map<string, ProductWithOffers>();
+  for (const product of products) {
+    const key = dealsGridGroupKey(product);
+    const current = bestPerGroup.get(key);
+    if (!current || bestDiscountPercent(product) > bestDiscountPercent(current)) {
+      bestPerGroup.set(key, product);
+    }
+  }
+  return [...bestPerGroup.values()];
+}
+
+/**
  * Elige como máximo `limit` productos para "Bajadas destacadas":
- * 1. Deduplica por `dealsGridGroupKey`, quedándose con la variante de
- *    mayor descuento relativo de cada grupo — nunca dos tarjetas de la
- *    misma prenda en distinta talla/color.
+ * 1. Deduplica variantes con `collapseProductVariants` (ver arriba).
  * 2. Reparte el resultado entre categorías distintas (ronda por
  *    categoría, cada una ordenada por descuento relativo descendente),
  *    para no llenar la cuadrícula con un único tipo de producto aunque
@@ -172,17 +193,8 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
  *    precio real, nunca el orden de intercalado por categoría.
  */
 export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
-  const bestPerGroup = new Map<string, ProductWithOffers>();
-  for (const product of products) {
-    const key = dealsGridGroupKey(product);
-    const current = bestPerGroup.get(key);
-    if (!current || bestDiscountPercent(product) > bestDiscountPercent(current)) {
-      bestPerGroup.set(key, product);
-    }
-  }
-
   const byCategory = new Map<number, ProductWithOffers[]>();
-  for (const product of bestPerGroup.values()) {
+  for (const product of collapseProductVariants(products)) {
     const list = byCategory.get(product.categoryId) ?? [];
     list.push(product);
     byCategory.set(product.categoryId, list);

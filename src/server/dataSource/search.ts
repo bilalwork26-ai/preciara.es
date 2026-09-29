@@ -12,6 +12,7 @@ import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategories } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers, searchActiveProducts } from "@/server/repositories/products";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
+import { collapseProductVariants } from "./home";
 import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
 export const SEARCH_QUERY_MAX_LENGTH = 200;
@@ -63,7 +64,10 @@ export async function searchHomeProducts(params: { query: string; categorySlug: 
       ]);
       if (!categoryRows || !productRows || !realCatalogProbe) return null;
       return {
-        products: productRows.map((p) => toLegacyProduct(p)),
+        // Mismo criterio que /categoria/[slug]: nunca varias tallas/colores
+        // del mismo modelo como tarjetas repetidas seguidas en los
+        // resultados de búsqueda.
+        products: collapseProductVariants(productRows).map((p) => toLegacyProduct(p)),
         categories: categoryRows.map(toLegacyCategory),
         merchants: extractMerchants(productRows),
         hasRealCatalog: realCatalogProbe.length > 0,

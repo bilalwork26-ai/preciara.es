@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCategoryDetail } from "@/server/dataSource/category";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
@@ -50,24 +50,34 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
           : `${products.length} productos con ofertas activas.`}
       </p>
 
-      <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/*
+        `flex-wrap` (no `grid` de columnas fijas): con un número de
+        columnas fijo, una última fila incompleta deja columnas vacías
+        visibles (no colapsan solas: siguen teniendo contenido en otras
+        filas). Con flexbox, cada tarjeta crece para repartirse el hueco
+        sobrante de su fila (`min-w`/`max-w` acotan cuánto), así que nunca
+        queda un hueco grande a la derecha, y en monitores anchos caben
+        más tarjetas por fila de forma natural.
+      */}
+      <ul className="mt-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
         {products.map((product) => {
           const best = [...product.offers].sort((a, b) => a.price - b.price)[0];
           const merchant = merchants.find((m) => m.id === best?.merchantId);
+          const displayName = formatProductDisplayName(product.name, product.brand);
           return (
-            <li key={product.slug}>
+            <li key={product.slug} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
               <a
                 href={`/producto/${product.slug}`}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
+                className="flex h-full items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
               >
                 <ProductGlyph
                   icon={product.icon}
                   imageUrl={product.imageUrl}
-                  alt={product.name}
+                  alt={displayName}
                   className="h-14 w-14 shrink-0"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-navy-900">{product.name}</p>
+                  <p className="truncate text-sm font-medium text-navy-900">{displayName}</p>
                   {best && (
                     <>
                       <p className="mt-0.5 text-base font-semibold text-navy-900">{formatPrice(best.price)}</p>

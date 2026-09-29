@@ -10,6 +10,7 @@ import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
 import { searchActiveProducts } from "@/server/repositories/products";
+import { collapseProductVariants } from "./home";
 import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
 export const CATEGORY_PRODUCTS_LIMIT = 60;
@@ -29,7 +30,10 @@ export async function getCategoryDetail(slug: string): Promise<CategoryDetailRes
         status: "found",
         source: "database",
         category: toLegacyCategory(dbMatch),
-        products: productRows.map((p) => toLegacyProduct(p)),
+        // Sin esto, varias tallas/colores del mismo modelo (mismo caso que
+        // "Bajadas destacadas" en home.ts) saldrían como tarjetas
+        // repetidas seguidas en la ficha de categoría.
+        products: collapseProductVariants(productRows).map((p) => toLegacyProduct(p)),
         merchants: extractMerchants(productRows),
       };
     }

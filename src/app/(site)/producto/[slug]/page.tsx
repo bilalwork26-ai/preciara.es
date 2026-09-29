@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getProductDetail } from "@/server/dataSource/product";
-import { formatPrice, calcDiscountPercent } from "@/lib/format";
+import { formatPrice, calcDiscountPercent, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, buildProductJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
@@ -18,20 +18,21 @@ export async function generateMetadata({ params }: PageProps<"/producto/[slug]">
 
   const { product, source } = result;
   const best = [...product.offers].sort((a, b) => a.price - b.price)[0];
-  const description = `Compara ${product.offers.length} ${product.offers.length === 1 ? "tienda" : "tiendas"} para ${product.name}. Mejor precio: ${formatPrice(best.price)}.`;
+  const displayName = formatProductDisplayName(product.name, product.brand);
+  const description = `Compara ${product.offers.length} ${product.offers.length === 1 ? "tienda" : "tiendas"} para ${displayName}. Mejor precio: ${formatPrice(best.price)}.`;
   // La foto real del producto (hotlinked del comercio/Awin/Amazon) si
   // existe, nunca una genérica que pretenda ser el producto — solo cuando
   // no hay ninguna se usa la tarjeta de marca por defecto.
   const ogImage = product.imageUrl || DEFAULT_OG_IMAGE_PATH;
 
   return {
-    title: product.name,
+    title: displayName,
     description,
     alternates: { canonical: `/producto/${product.slug}` },
     // Datos de demostración: nunca se indexan como si fueran catálogo real.
     robots: source === "demo" ? { index: false, follow: false } : undefined,
-    openGraph: { title: product.name, description, type: "website", images: [{ url: ogImage, alt: product.name }] },
-    twitter: { card: "summary_large_image", title: product.name, description, images: [ogImage] },
+    openGraph: { title: displayName, description, type: "website", images: [{ url: ogImage, alt: displayName }] },
+    twitter: { card: "summary_large_image", title: displayName, description, images: [ogImage] },
   };
 }
 
@@ -44,12 +45,16 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
   const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
+  const displayName = formatProductDisplayName(product.name, product.brand);
 
   const breadcrumbJsonLd = buildBreadcrumbList([
     { name: "Inicio", path: "/" },
-    { name: product.name, path: `/producto/${product.slug}` },
+    { name: displayName, path: `/producto/${product.slug}` },
   ]);
-  const productJsonLd = buildProductJsonLd(product, merchants, `/producto/${product.slug}`);
+  // JSON-LD con el nombre ya formateado para mostrar (nunca el crudo del
+  // feed con la marca pegada), sin tocar `product.name` en el resto del
+  // objeto (offers/slug/etc. no cambian).
+  const productJsonLd = buildProductJsonLd({ ...product, name: displayName }, merchants, `/producto/${product.slug}`);
 
   return (
     <Container className="py-10">
@@ -66,12 +71,12 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
         <ProductGlyph
           icon={product.icon}
           imageUrl={product.imageUrl}
-          alt={product.name}
+          alt={displayName}
           className="h-32 w-32 rounded-2xl"
           iconClassName="h-14 w-14 text-navy-700"
         />
         <div>
-          <h1 className="font-serif text-2xl font-bold text-navy-900 sm:text-3xl">{product.name}</h1>
+          <h1 className="font-serif text-2xl font-bold text-navy-900 sm:text-3xl">{displayName}</h1>
           <div className="mt-2 flex items-center gap-3">
             <span className="text-2xl font-bold text-navy-900">{formatPrice(best.price)}</span>
             {best.previousPrice && (

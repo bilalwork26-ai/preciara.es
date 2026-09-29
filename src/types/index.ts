@@ -55,6 +55,8 @@ export interface Product {
   icon: string;
   /** URL de la foto real del producto (feed del proveedor), si existe. */
   imageUrl?: string | null;
+  /** Marca del producto (feed del proveedor), si existe. Ver `formatProductDisplayName` en src/lib/format.ts. */
+  brand?: string | null;
   priceHistory: PricePoint[];
   offers: Offer[];
 }

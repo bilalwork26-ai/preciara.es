@@ -108,4 +108,30 @@ describe.skipIf(!process.env.DATABASE_URL)("getCategoryDetail (integración, BD 
       expect(result.products.length).toBe(1);
     }
   });
+
+  it("varias tallas del mismo modelo en la categoría nunca salen como tarjetas repetidas", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PREFIX}-variantes-cat`, name: "Categoría variantes" } });
+    for (const size of ["XS", "S", "M"]) {
+      const product = await prisma!.product.create({
+        data: { slug: `${PREFIX}-variantes-${size.toLowerCase()}`, name: `Camiseta Running ${size}`, categoryId: category.id },
+      });
+      await prisma!.offer.create({
+        data: {
+          productId: product.id,
+          merchantId,
+          currentPrice: 19.99,
+          productUrl: `https://example.invalid/variantes-${size}`,
+          availability: "IN_STOCK",
+          lastCheckedAt: new Date(),
+          isActive: true,
+        },
+      });
+    }
+
+    const result = await getCategoryDetail(`${PREFIX}-variantes-cat`);
+    expect(result.status).toBe("found");
+    if (result.status === "found" && result.source === "database") {
+      expect(result.products).toHaveLength(1);
+    }
+  });
 });
