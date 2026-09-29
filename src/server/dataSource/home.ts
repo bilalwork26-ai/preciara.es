@@ -9,7 +9,7 @@ import { demoDealsGrid, demoFeaturedProduct } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
-import { getActiveProductsWithOffers, getProductBySlug } from "@/server/repositories/products";
+import { getActiveProductsWithOffers, getProductBySlug, type ProductWithOffers } from "@/server/repositories/products";
 import { getPriceHistoryForOffer } from "@/server/repositories/priceHistory";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
 import { getDemoCategoriesWithProductCounts } from "./category";
@@ -93,16 +93,101 @@ export async function getFeaturedBundle(): Promise<SourcedResult<FeaturedBundle>
   });
 }
 
+/** Máximo de tarjetas que muestra "Bajadas destacadas". */
+const DEALS_GRID_LIMIT = 24;
+
+/**
+ * Cuántas filas se piden a la BD antes de deduplicar/diversificar
+ * (bastante más que `DEALS_GRID_LIMIT`): con un catálogo donde varias
+ * filas son variantes de talla/color del mismo modelo (ver
+ * `dealsGridGroupKey` más abajo), pedir solo `DEALS_GRID_LIMIT` filas
+ * podría dejar la cuadrícula con muy pocos productos distintos aunque el
+ * catálogo real tenga más variedad más adelante en el orden de `id`.
+ */
+const DEALS_GRID_POOL_SIZE = 200;
+
+/**
+ * Clave de agrupación para no repetir el mismo modelo en varias tarjetas
+ * (p. ej. "adidasPantalón Firebird Utility 23-34 Black Mujer" y "...
+ * 24-30 Black Mujer" son la misma prenda, solo cambia la talla): quita
+ * cualquier token que sea un rango numérico tipo "23-34" del nombre y
+ * normaliza espacios/mayúsculas. Es una heurística sobre el texto real
+ * que sirve Awin (no hay un campo de "modelo base" ni de talla por
+ * separado en el feed) — nunca se guarda, solo decide qué mostrar aquí.
+ */
+export function dealsGridGroupKey(product: Pick<ProductWithOffers, "name">): string {
+  return product.name
+    .replace(/\b\d{1,3}-\d{1,3}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** Mayor descuento relativo (%) entre las ofertas activas del producto; 0 si ninguna tiene `previousPrice`. */
+export function bestDiscountPercent(product: ProductWithOffers): number {
+  let max = 0;
+  for (const offer of product.offers) {
+    if (!offer.previousPrice) continue;
+    const previous = offer.previousPrice.toNumber();
+    if (previous <= 0) continue;
+    const percent = ((previous - offer.currentPrice.toNumber()) / previous) * 100;
+    if (percent > max) max = percent;
+  }
+  return max;
+}
+
+/**
+ * Elige como máximo `limit` productos para "Bajadas destacadas":
+ * 1. Deduplica por `dealsGridGroupKey`, quedándose con la variante de
+ *    mayor descuento relativo de cada grupo — nunca dos tarjetas de la
+ *    misma prenda en distinta talla/color.
+ * 2. Reparte el resultado entre categorías distintas (ronda por
+ *    categoría, cada una ordenada por descuento relativo descendente),
+ *    para no llenar la cuadrícula con un único tipo de producto aunque
+ *    hoy solo haya un anunciante real aprobado.
+ */
+export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
+  const bestPerGroup = new Map<string, ProductWithOffers>();
+  for (const product of products) {
+    const key = dealsGridGroupKey(product);
+    const current = bestPerGroup.get(key);
+    if (!current || bestDiscountPercent(product) > bestDiscountPercent(current)) {
+      bestPerGroup.set(key, product);
+    }
+  }
+
+  const byCategory = new Map<number, ProductWithOffers[]>();
+  for (const product of bestPerGroup.values()) {
+    const list = byCategory.get(product.categoryId) ?? [];
+    list.push(product);
+    byCategory.set(product.categoryId, list);
+  }
+  const categoryLists = [...byCategory.values()];
+  for (const list of categoryLists) {
+    list.sort((a, b) => bestDiscountPercent(b) - bestDiscountPercent(a));
+  }
+
+  const result: ProductWithOffers[] = [];
+  for (let round = 0; result.length < limit && categoryLists.some((list) => round < list.length); round++) {
+    for (const list of categoryLists) {
+      if (result.length >= limit) break;
+      if (round < list.length) result.push(list[round]);
+    }
+  }
+  return result;
+}
+
 export type DealsGridBundle = { products: Product[]; merchants: Merchant[] };
 
 export async function getDealsGridBundle(): Promise<SourcedResult<DealsGridBundle>> {
   return resolveWithFallback({
     fetchFromDb: async () => {
-      const rows = await getActiveProductsWithOffers(24);
+      const rows = await getActiveProductsWithOffers(DEALS_GRID_POOL_SIZE);
       if (!rows) return null;
       const filtered = rows.filter((p) => p.slug !== SECONDARY_BANNER_PRODUCT_SLUG);
-      const products = filtered.map((p) => toLegacyProduct(p));
-      return { products, merchants: extractMerchants(filtered) };
+      const selected = selectDiverseDeals(filtered, DEALS_GRID_LIMIT);
+      const products = selected.map((p) => toLegacyProduct(p));
+      return { products, merchants: extractMerchants(selected) };
     },
     demoFallback: { products: demoDealsGrid, merchants: demoMerchants },
     isSufficient: (bundle) => bundle.products.length > 0,
