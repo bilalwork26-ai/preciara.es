@@ -204,6 +204,7 @@ const GTIN_RACE = "66666666666668";
 const GTIN_RELINK_A = "77777777777771";
 const GTIN_RELINK_B = "88888888888884";
 const GTIN_RELINK_C = "99999999999980";
+const GTIN_AWIN_AMAZON = "33333333333339";
 
 describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: bloqueo 2 — sin duplicados de GTIN entre fuentes concurrentes", () => {
   afterAll(cleanup);
@@ -454,5 +455,54 @@ describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: merchant.we
 
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
     expect(merchant.websiteUrl).toBe("https://example.invalid/real"); // conservado, nunca borrado por un `null` entrante
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: cruce Awin↔Amazon por canonicalGtin (prueba directa del requisito de fusión entre fuentes)", () => {
+  afterAll(cleanup);
+
+  it("una oferta AWIN y una oferta AMAZON con el mismo GTIN se fusionan en el mismo producto (misma tarjeta), nunca duplican", async () => {
+    const merchantAwin = { slug: `${PREFIX}-awin-amazon-merchant-awin`, name: "Comercio Awin (Adidas)", websiteUrl: "https://example.invalid" };
+    const merchantAmazon = { slug: `${PREFIX}-awin-amazon-merchant-amazon`, name: "Amazon.es", websiteUrl: "https://www.amazon.es" };
+
+    const rowAwin = baseRow({
+      externalId: `${PREFIX}-awin-amazon-awin-offer`,
+      gtin: GTIN_AWIN_AMAZON,
+      source: OfferSource.AWIN,
+      merchant: merchantAwin,
+      name: "Zapatilla Modelo X",
+      price: 79.99,
+    });
+    const outcomeAwin = await applyNormalizedOfferRow(prisma!, rowAwin, { dryRun: false });
+    expect(outcomeAwin.product).toBe("created");
+
+    const rowAmazon = baseRow({
+      externalId: `${PREFIX}-awin-amazon-amazon-offer`,
+      gtin: GTIN_AWIN_AMAZON,
+      source: OfferSource.AMAZON,
+      merchant: merchantAmazon,
+      name: "Zapatilla Modelo X",
+      price: 74.5,
+      affiliateUrl: "https://www.amazon.es/dp/B000000000?tag=preciaraes-21",
+    });
+    const outcomeAmazon = await applyNormalizedOfferRow(prisma!, rowAmazon, { dryRun: false });
+    expect(outcomeAmazon.product).toBe("updated"); // reutiliza el producto creado por Awin, nunca crea uno nuevo
+
+    // Un único producto para ese GTIN — la misma tarjeta en Preciara.es.
+    const products = await prisma!.product.findMany({ where: { canonicalGtin: GTIN_AWIN_AMAZON } });
+    expect(products).toHaveLength(1);
+
+    // Ese único producto tiene DOS ofertas enlazadas: una de cada fuente,
+    // con sus propios precios (la comparativa de precios que ve el
+    // usuario final) — nunca se pierde ninguna de las dos.
+    const offers = await prisma!.offer.findMany({ where: { productId: products[0].id }, orderBy: { source: "asc" } });
+    expect(offers).toHaveLength(2);
+    expect(offers.map((o) => o.source).sort()).toEqual([OfferSource.AMAZON, OfferSource.AWIN].sort());
+
+    const awinOffer = offers.find((o) => o.source === OfferSource.AWIN)!;
+    const amazonOffer = offers.find((o) => o.source === OfferSource.AMAZON)!;
+    expect(Number(awinOffer.currentPrice)).toBe(79.99);
+    expect(Number(amazonOffer.currentPrice)).toBe(74.5);
+    expect(amazonOffer.affiliateUrl).toBe("https://www.amazon.es/dp/B000000000?tag=preciaraes-21");
   });
 });
