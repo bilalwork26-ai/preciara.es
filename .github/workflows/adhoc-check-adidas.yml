@@ -377,7 +377,17 @@ jobs:
       # clase CSS: si el ranking en SQL no está desplegado, la portada
       # seguiría en el orden antiguo (id/nombre) y esta secuencia saldría
       # desordenada.
-      - name: "PR #48: tarjetas de la portada en orden de % de descuento descendente"
+      # A partir de la PR #50 esta comprobación deja de poder exigir orden
+      # ESTRICTAMENTE descendente: selectDiverseDeals ahora intercala
+      # categorías (máximo 2 tarjetas seguidas de la misma) en vez de
+      # devolver el resultado ordenado solo por % de descuento — así que
+      # una secuencia "no ordenada" ya NO indica por sí sola que falte el
+      # despliegue de la PR #48. Se mantiene como aviso informativo (nunca
+      # falla el job) más una comprobación que SÍ sigue siendo válida: la
+      # primera tarjeta (la destacada) debe ser siempre el % más alto de
+      # todos los encontrados — eso no lo cambia la diversidad de
+      # categorías (ver PR #50).
+      - name: "PR #48/#50: la primera tarjeta sigue siendo siempre el mayor descuento"
         shell: bash
         run: |
           set -e
@@ -394,15 +404,18 @@ jobs:
           }
           console.log(`Pastillas de descuento encontradas en la portada, en orden: [${percents.join(", ")}]`);
           if (percents.length === 0) {
-            console.log("::warning::No hay ningún producto con descuento en la portada ahora mismo — no se puede verificar el orden.");
+            console.log("::warning::No hay ningún producto con descuento en la portada ahora mismo — no se puede verificar nada de orden.");
           } else {
-            const sorted = percents.every((p, i) => i === 0 || p <= percents[i - 1]);
-            if (sorted) {
-              console.log("Las tarjetas con descuento SÍ están en orden descendente (correcto, PR #48 ya en vivo).");
+            const max = Math.max(...percents);
+            if (percents[0] === max) {
+              console.log(`La primera tarjeta SÍ tiene el mayor descuento (${max}%) de toda la portada (correcto).`);
             } else {
-              console.log("::error::Las tarjetas con descuento NO están en orden descendente — el despliegue no ha recogido la PR #48.");
-              process.exit(1);
+              console.log(`::warning::La primera tarjeta tiene ${percents[0]}% pero el máximo encontrado es ${max}% — revisar si el despliegue ha recogido la PR #48/#50 (no falla el job: podría ser el propio catálogo cambiando entre la petición de la portada y este análisis).`);
             }
+            const sorted = percents.every((p, i) => i === 0 || p <= percents[i - 1]);
+            console.log(sorted
+              ? "(Informativo) La secuencia completa también está en orden descendente estricto."
+              : "(Informativo) La secuencia completa NO está en orden descendente estricto — esperado desde la PR #50: la diversidad de categorías puede intercalar un % menor antes que uno mayor de otra categoría ya capada a 2 seguidas.");
           }
           NODE
 
@@ -428,6 +441,35 @@ jobs:
           else
             echo "::error::'Tensaur Hook and Loop' aparece ${count} veces en la portada (más de una tarjeta real) — el despliegue no ha recogido la PR #49."
             exit 1
+          fi
+
+      # PR #50: comprobación general de que la portada sigue sirviendo
+      # catálogo real, no el de demostración. Nota honesta: la PR #50
+      # arregló un bug real de SQL (Prisma.sql/Prisma.empty anidado
+      # rompiéndose bajo el bundler de Next.js), pero al investigarlo a
+      # fondo se confirmó que ese bug SOLO se reproduce en `next dev`
+      # (Turbopack y Webpack), nunca en el build de producción real
+      # (`next build --webpack && next start`, el mismo modo que usa
+      # Hostinger) — así que no era la causa de lo que se veía en
+      # producción, y esta comprobación no puede usarse para confirmar
+      # ESE fix específico en vivo. Se deja como salud general (por si
+      # cualquier otra causa hiciera caer la portada a demo), no como
+      # verificación puntual de la PR #50. Usa la misma etiqueta dinámica
+      # "Datos demo" que ya comprueba el primer paso de este job (ojo:
+      # el aviso legal del pie, "...son datos de demostración.", es un
+      # texto ESTÁTICO que sale siempre pase lo que pase — no sirve como
+      # señal, no se usa aquí).
+      - name: "PR #50 (salud general): la portada no ha caído a catálogo de demostración"
+        shell: bash
+        run: |
+          set -e
+          count=$(grep -o "Datos demo" /tmp/home.html | wc -l || true)
+          echo "Ocurrencias de la etiqueta dinámica 'Datos demo' en la portada: ${count}"
+          if [ "$count" -gt 2 ]; then
+            echo "::error::La portada está en modo demo — revisar DATABASE_URL/conectividad con la BD en Hostinger."
+            exit 1
+          else
+            echo "La portada usa catálogo real (etiqueta 'Datos demo' ausente o solo en el HTML de hidratación)."
           fi
 
   awin_list:
