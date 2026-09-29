@@ -113,3 +113,102 @@ describe.skipIf(!process.env.DATABASE_URL)("repositorios de productos: el catál
     expect(rows!.some((p) => p.id === product.id)).toBe(false);
   });
 });
+
+describe.skipIf(!process.env.DATABASE_URL)("repositorios de productos: orden global de 'mejores chollos primero'", () => {
+  const RANK_PREFIX = "test-products-repo-rank";
+  let categoryId: number;
+  let merchantId: number;
+
+  beforeAll(async () => {
+    const category = await prisma!.category.create({ data: { slug: `${RANK_PREFIX}-cat`, name: "Categoría de ranking" } });
+    categoryId = category.id;
+    const merchant = await prisma!.merchant.create({
+      data: { slug: `${RANK_PREFIX}-comercio`, name: "Comercio de ranking", websiteUrl: "https://example.invalid", isDemo: false },
+    });
+    merchantId = merchant.id;
+
+    // Cuatro productos que cubren las 3 prioridades a la vez:
+    //   1. "Descuento grande" (50%, antiguo) — debe ir primero: tiene
+    //      descuento y es el mayor de los dos que lo tienen.
+    //   2. "Descuento pequeño" (10%, MUY reciente) — segundo: SÍ tiene
+    //      descuento, pero uno menor que el anterior; su fecha reciente
+    //      nunca debe hacer que adelante a un descuento mayor (prioridad 2
+    //      antes que prioridad 3).
+    //   3. "Sin descuento reciente" (0%, reciente) — tercero: sin
+    //      descuento, pero por delante del siguiente por fecha.
+    //   4. "Sin descuento antiguo" (0%, antiguo) — último.
+    const [big, small, recentNoDiscount, oldNoDiscount] = await Promise.all([
+      prisma!.product.create({
+        data: { slug: `${RANK_PREFIX}-descuento-grande`, name: "Descuento grande", categoryId, isDemo: false, updatedAt: new Date("2020-01-01T00:00:00Z") },
+      }),
+      prisma!.product.create({
+        data: { slug: `${RANK_PREFIX}-descuento-pequeno`, name: "Descuento pequeño", categoryId, isDemo: false, updatedAt: new Date("2026-01-01T00:00:00Z") },
+      }),
+      prisma!.product.create({
+        data: { slug: `${RANK_PREFIX}-sin-descuento-reciente`, name: "Sin descuento reciente", categoryId, isDemo: false, updatedAt: new Date("2025-06-01T00:00:00Z") },
+      }),
+      prisma!.product.create({
+        data: { slug: `${RANK_PREFIX}-sin-descuento-antiguo`, name: "Sin descuento antiguo", categoryId, isDemo: false, updatedAt: new Date("2019-01-01T00:00:00Z") },
+      }),
+    ]);
+
+    await Promise.all([
+      prisma!.offer.create({
+        data: { productId: big.id, merchantId, currentPrice: 50, previousPrice: 100, productUrl: "https://example.invalid/1", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+      }),
+      prisma!.offer.create({
+        data: { productId: small.id, merchantId, currentPrice: 90, previousPrice: 100, productUrl: "https://example.invalid/2", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+      }),
+      prisma!.offer.create({
+        data: { productId: recentNoDiscount.id, merchantId, currentPrice: 30, previousPrice: null, productUrl: "https://example.invalid/3", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+      }),
+      prisma!.offer.create({
+        data: { productId: oldNoDiscount.id, merchantId, currentPrice: 20, previousPrice: null, productUrl: "https://example.invalid/4", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+      }),
+    ]);
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { slug: { startsWith: RANK_PREFIX } } });
+    await prisma.merchant.deleteMany({ where: { slug: `${RANK_PREFIX}-comercio` } });
+    await prisma.category.deleteMany({ where: { slug: `${RANK_PREFIX}-cat` } });
+  });
+
+  it("getActiveProductsWithOffers ordena: descuento activo > mayor %, luego sin descuento > más reciente", async () => {
+    const rows = await getActiveProductsWithOffers(200);
+    expect(rows).not.toBeNull();
+    const names = rows!.filter((p) => p.slug.startsWith(RANK_PREFIX)).map((p) => p.name);
+    expect(names).toEqual(["Descuento grande", "Descuento pequeño", "Sin descuento reciente", "Sin descuento antiguo"]);
+  });
+
+  it("searchActiveProducts filtrado por categoría respeta el mismo orden", async () => {
+    const rows = await searchActiveProducts({ categorySlug: `${RANK_PREFIX}-cat`, limit: 200 });
+    expect(rows).not.toBeNull();
+    expect(rows!.map((p) => p.name)).toEqual([
+      "Descuento grande",
+      "Descuento pequeño",
+      "Sin descuento reciente",
+      "Sin descuento antiguo",
+    ]);
+  });
+
+  it("un producto con varias ofertas usa la de MAYOR descuento entre todas para el ranking", async () => {
+    const product = await prisma!.product.create({
+      data: { slug: `${RANK_PREFIX}-multi-oferta`, name: "Multi oferta", categoryId, isDemo: false, updatedAt: new Date("2018-01-01T00:00:00Z") },
+    });
+    // Una oferta sin descuento y otra con un 80% real: el ranking debe
+    // usar el 80%, no quedarse con la primera fila que encuentre el JOIN.
+    await prisma!.offer.create({
+      data: { productId: product.id, merchantId, currentPrice: 95, previousPrice: null, productUrl: "https://example.invalid/5a", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+    });
+    await prisma!.offer.create({
+      data: { productId: product.id, merchantId, currentPrice: 20, previousPrice: 100, productUrl: "https://example.invalid/5b", availability: "IN_STOCK", lastCheckedAt: new Date(), isActive: true, isDemo: false },
+    });
+
+    const rows = await getActiveProductsWithOffers(200);
+    const names = rows!.filter((p) => p.slug.startsWith(RANK_PREFIX)).map((p) => p.name);
+    // 80% de descuento: por delante de "Descuento grande" (50%).
+    expect(names[0]).toBe("Multi oferta");
+  });
+});

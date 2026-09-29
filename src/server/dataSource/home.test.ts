@@ -22,12 +22,19 @@ function fakeProduct(overrides: {
   name: string;
   categoryId: number;
   offers?: { previousPrice: string | null; currentPrice: string }[];
+  /** Por defecto "ahora": solo hace falta fijarlo quien prueba el desempate por fecha (ver `compareByDealRank`). */
+  updatedAt?: Date;
 }): ProductWithOffers {
   const offers = (overrides.offers ?? [{ previousPrice: null, currentPrice: "10" }]).map((o) => ({
     previousPrice: o.previousPrice === null ? null : new Prisma.Decimal(o.previousPrice),
     currentPrice: new Prisma.Decimal(o.currentPrice),
   }));
-  return { name: overrides.name, categoryId: overrides.categoryId, offers } as unknown as ProductWithOffers;
+  return {
+    name: overrides.name,
+    categoryId: overrides.categoryId,
+    offers,
+    updatedAt: overrides.updatedAt ?? new Date(),
+  } as unknown as ProductWithOffers;
 }
 
 describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => {
@@ -182,6 +189,34 @@ describe("selectDiverseDeals", () => {
     ];
     const selected = selectDiverseDeals(products, 3);
     expect(selected.map((p) => p.name)).toEqual(["A1", "B1", "A2"]);
+  });
+
+  it("desempata productos SIN descuento (0%) por fecha de actualización más reciente", () => {
+    const products = [
+      fakeProduct({ name: "Viejo", categoryId: 1, updatedAt: new Date("2026-01-01T00:00:00Z") }),
+      fakeProduct({ name: "Reciente", categoryId: 2, updatedAt: new Date("2026-06-01T00:00:00Z") }),
+    ];
+    const selected = selectDiverseDeals(products, 2);
+    expect(selected.map((p) => p.name)).toEqual(["Reciente", "Viejo"]);
+  });
+
+  it("desempata productos con el MISMO % de descuento por fecha de actualización más reciente", () => {
+    const products = [
+      fakeProduct({
+        name: "Descuento viejo",
+        categoryId: 1,
+        offers: [{ previousPrice: "100", currentPrice: "50" }], // 50%
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+      fakeProduct({
+        name: "Descuento reciente",
+        categoryId: 2,
+        offers: [{ previousPrice: "100", currentPrice: "50" }], // mismo 50%
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      }),
+    ];
+    const selected = selectDiverseDeals(products, 2);
+    expect(selected.map((p) => p.name)).toEqual(["Descuento reciente", "Descuento viejo"]);
   });
 });
 
