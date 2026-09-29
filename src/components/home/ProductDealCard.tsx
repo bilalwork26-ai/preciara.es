@@ -50,7 +50,7 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
       <div className="mt-1 flex items-baseline gap-2">
         <span className="text-lg font-bold text-navy-900">{formatPrice(best.price)}</span>
         {best.previousPrice && (
-          <span className="text-xs text-navy-300 line-through">{formatPrice(best.previousPrice)}</span>
+          <del className="text-xs text-navy-300 line-through">{formatPrice(best.previousPrice)}</del>
         )}
       </div>
       <p className="text-xs text-navy-300">

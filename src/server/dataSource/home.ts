@@ -109,23 +109,33 @@ const DEALS_GRID_POOL_SIZE = 200;
 /**
  * Clave de agrupación para no repetir el mismo modelo en varias tarjetas:
  * quita del nombre cualquier token que tenga forma de talla y normaliza
- * espacios/mayúsculas. Tres formas de talla confirmadas en el catálogo
+ * espacios/mayúsculas. Cuatro formas de talla confirmadas en el catálogo
  * real de Awin:
  *   - rango numérico: "23-34" ("... 23-34 Black Mujer" / "... 24-30 Black Mujer")
  *   - número con fracción: "37 1/3", "42 2/3" ("ZAPATILLA HANDBALL SPEZIAL 37 1/3" / "... 42 2/3")
+ *   - talla suelta de zapatilla/ropa EU: "42" — combinada con el nombre
+ *     de color, nunca confunde el color con la talla: "38 2/3 Cloud
+ *     White" y "42 Cloud White" dan la misma clave ("... Pureboost 5
+ *     Running 38 2/3 Cloud White" / "... Pureboost 5 Running 42 Cloud
+ *     White" → la misma "Pureboost 5 Running cloud white")
  *   - talla por letra, con prefijo numérico opcional: "XS", "S", "M", "L",
  *     "XL", "XXL", "2XL", "3XL"... ("... XS Maroon" / "... 2XL Maroon")
  * Es una heurística sobre el texto real que sirve Awin (no hay un campo
  * de "modelo base" ni de talla por separado en el feed) — nunca se
- * guarda, solo decide qué mostrar en "Bajadas destacadas". Un token
- * corto como "M" o "L" podría, en teoría, formar parte legítima de otro
- * nombre — el riesgo se acepta a propósito: es mucho menos grave que
- * repetir la misma prenda en varias tarjetas.
+ * guarda, solo decide qué mostrar en "Bajadas destacadas". La talla
+ * suelta solo se quita en el rango 30-50 (tallas EU de adulto habituales
+ * en zapatilla/ropa) para no confundir un número de modelo corto como el
+ * "5" de "Pureboost 5", que nunca cae en ese rango; un token de una
+ * letra ("M"/"L") o un número de modelo real de dos cifras dentro de ese
+ * rango podría, en teoría, quitarse por error — el riesgo se acepta a
+ * propósito: es mucho menos grave que repetir la misma prenda en varias
+ * tarjetas.
  */
 export function dealsGridGroupKey(product: Pick<ProductWithOffers, "name">): string {
   return product.name
     .replace(/\b\d{1,3}-\d{1,3}\b/g, "")
     .replace(/\b\d{1,2}\s+\d\/\d\b/g, "")
+    .replace(/\b(?:3\d|4\d|50)\b/g, "")
     .replace(/\b\d{0,2}X{0,3}(?:S|M|L)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim()
