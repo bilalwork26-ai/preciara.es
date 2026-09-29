@@ -406,6 +406,30 @@ jobs:
           }
           NODE
 
+      # Comprobación puntual tras PR #49: caso real reportado, "Zapatilla
+      # Tensaur Hook and Loop" salía como 6 tarjetas duplicadas (una por
+      # talla de niño 22-27) en vez de colapsarse en una sola. Si ese
+      # producto concreto ya no está entre las "Bajadas destacadas" en
+      # este momento (el catálogo real cambia), no se puede verificar por
+      # este medio — aviso, no fallo. Umbral en 2 (no 1): Next.js incrusta
+      # el árbol serializado para la hidratación además del HTML visible,
+      # así que hasta un único título real aparece 2 veces en el HTML
+      # crudo — visto ya con "adidas ES" en el diagnóstico de la PR #47.
+      - name: "PR #49: 'Tensaur Hook and Loop' no sale duplicado por talla"
+        shell: bash
+        run: |
+          set -e
+          count=$(grep -o "Tensaur Hook and Loop" /tmp/home.html | wc -l || true)
+          echo "Ocurrencias de 'Tensaur Hook and Loop' en la portada: ${count}"
+          if [ "$count" -eq 0 ]; then
+            echo "::warning::'Tensaur Hook and Loop' no está entre las tarjetas de la portada ahora mismo — no se puede verificar este caso concreto."
+          elif [ "$count" -le 2 ]; then
+            echo "Aparece una única tarjeta (correcto, PR #49 ya en vivo)."
+          else
+            echo "::error::'Tensaur Hook and Loop' aparece ${count} veces en la portada (más de una tarjeta real) — el despliegue no ha recogido la PR #49."
+            exit 1
+          fi
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
