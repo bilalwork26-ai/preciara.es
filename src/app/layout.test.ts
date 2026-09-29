@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * `layout.tsx` importa `next/font/google`, que solo funciona dentro del
+ * `layout.tsx` importa `next/font/local`, que solo funciona dentro del
  * compilador de Next.js (no en un import directo bajo Vitest/Node
  * normal) — mismo motivo documentado en Hero.test.ts para no renderizar
  * componentes: aquí se verifica de forma estática el patrón condicional
@@ -29,5 +29,17 @@ describe("layout.tsx: verificación de Google Search Console, condicional y nunc
     expect(layoutSource).toContain("metadataBase: new URL(siteUrl)");
     expect(layoutSource).toContain('template: "%s · Preciara"');
     expect(layoutSource).toContain("openGraph:");
+  });
+});
+
+describe("layout.tsx: las fuentes se sirven en local, nunca desde next/font/google", () => {
+  it("nunca vuelve a importar next/font/google (ese import descarga de red durante `next build` y rompió el build en Hostinger)", () => {
+    expect(layoutSource).not.toMatch(/from\s+["']next\/font\/google["']/);
+  });
+
+  it("usa next/font/local para Fraunces y Plus Jakarta Sans, con los ficheros .woff2 vendidos en el repo", () => {
+    expect(layoutSource).toContain('import localFont from "next/font/local"');
+    expect(layoutSource).toContain("./fonts/fraunces/fraunces-latin-500-normal.woff2");
+    expect(layoutSource).toContain("./fonts/plus-jakarta-sans/plus-jakarta-sans-latin-400-normal.woff2");
   });
 });
