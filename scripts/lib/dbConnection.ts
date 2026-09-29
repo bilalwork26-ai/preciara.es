@@ -13,11 +13,43 @@ export type ConnectionCheckResult =
   | { ok: true; ms: number; tablesReady: false }
   | { ok: false; sanitizedMessage: string };
 
+const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000;
+
+/**
+ * Límite de tiempo para el primer `SELECT 1`, configurable con
+ * `DB_CONNECT_TIMEOUT_MS` sin tocar código. Sin este límite, un host/puerto
+ * que no responde (paquete descartado en vez de rechazado, p. ej. un
+ * firewall o un host mal escrito) puede colgar la comprobación de conexión
+ * mucho más tiempo del que un build tolera, sin ningún mensaje de error.
+ */
+export function connectionTimeoutMs(): number {
+  const raw = Number(process.env.DB_CONNECT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CONNECTION_TIMEOUT_MS;
+}
+
 export async function checkDatabaseConnection(): Promise<ConnectionCheckResult> {
   const prisma = new PrismaClient({ log: ["error"] });
   const start = Date.now();
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    const timeoutMs = connectionTimeoutMs();
+    const queryPromise = prisma.$queryRaw`SELECT 1`;
+    // Evita un "unhandled rejection" si gana el timeout y la consulta acaba fallando más tarde.
+    queryPromise.catch(() => {});
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        queryPromise,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Tiempo de espera agotado (${timeoutMs} ms) al conectar con MySQL.`)),
+            timeoutMs
+          );
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
     const ms = Date.now() - start;
 
     try {

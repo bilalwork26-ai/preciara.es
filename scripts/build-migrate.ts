@@ -81,12 +81,24 @@ export async function runBuildMigration(): Promise<number> {
   return 0;
 }
 
-runBuildMigration()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error) => {
-    errorLine("ERROR inesperado durante la preparación de la base de datos.");
-    errorLine(sanitizeErrorMessage(error instanceof Error ? error.message : String(error)));
-    process.exitCode = 1;
-  });
+// Envoltorio de proceso: SOLO se ejecuta cuando este fichero es el punto de
+// entrada real (invocado directamente dentro de `npm run build`) — nunca
+// cuando `build-migrate.test.ts` importa `runBuildMigration` para probarla
+// (mismo patrón que scripts/sync-awin.ts: una importación nunca coincide
+// con `process.argv[1]`). Usa `process.exit(...)` en vez de
+// `process.exitCode = ...`: si quedara algún handle abierto (p. ej. el
+// intento de conexión a MySQL que perdió la carrera contra el timeout de
+// `checkDatabaseConnection`), el proceso ya no espera a que el event loop
+// se vacíe solo — sale de inmediato con el código decidido.
+const isDirectlyExecuted = import.meta.url === `file://${process.argv[1]}`;
+if (isDirectlyExecuted) {
+  runBuildMigration()
+    .then((code) => {
+      process.exit(code);
+    })
+    .catch((error) => {
+      errorLine("ERROR inesperado durante la preparación de la base de datos.");
+      errorLine(sanitizeErrorMessage(error instanceof Error ? error.message : String(error)));
+      process.exit(1);
+    });
+}
