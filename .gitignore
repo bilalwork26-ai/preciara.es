@@ -44,3 +44,8 @@ next-env.d.ts
 # Prisma: cliente generado (binarios nativos incluidos). Se regenera con
 # `prisma generate` (ya encadenado en postinstall/build); nunca se commitea.
 /src/generated/prisma
+
+# Marcador de reinicio para Phusion Passenger (ver scripts/touch-passenger-restart.ts,
+# último paso de `npm run build`): solo importa su fecha de modificación,
+# nunca su contenido — no tiene sentido versionarlo.
+/tmp/
