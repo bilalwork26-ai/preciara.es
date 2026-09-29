@@ -244,6 +244,43 @@ describe("validateNormalizedOfferRow: longitud de \"name\" (FIELD_TOO_LONG)", ()
   });
 });
 
+/** URL http(s) sintácticamente válida de exactamente `len` caracteres (para probar los límites exactos de longitud). */
+function urlOfLength(len: number): string {
+  const prefix = "https://example.invalid/";
+  if (len < prefix.length) throw new Error(`urlOfLength: ${len} es menor que el prefijo mínimo (${prefix.length}).`);
+  return prefix + "x".repeat(len - prefix.length);
+}
+
+describe("validateNormalizedOfferRow: longitud de URLs (imageUrl / productUrl / affiliateUrl) — nunca se guarda ni se recorta un enlace roto", () => {
+  it("acepta imageUrl de exactamente 500 caracteres (valor límite)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ imageUrl: urlOfLength(500) }))).not.toThrow();
+  });
+
+  it("rechaza imageUrl de 501 caracteres (justo por encima del límite) con FIELD_TOO_LONG, la fila entera se descarta", () => {
+    expect(captureError(baseRow({ imageUrl: urlOfLength(501) })).code).toBe("FIELD_TOO_LONG");
+  });
+
+  it("acepta productUrl de exactamente 700 caracteres (valor límite)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ productUrl: urlOfLength(700) }))).not.toThrow();
+  });
+
+  it("rechaza productUrl de 701 caracteres (justo por encima del límite) con FIELD_TOO_LONG, la fila entera se descarta", () => {
+    expect(captureError(baseRow({ productUrl: urlOfLength(701) })).code).toBe("FIELD_TOO_LONG");
+  });
+
+  it("acepta affiliateUrl de exactamente 700 caracteres (valor límite)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ affiliateUrl: urlOfLength(700) }))).not.toThrow();
+  });
+
+  it("rechaza affiliateUrl de 701 caracteres (justo por encima del límite) con FIELD_TOO_LONG, la fila entera se descarta", () => {
+    expect(captureError(baseRow({ affiliateUrl: urlOfLength(701) })).code).toBe("FIELD_TOO_LONG");
+  });
+
+  it("una imageUrl/affiliateUrl demasiado larga pero ausente (null) nunca se comprueba ni rechaza la fila", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ imageUrl: null, affiliateUrl: null }))).not.toThrow();
+  });
+});
+
 describe("validateNormalizedOfferRow: fecha inválida (INVALID_DATE)", () => {
   it("acepta una fecha válida", () => {
     expect(() => validateNormalizedOfferRow(baseRow({ fetchedAt: new Date() }))).not.toThrow();

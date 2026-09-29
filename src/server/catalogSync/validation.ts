@@ -59,7 +59,12 @@ export function validateNormalizedOfferRow(row: NormalizedOfferRow): void {
     throw new NormalizedOfferRowError("FIELD_TOO_LONG", `"name" es demasiado largo (máx. 200).`);
   }
 
-  if (row.imageUrl) requireHttpUrl(row.imageUrl, "imageUrl");
+  if (row.imageUrl) {
+    requireHttpUrl(row.imageUrl, "imageUrl");
+    if (row.imageUrl.length > 500) {
+      throw new NormalizedOfferRowError("FIELD_TOO_LONG", `"imageUrl" es demasiado largo (máx. 500).`);
+    }
+  }
 
   if (!Number.isFinite(row.price) || row.price < 0) {
     throw new NormalizedOfferRowError("INVALID_PRICE", `"price" debe ser un número no negativo: ${row.price}.`);
@@ -72,7 +77,15 @@ export function validateNormalizedOfferRow(row: NormalizedOfferRow): void {
   }
 
   requireHttpUrl(row.productUrl, "productUrl");
-  if (row.affiliateUrl) requireHttpUrl(row.affiliateUrl, "affiliateUrl");
+  if (row.productUrl.length > 700) {
+    throw new NormalizedOfferRowError("FIELD_TOO_LONG", `"productUrl" es demasiado largo (máx. 700).`);
+  }
+  if (row.affiliateUrl) {
+    requireHttpUrl(row.affiliateUrl, "affiliateUrl");
+    if (row.affiliateUrl.length > 700) {
+      throw new NormalizedOfferRowError("FIELD_TOO_LONG", `"affiliateUrl" es demasiado largo (máx. 700).`);
+    }
+  }
 
   if (Number.isNaN(row.fetchedAt.getTime())) {
     throw new NormalizedOfferRowError("INVALID_DATE", `"fetchedAt" no es una fecha válida.`);
