@@ -57,7 +57,7 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
   const productJsonLd = buildProductJsonLd({ ...product, name: displayName }, merchants, `/producto/${product.slug}`);
 
   return (
-    <Container className="py-10">
+    <Container className="py-5 sm:py-10">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(productJsonLd) }} />
 
@@ -67,31 +67,39 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+      {/*
+        En móvil, la foto y el título van en la misma fila desde el
+        principio (nunca apilados) y ambos se reducen de tamaño: así la
+        oferta y las tiendas quedan visibles mucho más arriba, sin
+        obligar a bajar tanto para llegar a lo importante.
+      */}
+      <div className="grid grid-cols-[auto_1fr] items-start gap-3 sm:gap-6">
         <ProductGlyph
           icon={product.icon}
           imageUrl={product.imageUrl}
           alt={displayName}
-          className="h-32 w-32 rounded-2xl"
-          iconClassName="h-14 w-14 text-navy-700"
+          className="h-16 w-16 rounded-xl sm:h-32 sm:w-32 sm:rounded-2xl"
+          iconClassName="h-7 w-7 text-navy-700 sm:h-14 sm:w-14"
         />
         <div>
-          <h1 className="font-serif text-2xl font-bold text-navy-900 sm:text-3xl">{displayName}</h1>
-          <div className="mt-2 flex items-center gap-3">
-            <span className="text-2xl font-bold text-navy-900">{formatPrice(best.price)}</span>
+          <h1 className="line-clamp-2 font-serif text-lg font-bold text-navy-900 sm:line-clamp-none sm:text-3xl">
+            {displayName}
+          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:mt-2 sm:gap-3">
+            <span className="text-lg font-bold text-navy-900 sm:text-2xl">{formatPrice(best.price)}</span>
             {best.previousPrice && (
-              <span className="text-sm text-navy-300 line-through">{formatPrice(best.previousPrice)}</span>
+              <span className="text-xs text-navy-300 line-through sm:text-sm">{formatPrice(best.previousPrice)}</span>
             )}
             <DiscountBadge percent={percent} />
           </div>
-          <p className="mt-1 text-sm text-navy-500">
+          <p className="mt-1 text-xs text-navy-500 sm:text-sm">
             Mejor precio en {merchants.find((m) => m.id === best.merchantId)?.name ?? "una tienda asociada"} ·
             Actualizado {best.lastCheckedLabel}
           </p>
         </div>
       </div>
 
-      <section className="mt-8">
+      <section className="mt-5 sm:mt-8">
         <h2 className="font-serif text-lg font-semibold text-navy-900">
           Precios en {offers.length} {offers.length === 1 ? "tienda" : "tiendas"}
         </h2>
@@ -127,9 +135,9 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
       </section>
 
       {product.priceHistory.length >= 2 && (
-        <section className="mt-8">
+        <section className="mt-5 sm:mt-8">
           <h2 className="font-serif text-lg font-semibold text-navy-900">Historial de precio</h2>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white p-4">
+          <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white p-3 sm:p-4">
             <PriceHistoryChart points={product.priceHistory} />
           </div>
         </section>

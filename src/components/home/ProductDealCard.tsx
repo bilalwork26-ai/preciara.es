@@ -30,13 +30,13 @@ export function ProductDealCard({
 
   return (
     <div
-      className={`flex h-full flex-col rounded-2xl border bg-white p-4 ${
+      className={`flex h-full flex-col rounded-2xl border bg-white p-2.5 sm:p-4 ${
         isHighlighted ? "border-coral-500 shadow-md ring-2 ring-coral-500/30" : "border-border shadow-sm"
       }`}
     >
       {isHighlighted && (
-        <p className="mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-coral-600">
-          <Flame className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={2} />
+        <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-coral-600 sm:mb-2 sm:text-[11px]">
+          <Flame className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" strokeWidth={2} />
           Mayor bajada
         </p>
       )}
@@ -46,11 +46,11 @@ export function ProductDealCard({
             icon={product.icon}
             imageUrl={product.imageUrl}
             alt={displayName}
-            className="h-32 w-full rounded-xl"
-            iconClassName="h-12 w-12 text-navy-700"
+            className="h-20 w-full rounded-lg sm:h-32 sm:rounded-xl"
+            iconClassName="h-8 w-8 text-navy-700 sm:h-12 sm:w-12"
           />
         </Link>
-        <div className="absolute left-2 top-2">
+        <div className="absolute left-1.5 top-1.5 sm:left-2 sm:top-2">
           <DiscountBadge percent={percent} />
         </div>
         <button
@@ -58,26 +58,30 @@ export function ProductDealCard({
           onClick={() => setSaved((v) => !v)}
           aria-pressed={saved}
           aria-label={saved ? `Quitar ${displayName} de guardados` : `Guardar ${displayName}`}
-          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600"
+          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600 sm:right-2 sm:top-2 sm:h-8 sm:w-8"
         >
-          <Heart className={`h-4 w-4 ${saved ? "fill-coral-500 text-coral-500" : ""}`} aria-hidden="true" strokeWidth={1.75} />
+          <Heart className={`h-3 w-3 sm:h-4 sm:w-4 ${saved ? "fill-coral-500 text-coral-500" : ""}`} aria-hidden="true" strokeWidth={1.75} />
         </button>
       </div>
 
       <Link
         href={`/producto/${product.slug}`}
-        className="mt-3 block line-clamp-2 text-sm font-medium text-navy-900 hover:text-teal-700"
+        className="mt-1.5 block line-clamp-1 text-xs font-medium text-navy-900 hover:text-teal-700 sm:mt-3 sm:line-clamp-2 sm:text-sm"
       >
         {displayName}
       </Link>
 
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="text-lg font-bold text-navy-900">{formatPrice(best.price)}</span>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+        <span className="text-sm font-bold text-navy-900 sm:text-lg">{formatPrice(best.price)}</span>
         {best.previousPrice && (
-          <del className="text-sm font-medium text-navy-400 line-through decoration-2">{formatPrice(best.previousPrice)}</del>
+          <del className="text-xs font-medium text-navy-400 line-through decoration-2 sm:text-sm">{formatPrice(best.previousPrice)}</del>
         )}
       </div>
-      <p className="text-xs text-navy-300">
+      {/* Información secundaria (tienda, resto de ofertas, frescura del
+          dato) oculta en móvil a propósito: en una tarjeta de 2 columnas
+          por fila no cabe sin obligar a una tarjeta mucho más alta que
+          las demás — sigue visible desde `sm:` en adelante. */}
+      <p className="hidden text-xs text-navy-300 sm:block">
         Mejor precio en {merchants.find((m) => m.id === best.merchantId)?.name}
       </p>
 
@@ -86,7 +90,7 @@ export function ProductDealCard({
         // una oferta real: con una sola, repetiría la misma tienda y el
         // mismo precio que ya se muestra arriba (p. ej. "adidas ES 120,00
         // € / adidas ES 120,00 €"), que parece un error de duplicado.
-        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+        <ul className="mt-2 hidden flex-col gap-1 border-t border-border pt-2 sm:flex">
           {offers.map((offer) => {
             const merchant = merchants.find((m) => m.id === offer.merchantId);
             return (
@@ -99,11 +103,11 @@ export function ProductDealCard({
         </ul>
       )}
 
-      <p className="mt-2 text-[11px] text-navy-300">Actualizado {best.lastCheckedLabel}</p>
+      <p className="mt-2 hidden text-[11px] text-navy-300 sm:block">Actualizado {best.lastCheckedLabel}</p>
 
       <a
         href={`/buscar?q=${encodeURIComponent(product.name)}`}
-        className="mt-3 inline-flex items-center justify-center rounded-full border border-border py-2 text-xs font-semibold text-navy-700 transition-colors hover:border-teal-600 hover:text-teal-700"
+        className="mt-2 inline-flex items-center justify-center rounded-full border border-border py-1.5 text-[11px] font-semibold text-navy-700 transition-colors hover:border-teal-600 hover:text-teal-700 sm:mt-3 sm:py-2 sm:text-xs"
       >
         Comparar tiendas
       </a>

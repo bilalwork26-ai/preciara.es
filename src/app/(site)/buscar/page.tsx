@@ -53,11 +53,11 @@ export default async function BuscarPage({
           </p>
         </div>
       ) : (
-        // `flex-wrap`: ver el comentario equivalente en categoria/[slug]/page.tsx
-        // — evita el hueco de tarjetas vacías al final de la última fila con
-        // pocos resultados, y da más tarjetas por fila por sí solo en
-        // monitores anchos.
-        <ul className="mt-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+        // Móvil: rejilla de 2 columnas con la tarjeta en vertical; ver el
+        // comentario equivalente (con más detalle) en
+        // categoria/[slug]/page.tsx — misma razón para `flex-wrap` en vez
+        // de `grid` de columnas fijas a partir de `sm:`.
+        <ul className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4">
           {results.map((product) => {
             const bestOffer = [...product.offers].sort((a, b) => a.price - b.price)[0];
             const merchant = data.merchants.find((m) => m.id === bestOffer?.merchantId);
@@ -66,22 +66,22 @@ export default async function BuscarPage({
               <li key={product.id} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
                 <Link
                   href={`/producto/${product.slug}`}
-                  className="flex h-full items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
+                  className="flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm transition-colors hover:border-teal-600 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
                 >
                   <ProductGlyph
                     icon={product.icon}
                     imageUrl={product.imageUrl}
                     alt={displayName}
-                    className="h-14 w-14 shrink-0"
+                    className="h-16 w-16 shrink-0 sm:h-14 sm:w-14"
                   />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-navy-900">{displayName}</p>
+                  <div className="min-w-0 w-full">
+                    <p className="line-clamp-2 text-xs font-medium text-navy-900 sm:truncate sm:text-sm">{displayName}</p>
                     {bestOffer && (
                       <>
-                        <p className="mt-0.5 text-base font-semibold text-navy-900">
+                        <p className="mt-0.5 text-sm font-semibold text-navy-900 sm:text-base">
                           {formatPrice(bestOffer.price)}
                         </p>
-                        <p className="text-xs text-navy-300">Mejor precio en {merchant?.name}</p>
+                        <p className="hidden text-xs text-navy-300 sm:block">Mejor precio en {merchant?.name}</p>
                       </>
                     )}
                   </div>

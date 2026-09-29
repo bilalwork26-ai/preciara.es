@@ -51,15 +51,19 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
       </p>
 
       {/*
-        `flex-wrap` (no `grid` de columnas fijas): con un número de
-        columnas fijo, una última fila incompleta deja columnas vacías
-        visibles (no colapsan solas: siguen teniendo contenido en otras
-        filas). Con flexbox, cada tarjeta crece para repartirse el hueco
-        sobrante de su fila (`min-w`/`max-w` acotan cuánto), así que nunca
-        queda un hueco grande a la derecha, y en monitores anchos caben
-        más tarjetas por fila de forma natural.
+        Móvil: rejilla fija de 2 columnas (nunca 1 tarjeta a todo el ancho
+        por fila) con la tarjeta en vertical (foto arriba, texto debajo) —
+        una fila horizontal de icono+texto no cabe con holgura en la mitad
+        del ancho de un móvil. Desde `sm:` en adelante, `flex-wrap` (no
+        `grid` de columnas fijas): con un número de columnas fijo, una
+        última fila incompleta deja columnas vacías visibles (no colapsan
+        solas: siguen teniendo contenido en otras filas). Con flexbox,
+        cada tarjeta crece para repartirse el hueco sobrante de su fila
+        (`min-w`/`max-w` acotan cuánto), así que nunca queda un hueco
+        grande a la derecha, y en monitores anchos caben más tarjetas por
+        fila de forma natural.
       */}
-      <ul className="mt-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+      <ul className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4">
         {products.map((product) => {
           const best = [...product.offers].sort((a, b) => a.price - b.price)[0];
           const merchant = merchants.find((m) => m.id === best?.merchantId);
@@ -68,20 +72,20 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
             <li key={product.slug} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
               <a
                 href={`/producto/${product.slug}`}
-                className="flex h-full items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
+                className="flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm transition-colors hover:border-teal-600 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
               >
                 <ProductGlyph
                   icon={product.icon}
                   imageUrl={product.imageUrl}
                   alt={displayName}
-                  className="h-14 w-14 shrink-0"
+                  className="h-16 w-16 shrink-0 sm:h-14 sm:w-14"
                 />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-navy-900">{displayName}</p>
+                <div className="min-w-0 w-full">
+                  <p className="line-clamp-2 text-xs font-medium text-navy-900 sm:truncate sm:text-sm">{displayName}</p>
                   {best && (
                     <>
-                      <p className="mt-0.5 text-base font-semibold text-navy-900">{formatPrice(best.price)}</p>
-                      <p className="text-xs text-navy-300">Mejor precio en {merchant?.name}</p>
+                      <p className="mt-0.5 text-sm font-semibold text-navy-900 sm:text-base">{formatPrice(best.price)}</p>
+                      <p className="hidden text-xs text-navy-300 sm:block">Mejor precio en {merchant?.name}</p>
                     </>
                   )}
                 </div>
