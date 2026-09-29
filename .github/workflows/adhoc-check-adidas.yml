@@ -371,6 +371,41 @@ jobs:
           }
           NODE
 
+      # Comprobación puntual tras PR #48: las pastillas de descuento de
+      # "Bajadas destacadas" deben aparecer en orden NO creciente (mayor %
+      # primero) — comprobación de comportamiento real, no solo de una
+      # clase CSS: si el ranking en SQL no está desplegado, la portada
+      # seguiría en el orden antiguo (id/nombre) y esta secuencia saldría
+      # desordenada.
+      - name: "PR #48: tarjetas de la portada en orden de % de descuento descendente"
+        shell: bash
+        run: |
+          set -e
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home.html", "utf8");
+          const badgeRe = /<span class="[^"]*bg-coral-500[^"]*">([\s\S]*?)<\/span>/g;
+          let m;
+          const percents = [];
+          while ((m = badgeRe.exec(html))) {
+            const text = m[1].replace(/<[^>]*>/g, "").replace(/<!--.*?-->/g, "");
+            const pm = text.match(/(\d+)\s*%/);
+            if (pm) percents.push(Number(pm[1]));
+          }
+          console.log(`Pastillas de descuento encontradas en la portada, en orden: [${percents.join(", ")}]`);
+          if (percents.length === 0) {
+            console.log("::warning::No hay ningún producto con descuento en la portada ahora mismo — no se puede verificar el orden.");
+          } else {
+            const sorted = percents.every((p, i) => i === 0 || p <= percents[i - 1]);
+            if (sorted) {
+              console.log("Las tarjetas con descuento SÍ están en orden descendente (correcto, PR #48 ya en vivo).");
+            } else {
+              console.log("::error::Las tarjetas con descuento NO están en orden descendente — el despliegue no ha recogido la PR #48.");
+              process.exit(1);
+            }
+          }
+          NODE
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
