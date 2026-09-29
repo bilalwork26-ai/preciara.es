@@ -143,3 +143,27 @@ describe("toLegacyProduct: propagación de imageUrl", () => {
     expect(product.icon).toBe("Shirt");
   });
 });
+
+describe("toLegacyProduct: propagación de brand", () => {
+  function baseProduct(overrides: Partial<Parameters<typeof toLegacyProduct>[0]> = {}) {
+    return {
+      slug: "prod-x",
+      name: "Producto X",
+      imageUrl: null,
+      brand: null,
+      category: { id: 1, slug: "moda", name: "Moda" },
+      offers: [],
+      ...overrides,
+    } as Parameters<typeof toLegacyProduct>[0];
+  }
+
+  it("propaga brand tal cual cuando la fila de BD lo trae", () => {
+    const product = toLegacyProduct(baseProduct({ brand: "adidas" }));
+    expect(product.brand).toBe("adidas");
+  });
+
+  it("brand queda null cuando el producto no tiene marca conocida", () => {
+    const product = toLegacyProduct(baseProduct({ brand: null }));
+    expect(product.brand).toBeNull();
+  });
+});

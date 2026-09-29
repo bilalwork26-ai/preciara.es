@@ -165,3 +165,51 @@ describe.skipIf(!process.env.DATABASE_URL)("searchHomeProducts: un producto marc
     expect(data.products.some((p) => p.name === uniqueDemoName)).toBe(false);
   });
 });
+
+const VARIANTS_PREFIX = "test-search-variants";
+
+describe.skipIf(!process.env.DATABASE_URL)("searchHomeProducts: varias tallas del mismo modelo nunca salen como resultados repetidos", () => {
+  const modelToken = `${VARIANTS_PREFIX}-modelo-XYZ77`;
+  let categoryId: number;
+  let merchantId: number;
+
+  beforeAll(async () => {
+    const category = await prisma!.category.create({ data: { slug: `${VARIANTS_PREFIX}-cat`, name: "Categoría variantes" } });
+    categoryId = category.id;
+    const merchant = await prisma!.merchant.create({
+      data: { slug: `${VARIANTS_PREFIX}-comercio`, name: "Comercio variantes", websiteUrl: "https://example.invalid" },
+    });
+    merchantId = merchant.id;
+
+    for (const size of ["XS", "S", "M"]) {
+      const product = await prisma!.product.create({
+        data: { slug: `${VARIANTS_PREFIX}-${size.toLowerCase()}`, name: `Pantalón Tastigo ${modelToken} ${size}`, categoryId },
+      });
+      await prisma!.offer.create({
+        data: {
+          productId: product.id,
+          merchantId,
+          currentPrice: 29.99,
+          productUrl: `https://example.invalid/${size}`,
+          availability: "IN_STOCK",
+          lastCheckedAt: new Date(),
+          isActive: true,
+        },
+      });
+    }
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { slug: { startsWith: VARIANTS_PREFIX } } });
+    await prisma.merchant.deleteMany({ where: { slug: { startsWith: VARIANTS_PREFIX } } });
+    await prisma.category.deleteMany({ where: { slug: { startsWith: VARIANTS_PREFIX } } });
+  });
+
+  it("una búsqueda que coincide con las tres tallas devuelve una única tarjeta, no tres", async () => {
+    const { data, source } = await searchHomeProducts({ query: modelToken, categorySlug: "" });
+    if (source === "database") {
+      expect(data.products).toHaveLength(1);
+    }
+  });
+});

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
-import { formatPrice, calcDiscountPercent } from "@/lib/format";
+import { formatPrice, calcDiscountPercent, formatProductDisplayName } from "@/lib/format";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
@@ -13,17 +13,21 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
   const percent = best.previousPrice ? calcDiscountPercent(best.price, best.previousPrice) : 0;
+  // Solo para mostrar: la búsqueda de "Comparar tiendas" más abajo sigue
+  // usando product.name tal cual (sin formatear), para no romper la
+  // coincidencia por texto contra el nombre real guardado en la BD.
+  const displayName = formatProductDisplayName(product.name, product.brand);
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-border bg-white p-3 shadow-sm">
+    <div className="flex h-full flex-col rounded-2xl border border-border bg-white p-4 shadow-sm">
       <div className="relative">
-        <Link href={`/producto/${product.slug}`} aria-label={`Ver detalle de ${product.name}`}>
+        <Link href={`/producto/${product.slug}`} aria-label={`Ver detalle de ${displayName}`}>
           <ProductGlyph
             icon={product.icon}
             imageUrl={product.imageUrl}
-            alt={product.name}
-            className="h-28 w-full rounded-xl"
-            iconClassName="h-11 w-11 text-navy-700"
+            alt={displayName}
+            className="h-32 w-full rounded-xl"
+            iconClassName="h-12 w-12 text-navy-700"
           />
         </Link>
         <div className="absolute left-2 top-2">
@@ -33,7 +37,7 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
           type="button"
           onClick={() => setSaved((v) => !v)}
           aria-pressed={saved}
-          aria-label={saved ? `Quitar ${product.name} de guardados` : `Guardar ${product.name}`}
+          aria-label={saved ? `Quitar ${displayName} de guardados` : `Guardar ${displayName}`}
           className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600"
         >
           <Heart className={`h-4 w-4 ${saved ? "fill-coral-500 text-coral-500" : ""}`} aria-hidden="true" strokeWidth={1.75} />
@@ -44,13 +48,13 @@ export function ProductDealCard({ product, merchants }: { product: Product; merc
         href={`/producto/${product.slug}`}
         className="mt-3 block line-clamp-2 text-sm font-medium text-navy-900 hover:text-teal-700"
       >
-        {product.name}
+        {displayName}
       </Link>
 
-      <div className="mt-1 flex items-baseline gap-2">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="text-lg font-bold text-navy-900">{formatPrice(best.price)}</span>
         {best.previousPrice && (
-          <del className="text-xs text-navy-300 line-through">{formatPrice(best.previousPrice)}</del>
+          <del className="text-sm font-medium text-navy-400 line-through decoration-2">{formatPrice(best.previousPrice)}</del>
         )}
       </div>
       <p className="text-xs text-navy-300">

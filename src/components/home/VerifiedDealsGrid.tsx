@@ -41,13 +41,29 @@ export function VerifiedDealsGrid({
         </Link>
       </div>
 
+      {/*
+        `flex-wrap` (no `grid`) a partir de `sm:`: con CSS Grid, una
+        última fila incompleta (p. ej. 7 tarjetas en columnas de 3) deja
+        columnas vacías — SIGUEN reservando su ancho aunque no tengan
+        ninguna tarjeta, porque esas columnas sí tienen contenido en
+        otras filas — así que no colapsan (`auto-fit`/`auto-fill` no
+        arregla este caso concreto, solo el de "menos tarjetas que
+        columnas posibles en TOTAL"). Con flexbox, cada tarjeta crece
+        (`flex-grow`) para repartirse el hueco sobrante de su fila, así
+        que nunca queda un hueco grande a la derecha, sea cual sea el
+        número de tarjetas — y en monitores anchos caben más tarjetas por
+        fila de forma natural, sin fijar cada breakpoint a mano.
+      */}
       <div
-        className="no-scrollbar mt-5 flex snap-x gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:gap-4 sm:overflow-visible xl:grid-cols-3"
+        className="no-scrollbar mt-5 flex snap-x gap-4 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-visible"
         aria-label="Productos con bajada de precio hoy"
         tabIndex={0}
       >
         {products.map((product) => (
-          <div key={product.id} className="w-[220px] shrink-0 snap-start sm:w-auto">
+          <div
+            key={product.id}
+            className="w-[220px] shrink-0 snap-start sm:w-auto sm:min-w-[220px] sm:max-w-[380px] sm:flex-1"
+          >
             <ProductDealCard product={product} merchants={merchants} />
           </div>
         ))}

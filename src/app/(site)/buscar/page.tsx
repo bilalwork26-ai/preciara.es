@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SearchX } from "lucide-react";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatProductDisplayName } from "@/lib/format";
 import { Container } from "@/components/ui/Container";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { SearchForm } from "@/components/home/SearchForm";
@@ -53,24 +53,29 @@ export default async function BuscarPage({
           </p>
         </div>
       ) : (
-        <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // `flex-wrap`: ver el comentario equivalente en categoria/[slug]/page.tsx
+        // — evita el hueco de tarjetas vacías al final de la última fila con
+        // pocos resultados, y da más tarjetas por fila por sí solo en
+        // monitores anchos.
+        <ul className="mt-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
           {results.map((product) => {
             const bestOffer = [...product.offers].sort((a, b) => a.price - b.price)[0];
             const merchant = data.merchants.find((m) => m.id === bestOffer?.merchantId);
+            const displayName = formatProductDisplayName(product.name, product.brand);
             return (
-              <li key={product.id}>
+              <li key={product.id} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
                 <Link
                   href={`/producto/${product.slug}`}
-                  className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
+                  className="flex h-full items-center gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm transition-colors hover:border-teal-600"
                 >
                   <ProductGlyph
                     icon={product.icon}
                     imageUrl={product.imageUrl}
-                    alt={product.name}
+                    alt={displayName}
                     className="h-14 w-14 shrink-0"
                   />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-navy-900">{product.name}</p>
+                    <p className="truncate text-sm font-medium text-navy-900">{displayName}</p>
                     {bestOffer && (
                       <>
                         <p className="mt-0.5 text-base font-semibold text-navy-900">

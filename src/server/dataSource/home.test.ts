@@ -8,6 +8,7 @@ import { getActiveCategories } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers } from "@/server/repositories/products";
 import {
   bestDiscountPercent,
+  collapseProductVariants,
   dealsGridGroupKey,
   getHomeCategories,
   getDealsGridBundle,
@@ -105,6 +106,33 @@ describe("bestDiscountPercent", () => {
       ],
     });
     expect(bestDiscountPercent(product)).toBeCloseTo(50);
+  });
+});
+
+describe("collapseProductVariants", () => {
+  it("nunca deja dos variantes (talla) del mismo modelo: se queda con la de mayor descuento", () => {
+    const products = [
+      fakeProduct({ name: "Pantalón Tastigo 3 Training XS", categoryId: 1, offers: [{ previousPrice: "50", currentPrice: "45" }] }), // 10%
+      fakeProduct({ name: "Pantalón Tastigo 3 Training S", categoryId: 1, offers: [{ previousPrice: "50", currentPrice: "30" }] }), // 40%
+      fakeProduct({ name: "Pantalón Tastigo 3 Training M", categoryId: 1, offers: [{ previousPrice: "50", currentPrice: "48" }] }), // 4%
+    ];
+    const collapsed = collapseProductVariants(products);
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0].name).toBe("Pantalón Tastigo 3 Training S"); // 40%, el mayor de las tres
+  });
+
+  it("no reparte por categoría ni recorta: devuelve TODOS los modelos distintos, sin límite (a diferencia de selectDiverseDeals)", () => {
+    const products = [
+      fakeProduct({ name: "A1", categoryId: 1 }),
+      fakeProduct({ name: "A2", categoryId: 1 }),
+      fakeProduct({ name: "B1", categoryId: 2 }),
+      fakeProduct({ name: "C1", categoryId: 3 }),
+    ];
+    expect(collapseProductVariants(products)).toHaveLength(4);
+  });
+
+  it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
+    expect(collapseProductVariants([])).toEqual([]);
   });
 });
 
