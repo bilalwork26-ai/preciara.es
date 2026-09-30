@@ -1,0 +1,66 @@
+name: "[Temporal] Captura del sitio en produccion"
+
+# Comprobacion puntual, disparada a mano (workflow_dispatch) -- nunca
+# automatica, nunca genera alertas por correo. Captura la Home y una
+# ficha de producto reales de preciara.es y las sube como artefacto de
+# corta duracion. Pensado para borrarse en cuanto deje de hacer falta.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalar Playwright (Chromium)
+        run: |
+          npm init -y >/dev/null
+          npm install playwright@latest >/dev/null
+          npx playwright install --with-deps chromium
+
+      - name: Capturar Home y una ficha de producto reales
+        run: |
+          node -e "
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage({ viewport: { width: 1280, height: 2200 } });
+
+            await page.goto('https://preciara.es/', { waitUntil: 'networkidle', timeout: 30000 });
+            await page.screenshot({ path: 'home.png', fullPage: true });
+            console.log('Home capturada.');
+
+            const productHref = await page.evaluate(() => {
+              const a = document.querySelector('a[href^=\"/producto/\"]');
+              return a ? a.getAttribute('href') : null;
+            });
+            console.log('Enlace de producto encontrado:', productHref);
+
+            if (productHref) {
+              await page.goto('https://preciara.es' + productHref, { waitUntil: 'networkidle', timeout: 30000 });
+              await page.screenshot({ path: 'producto.png', fullPage: true });
+              console.log('Ficha de producto capturada.');
+            }
+
+            await browser.close();
+          })().catch((err) => { console.error(err); process.exit(1); });
+          "
+
+      - name: Subir capturas como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-produccion
+          path: |
+            home.png
+            producto.png
+          retention-days: 1
+          if-no-files-found: warn
