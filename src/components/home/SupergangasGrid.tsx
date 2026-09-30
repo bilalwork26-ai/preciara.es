@@ -38,16 +38,20 @@ export function SupergangasGrid({
           <p className="mt-1 text-sm text-navy-500">
             {source === "demo"
               ? "Ejemplo de chollos con descuentos superiores al 30%, con productos de demostración."
-              : "Los descuentos más agresivos de nuestro catálogo real ahora mismo: al menos un 30%, verificados hoy."}
+              : products.length > 0
+                ? "Los descuentos más agresivos de nuestro catálogo real ahora mismo: al menos un 30%, verificados hoy."
+                : "Ahora mismo no hay ningún producto de nuestro catálogo real con un descuento de al menos un 30%. Vuelve pronto."}
           </p>
         </div>
-        <Link
-          href={OFERTAS_HREF}
-          className="hidden shrink-0 items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 sm:inline-flex"
-        >
-          Ver todas las Supergangas
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
+        {products.length > 0 && (
+          <Link
+            href={OFERTAS_HREF}
+            className="hidden shrink-0 items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 sm:inline-flex"
+          >
+            Ver todas las Supergangas
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        )}
       </div>
 
       {/*
@@ -56,14 +60,21 @@ export function SupergangasGrid({
         `flex-wrap` a partir de `sm:` para que la última fila incompleta
         (aquí, casi siempre — el bloque tiene como mucho 6 tarjetas) nunca
         deje huecos vacíos reservando ancho de columna.
+
+        Con catálogo real pero 0 chollos que superen el umbral (nunca con
+        demo: demoSupergangas siempre tiene productos), no se pinta una
+        rejilla vacía: el mensaje de arriba ya lo cuenta, así que aquí no
+        hace falta nada más.
       */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
-        {products.map((product, index) => (
-          <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
-            <ProductDealCard product={product} merchants={merchants} highlight={index === 0} />
-          </div>
-        ))}
-      </div>
+      {products.length > 0 && (
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
+          {products.map((product, index) => (
+            <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
+              <ProductDealCard product={product} merchants={merchants} highlight={index === 0} />
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

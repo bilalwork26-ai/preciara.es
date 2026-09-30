@@ -20,11 +20,28 @@ export async function resolveWithFallback<T>(params: {
   fetchFromDb: () => Promise<T | null>;
   demoFallback: T;
   isSufficient?: (data: T) => boolean;
+  /**
+   * Por defecto, un resultado real "insuficiente" (según `isSufficient`,
+   * normalmente un array vacío) también usa el dato de demostración —
+   * criterio por defecto en toda la portada. Con esto a `true`, el
+   * fallback demo se reserva EXCLUSIVAMENTE para cuando `fetchFromDb`
+   * devuelve `null` (sin `DATABASE_URL` o error de conexión): un
+   * resultado real pero vacío se muestra tal cual, nunca sustituido por
+   * datos inventados. Pensado para secciones donde un dato de
+   * demostración podría confundirse con una oferta real vigente (p. ej.
+   * "Supergangas": una tarjeta de "Tienda Demo A" con precio tachado
+   * parece un chollo real, y en producción con BD conectada eso induce a
+   * error de verdad, no es un simple "aún sin catálogo").
+   */
+  fallbackOnlyWhenUnavailable?: boolean;
 }): Promise<SourcedResult<T>> {
-  const { fetchFromDb, demoFallback, isSufficient = defaultIsSufficient } = params;
+  const { fetchFromDb, demoFallback, isSufficient = defaultIsSufficient, fallbackOnlyWhenUnavailable = false } = params;
 
   const dbData = await fetchFromDb();
-  if (dbData !== null && isSufficient(dbData)) {
+  if (dbData === null) {
+    return { data: demoFallback, source: "demo" };
+  }
+  if (fallbackOnlyWhenUnavailable || isSufficient(dbData)) {
     return { data: dbData, source: "database" };
   }
   return { data: demoFallback, source: "demo" };

@@ -62,3 +62,42 @@ describe("resolveWithFallback", () => {
     expect(fetchFromDb).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("resolveWithFallback: fallbackOnlyWhenUnavailable", () => {
+  it("con BD disponible pero datos 'insuficientes' (array vacío), devuelve el dato real vacío, nunca el demo", async () => {
+    const result = await resolveWithFallback({
+      fetchFromDb: async () => [],
+      demoFallback: ["demo-1"],
+      fallbackOnlyWhenUnavailable: true,
+    });
+    expect(result).toEqual({ data: [], source: "database" });
+  });
+
+  it("con BD disponible y un isSufficient personalizado que rechazaría el dato, igualmente devuelve el dato real (fallbackOnlyWhenUnavailable ignora isSufficient)", async () => {
+    const result = await resolveWithFallback({
+      fetchFromDb: async () => ({ count: 0 }),
+      demoFallback: { count: -1 },
+      isSufficient: (d) => d.count > 0,
+      fallbackOnlyWhenUnavailable: true,
+    });
+    expect(result).toEqual({ data: { count: 0 }, source: "database" });
+  });
+
+  it("sigue usando demo cuando fetchFromDb devuelve null (sin DATABASE_URL o error de conexión)", async () => {
+    const result = await resolveWithFallback({
+      fetchFromDb: async () => null,
+      demoFallback: ["demo-1"],
+      fallbackOnlyWhenUnavailable: true,
+    });
+    expect(result).toEqual({ data: ["demo-1"], source: "demo" });
+  });
+
+  it("con datos reales suficientes, se comporta igual que sin la opción", async () => {
+    const result = await resolveWithFallback({
+      fetchFromDb: async () => ["real-1"],
+      demoFallback: ["demo-1"],
+      fallbackOnlyWhenUnavailable: true,
+    });
+    expect(result).toEqual({ data: ["real-1"], source: "database" });
+  });
+});
