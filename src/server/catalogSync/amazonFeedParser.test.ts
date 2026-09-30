@@ -52,6 +52,7 @@ describe("parseAmazonItems: artículo válido", () => {
       category: { slug: expect.any(String), name: expect.any(String) },
       imageUrl: "https://m.media-amazon.com/images/I/example.jpg",
       price: 59.99,
+      referencePrice: null,
       shippingCost: null,
       currency: "EUR",
       availability: Availability.IN_STOCK,

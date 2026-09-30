@@ -30,6 +30,15 @@
  *   - Los campos propios de la oferta (precio, disponibilidad...) siempre
  *     reflejan la fila más reciente: no hay "oscilación" que evitar ahí,
  *     es justo el propósito de sincronizar.
+ *   - `previousPrice` (el descuento real que se muestra) sigue siendo,
+ *     sobre todo, el histórico que Preciara observa por sí misma entre
+ *     dos sincronizaciones (una bajada de precio real, detectada aquí).
+ *     Mientras esa oferta no tenga ningún histórico propio todavía (nunca
+ *     vista, o vista pero sin ninguna bajada observada aún), se usa como
+ *     señal inicial el `referencePrice` que la propia fuente declare
+ *     (ver `resolveInitialPreviousPrice`) — para que un comercio recién
+ *     conectado no tarde semanas en mostrar su primer descuento real.
+ *     Nunca sobrescribe un histórico ya observado.
  */
 import type { PrismaClient, Product, Category } from "@/generated/prisma";
 import { isUniqueConstraintViolationOn } from "@/server/db/prismaErrors";
@@ -53,6 +62,29 @@ export type ApplyOfferOutcome = {
   offer: "created" | "updated";
   gtinRelink?: GtinRelinkDecision;
 };
+
+/**
+ * Señal inicial de `previousPrice` para una oferta que todavía no tiene
+ * ningún histórico propio observado (ni al crearla, ni al re-sincronizar
+ * una ya conocida cuyo `previousPrice` sigue en `null`): el
+ * `referencePrice` que la propia fuente declara (p. ej. `rrp_price` de
+ * Awin — ver `types.ts`), pero SOLO si es estrictamente mayor que el
+ * precio actual (nunca un "descuento" de 0% o negativo). `null` si la
+ * fuente no lo aporta o no es mayor — en ese caso el comportamiento es
+ * exactamente el de antes: sin descuento hasta que Preciara observe una
+ * bajada real entre dos sincronizaciones propias.
+ *
+ * Nunca se usa para sobrescribir un `previousPrice` que YA existe (una
+ * vez que Preciara ha observado su propia bajada de precio, esa sigue
+ * siendo la fuente de verdad) — ver las dos llamadas en
+ * `applyNormalizedOfferRow`.
+ */
+function resolveInitialPreviousPrice(row: NormalizedOfferRow): number | null {
+  if (row.referencePrice !== null && row.referencePrice > row.price) {
+    return row.referencePrice;
+  }
+  return null;
+}
 
 /** `true` si el P2002 recibido es (o probablemente es) por la restricción única de `Product.canonicalGtin`. */
 function isCanonicalGtinConflict(error: unknown): boolean {
@@ -420,14 +452,23 @@ export async function applyNormalizedOfferRow(
       where: { id: existingOffer.id },
       data: {
         ...offerData,
-        previousPrice: priceChangedForHistory ? existingOffer.currentPrice : existingOffer.previousPrice,
+        previousPrice: priceChangedForHistory
+          ? existingOffer.currentPrice
+          : (existingOffer.previousPrice ?? resolveInitialPreviousPrice(row)),
       },
     });
     offerOutcome = "updated";
   } else {
     offerId = (
       await db.offer.create({
-        data: { productId, merchantId, source: row.source, externalId: row.externalId, previousPrice: null, ...offerData },
+        data: {
+          productId,
+          merchantId,
+          source: row.source,
+          externalId: row.externalId,
+          previousPrice: resolveInitialPreviousPrice(row),
+          ...offerData,
+        },
       })
     ).id;
     offerOutcome = "created";

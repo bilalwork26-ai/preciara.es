@@ -787,6 +787,7 @@ function rowFor(externalId: string, advertiserId: string): NormalizedOfferRow {
     category: { slug: `${PREFIX}-cat`, name: "Cat" },
     imageUrl: null,
     price: 1,
+    referencePrice: null,
     shippingCost: null,
     currency: "EUR",
     availability: "IN_STOCK" as never,

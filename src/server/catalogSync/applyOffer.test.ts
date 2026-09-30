@@ -23,6 +23,7 @@ function baseRow(overrides: Partial<NormalizedOfferRow> = {}): NormalizedOfferRo
     category: { slug: `${PREFIX}-cat`, name: "Categoría de prueba" },
     imageUrl: null,
     price: 19.99,
+    referencePrice: null,
     shippingCost: null,
     currency: "EUR",
     availability: "IN_STOCK" as never,
@@ -157,6 +158,71 @@ describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow (integració
     const merchant = await prisma!.merchant.findFirst({ where: { slug: `${PREFIX}-merchant` } });
     const offer = merchant ? await prisma!.offer.findFirst({ where: { merchantId: merchant.id, externalId: row.externalId } }) : null;
     expect(offer).toBeNull();
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("applyNormalizedOfferRow: referencePrice como señal inicial de previousPrice (comercio recién conectado)", () => {
+  beforeAll(cleanup);
+  afterAll(cleanup);
+
+  it("al crear una oferta NUNCA vista, con referencePrice > price, previousPrice se rellena desde referencePrice (descuento real desde el primer día)", async () => {
+    const externalId = `${PREFIX}-ref-nueva-con-descuento`;
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: 100 }), { dryRun: false });
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice?.toNumber()).toBe(100);
+  });
+
+  it("al crear una oferta nueva sin referencePrice (null), previousPrice se queda en null — mismo comportamiento que antes de este cambio", async () => {
+    const externalId = `${PREFIX}-ref-nueva-sin-referencia`;
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: null }), { dryRun: false });
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice).toBeNull();
+  });
+
+  it("al crear una oferta con referencePrice <= price (nunca un 'descuento' de 0% o negativo), previousPrice se queda en null", async () => {
+    const externalId = `${PREFIX}-ref-nueva-no-mayor`;
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: 70 }), { dryRun: false });
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice).toBeNull();
+  });
+
+  it("re-sincronizar una oferta YA conocida sin histórico propio (previousPrice null) rellena previousPrice desde referencePrice, aunque el precio no haya cambiado entre las dos sincronizaciones", async () => {
+    const externalId = `${PREFIX}-ref-backfill`;
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: null }), { dryRun: false });
+    // Segunda sincronización: mismo precio (nunca lo detecta como "bajada propia"), pero ahora el feed SÍ trae referencePrice.
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: 100 }), { dryRun: false });
+
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice?.toNumber()).toBe(100);
+  });
+
+  it("re-sincronizar una oferta que YA tiene un previousPrice propio observado NUNCA lo sobrescribe con referencePrice, aunque difiera", async () => {
+    const externalId = `${PREFIX}-ref-nunca-sobrescribe`;
+    // Primera sync a 100, segunda a 70: Preciara observa una bajada real propia (previousPrice = 100).
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 100, referencePrice: null }), { dryRun: false });
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: null }), { dryRun: false });
+
+    // Tercera sync: mismo precio (70, no es una bajada nueva), pero el feed ahora trae un referencePrice distinto (150).
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 70, referencePrice: 150 }), { dryRun: false });
+
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice?.toNumber()).toBe(100); // el histórico propio real, nunca el referencePrice de la fuente
+  });
+
+  it("una bajada de precio propia observada en la MISMA sincronización en la que también llega referencePrice usa el histórico propio, no referencePrice", async () => {
+    const externalId = `${PREFIX}-ref-prioridad-propio`;
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 100, referencePrice: null }), { dryRun: false });
+    // El precio baja de verdad (100 -> 80) en la misma fila que trae referencePrice (200, muy distinto).
+    await applyNormalizedOfferRow(prisma!, baseRow({ externalId, price: 80, referencePrice: 200 }), { dryRun: false });
+
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: `${PREFIX}-merchant` } });
+    const offer = await prisma!.offer.findFirstOrThrow({ where: { merchantId: merchant.id, externalId, source: OfferSource.EBAY } });
+    expect(offer.previousPrice?.toNumber()).toBe(100); // el precio real anterior observado por Preciara, no los 200 del feed
   });
 });
 

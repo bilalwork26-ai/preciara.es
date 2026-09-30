@@ -48,6 +48,18 @@
  * más abajo, que centralizan todos los nombres de columna usados en un
  * único sitio, fácil de corregir sin tocar el resto del parser.
  *
+ * `COLUMN_ALIASES.referencePrice` (`rrp_price`) es SIN CONFIRMAR contra
+ * un feed real de Awin (mismo motivo de acceso bloqueado de arriba):
+ * `rrp_price` es el nombre de columna de "precio recomendado antes de
+ * rebaja" más citado en fuentes de terceros sobre el feed estándar de
+ * Awin, pero no se ha podido verificar directamente contra una fila real
+ * de Trotec/adidas ES. Si el nombre real difiera, el efecto es
+ * simplemente que esta columna nunca se encuentra (`pickField` devuelve
+ * cadena vacía) y `referencePrice` se queda en `null` en todas las filas
+ * — el comportamiento de hoy, sin descuento inicial para un comercio
+ * recién conectado (ver `types.ts`) — nunca un dato incorrecto: confirma
+ * este nombre en cuanto puedas ver una fila real del feed.
+ *
  * Diseño:
  *   - `parseAwinProductFeed` es un generador asíncrono: consume un
  *     `AsyncIterable<string>` (o un `string` suelto, útil en pruebas) y
@@ -141,6 +153,8 @@ const COLUMN_ALIASES = {
   imageUrl: ["merchant_image_url", "aw_image_url", "large_image", "image_url"],
   categoryText: ["merchant_category", "category_name"],
   price: ["search_price"],
+  /** Sin confirmar contra un feed real — ver nota de cabecera sobre `referencePrice`. */
+  referencePrice: ["rrp_price"],
   currency: ["currency"],
   shippingCost: ["delivery_cost"],
   /** URL directa/sin seguimiento, si el feed la trae por separado del enlace de afiliado. */
@@ -252,6 +266,7 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
 
   const price = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.price), "search_price", { required: true })!;
   const shippingCost = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.shippingCost), "delivery_cost", { required: false });
+  const referencePrice = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.referencePrice), "rrp_price", { required: false });
 
   const merchantDeepLink = pickField(headerIndex, record, COLUMN_ALIASES.merchantDeepLink);
   const affiliateDeepLink = pickField(headerIndex, record, COLUMN_ALIASES.affiliateDeepLink);
@@ -275,6 +290,7 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
     category,
     imageUrl: pickField(headerIndex, record, COLUMN_ALIASES.imageUrl) || null,
     price,
+    referencePrice,
     shippingCost,
     currency: pickField(headerIndex, record, COLUMN_ALIASES.currency).toUpperCase(),
     availability: resolveAvailability(pickField(headerIndex, record, COLUMN_ALIASES.inStock)),

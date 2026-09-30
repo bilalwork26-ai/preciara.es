@@ -72,6 +72,9 @@ export function validateNormalizedOfferRow(row: NormalizedOfferRow): void {
   if (row.shippingCost !== null && (!Number.isFinite(row.shippingCost) || row.shippingCost < 0)) {
     throw new NormalizedOfferRowError("INVALID_SHIPPING_COST", `"shippingCost" debe ser un número no negativo: ${row.shippingCost}.`);
   }
+  if (row.referencePrice !== null && (!Number.isFinite(row.referencePrice) || row.referencePrice < 0)) {
+    throw new NormalizedOfferRowError("INVALID_REFERENCE_PRICE", `"referencePrice" debe ser un número no negativo: ${row.referencePrice}.`);
+  }
   if (!CURRENCY_RE.test(row.currency)) {
     throw new NormalizedOfferRowError("INVALID_CURRENCY", `"currency" debe ser un código de 3 letras: "${row.currency}".`);
   }

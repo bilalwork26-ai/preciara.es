@@ -19,6 +19,7 @@ function row(overrides: Partial<NormalizedOfferRow> = {}): NormalizedOfferRow {
     category: { slug: `${PREFIX}-cat`, name: "Categoría sync" },
     imageUrl: null,
     price: 15,
+    referencePrice: null,
     shippingCost: null,
     currency: "EUR",
     availability: "IN_STOCK" as never,

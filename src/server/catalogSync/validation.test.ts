@@ -15,6 +15,7 @@ function baseRow(overrides: Partial<NormalizedOfferRow> = {}): NormalizedOfferRo
     category: { slug: "categoria-prueba", name: "Categoría de prueba" },
     imageUrl: null,
     price: 19.99,
+    referencePrice: null,
     shippingCost: null,
     currency: "EUR",
     availability: Availability.IN_STOCK,
@@ -53,7 +54,7 @@ describe("validateNormalizedOfferRow: fila válida", () => {
     expect(() => validateNormalizedOfferRow(baseRow())).not.toThrow();
   });
 
-  it("los campos opcionales pueden ser null sin que la fila se rechace (logoUrl, brand, model, imageUrl, affiliateUrl, shippingCost, gtin)", () => {
+  it("los campos opcionales pueden ser null sin que la fila se rechace (logoUrl, brand, model, imageUrl, affiliateUrl, shippingCost, referencePrice, gtin)", () => {
     const row = baseRow({
       merchant: { slug: "comercio-prueba", name: "Comercio de prueba", websiteUrl: "https://example.invalid", logoUrl: null },
       brand: null,
@@ -61,6 +62,7 @@ describe("validateNormalizedOfferRow: fila válida", () => {
       imageUrl: null,
       affiliateUrl: null,
       shippingCost: null,
+      referencePrice: null,
       gtin: null,
     });
     expect(() => validateNormalizedOfferRow(row)).not.toThrow();
@@ -148,6 +150,28 @@ describe("validateNormalizedOfferRow: shippingCost inválido, negativo o no fini
     ["Infinity", Infinity],
   ] as const)("rechaza shippingCost %s con INVALID_SHIPPING_COST", (_label, shippingCost) => {
     expect(captureError(baseRow({ shippingCost })).code).toBe("INVALID_SHIPPING_COST");
+  });
+});
+
+describe("validateNormalizedOfferRow: referencePrice inválido, negativo o no finito (INVALID_REFERENCE_PRICE)", () => {
+  it("acepta referencePrice null (ausente: la fuente no lo aporta)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ referencePrice: null }))).not.toThrow();
+  });
+
+  it("acepta referencePrice = 0 (valor límite, no negativo)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ referencePrice: 0 }))).not.toThrow();
+  });
+
+  it("acepta referencePrice por encima del precio actual (el caso real: precio de referencia antes de la rebaja)", () => {
+    expect(() => validateNormalizedOfferRow(baseRow({ price: 19.99, referencePrice: 29.99 }))).not.toThrow();
+  });
+
+  it.each([
+    ["negativo", -0.01],
+    ["NaN", NaN],
+    ["Infinity", Infinity],
+  ] as const)("rechaza referencePrice %s con INVALID_REFERENCE_PRICE", (_label, referencePrice) => {
+    expect(captureError(baseRow({ referencePrice })).code).toBe("INVALID_REFERENCE_PRICE");
   });
 });
 
