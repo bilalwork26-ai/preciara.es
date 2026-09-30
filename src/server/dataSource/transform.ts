@@ -96,6 +96,11 @@ export function toLegacyOffer(offer: OfferWithMerchant): Offer {
     // nunca afirmamos "verificado" sobre algo que no hemos comprobado nosotros.
     verified: false,
     lastCheckedLabel: relativeLabel(offer.lastCheckedAt),
+    // Igual que previousPrice arriba: el objeto Decimal es un objeto (truthy)
+    // incluso cuando representa 0 — así que este operador SÍ distingue "0€
+    // de envío gratis confirmado" (Decimal truthy) de "no especificado"
+    // (null, falsy), nunca los confunde.
+    shippingCost: offer.shippingCost ? offer.shippingCost.toNumber() : null,
   };
 }
 
@@ -169,6 +174,7 @@ export function extractMerchants(products: ProductWithOffers[]): Merchant[] {
           slug: offer.merchant.slug,
           name: offer.merchant.name,
           accentColor: "var(--color-navy-500)",
+          logoUrl: offer.merchant.logoUrl,
         });
       }
     }

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bestOfferDiscount, bestOfferDiscountPercent, calcDiscountPercent, formatPrice, formatProductDisplayName } from "./format";
+import {
+  bestOfferDiscount,
+  bestOfferDiscountPercent,
+  calcDiscountPercent,
+  formatPrice,
+  formatProductDisplayName,
+  formatShippingCost,
+  offerTotalPrice,
+} from "./format";
 
 describe("formatPrice", () => {
   it("formatea en euros con el estilo es-ES", () => {
@@ -108,5 +116,36 @@ describe("bestOfferDiscount", () => {
 
   it("devuelve null con una lista vacía de ofertas", () => {
     expect(bestOfferDiscount([])).toBeNull();
+  });
+});
+
+describe("offerTotalPrice", () => {
+  it("suma el precio y el envío cuando el envío se conoce", () => {
+    expect(offerTotalPrice({ price: 45, shippingCost: 4.99 })).toBeCloseTo(49.99);
+  });
+
+  it("un envío de 0€ (gratis confirmado) no cambia el total", () => {
+    expect(offerTotalPrice({ price: 45, shippingCost: 0 })).toBe(45);
+  });
+
+  it("asume 0 de envío cuando no se especifica (null o ausente), sin descartar la oferta", () => {
+    expect(offerTotalPrice({ price: 45, shippingCost: null })).toBe(45);
+    expect(offerTotalPrice({ price: 45 })).toBe(45);
+  });
+});
+
+describe("formatShippingCost", () => {
+  it("formatea un importe real de envío con el signo +", () => {
+    expect(formatShippingCost(4.99)).toContain("4,99");
+    expect(formatShippingCost(4.99)).toMatch(/^\+/);
+  });
+
+  it("muestra 'Gratis' para un envío de 0€ confirmado (nunca lo confunde con 'no especificado')", () => {
+    expect(formatShippingCost(0)).toBe("Gratis");
+  });
+
+  it("muestra 'No especificado' cuando el envío es null o undefined (nunca lo confunde con gratis)", () => {
+    expect(formatShippingCost(null)).toBe("No especificado");
+    expect(formatShippingCost(undefined)).toBe("No especificado");
   });
 });

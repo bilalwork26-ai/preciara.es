@@ -21,6 +21,8 @@ export interface Merchant {
   name: string;
   /** Color de acento de marca para distinguir tiendas en tablas comparativas. */
   accentColor: string;
+  /** Logo real del comercio, cuando la fuente lo aporta. Hoy ninguna fuente conectada lo trae (Awin nunca lo expone en su feed de productos — ver awinOrchestrator.ts); `null`/ausente cae a un avatar con la inicial del nombre sobre `accentColor` (ver MerchantLogo.tsx). */
+  logoUrl?: string | null;
 }
 
 export interface PricePoint {
@@ -44,6 +46,8 @@ export interface Offer {
   verified: boolean;
   /** Etiqueta legible de cuándo se comprobó por última vez (dato de demo). */
   lastCheckedLabel: string;
+  /** Gastos de envío en EUR. `null`/ausente = el comercio o la fuente no lo especifica — nunca se asume envío gratis por defecto (ver formatShippingCost en lib/format.ts). 0 = envío gratis confirmado. */
+  shippingCost?: number | null;
 }
 
 export interface Product {
