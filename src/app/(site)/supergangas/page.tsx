@@ -42,21 +42,27 @@ export default async function SupergangasPage() {
       <p className="mt-1 text-sm text-navy-500">
         {source === "demo"
           ? "Datos de demostración: aún no está conectado el catálogo real."
-          : `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} con un descuento real de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%.`}
+          : data.products.length > 0
+            ? `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} con un descuento real de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%.`
+            : `Ahora mismo no hay ningún producto de nuestro catálogo real con un descuento de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%. Vuelve pronto.`}
       </p>
 
       {/*
         Mismo criterio de layout que SupergangasGrid (portada): rejilla
         fija de 2 columnas en móvil, `flex-wrap` a partir de `sm:` para
-        que la última fila incompleta nunca deje huecos vacíos.
+        que la última fila incompleta nunca deje huecos vacíos. Con
+        catálogo real pero 0 chollos (nunca con demo), no se pinta una
+        rejilla vacía: el mensaje de arriba ya lo cuenta.
       */}
-      <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
-        {data.products.map((product, index) => (
-          <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
-            <ProductDealCard product={product} merchants={data.merchants} highlight={index === 0} />
-          </div>
-        ))}
-      </div>
+      {data.products.length > 0 && (
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
+          {data.products.map((product, index) => (
+            <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
+              <ProductDealCard product={product} merchants={data.merchants} highlight={index === 0} />
+            </div>
+          ))}
+        </div>
+      )}
     </Container>
   );
 }

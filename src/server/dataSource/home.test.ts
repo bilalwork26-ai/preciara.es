@@ -325,7 +325,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     expect(index).toBe(rows!.length - 1);
   });
 
-  it("si en este entorno la base solo tiene catálogo demo, Supergangas cae al fallback demo", async () => {
+  it("con BD conectada pero sin ningún chollo real que llegue al 30%, Supergangas se muestra vacía de verdad, nunca sustituida por demo", async () => {
     // Igual que en dataSource/search.test.ts: solo afirma algo cuando de
     // verdad no hay catálogo real en este entorno, para no dar un falso
     // negativo en un entorno con datos reales ya importados.
@@ -333,8 +333,11 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     const hasRealCatalog = (realCatalogProbe?.length ?? 0) > 0;
     if (!hasRealCatalog) {
       const bundle = await getSupergangasBundle();
-      expect(bundle.source).toBe("demo");
-      expect(bundle.data.products.length).toBeGreaterThan(0);
+      // fallbackOnlyWhenUnavailable: con BD disponible (aunque sin chollos
+      // que lleguen al umbral), el resultado sigue siendo "database", con
+      // una lista vacía — nunca "demo" con productos inventados.
+      expect(bundle.source).toBe("database");
+      expect(bundle.data.products).toEqual([]);
     }
   });
 });

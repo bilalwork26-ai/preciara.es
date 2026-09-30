@@ -195,7 +195,13 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
         .slice(0, SUPERGANGAS_LIMIT),
       merchants: demoMerchants,
     },
-    isSufficient: (bundle) => bundle.products.length > 0,
+    // "Supergangas" nunca sustituye un catálogo real (aunque esté vacío)
+    // por productos inventados: con BD conectada, 0 chollos reales ≥30%
+    // se muestra como 0, nunca como "Tienda Demo A/B" — eso podría
+    // confundirse con una oferta real vigente. El demo solo sigue
+    // sirviendo para cuando no hay BD conectada en absoluto (desarrollo
+    // local sin DATABASE_URL) — ver fallbackOnlyWhenUnavailable.
+    fallbackOnlyWhenUnavailable: true,
   });
 }
 
@@ -238,6 +244,8 @@ export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> 
         .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
       merchants: demoMerchants,
     },
-    isSufficient: (bundle) => bundle.products.length > 0,
+    // Mismo criterio que getSupergangasBundle: con BD conectada, 0 chollos
+    // reales ≥30% se muestra como 0, nunca sustituido por demo.
+    fallbackOnlyWhenUnavailable: true,
   });
 }
