@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Menu, X, Heart, Bell, User } from "lucide-react";
+import { Menu, X, Bell, User } from "lucide-react";
 import { Logo } from "@/components/icons/Logo";
 import { Container } from "@/components/ui/Container";
 import { CategoriesMenu } from "./CategoriesMenu";
 import { UtilityButton } from "./UtilityButton";
+import { SavedMenu, MobileSavedDisclosure } from "./SavedMenu";
 import { SearchForm } from "@/components/home/SearchForm";
 import { demoCategories } from "@/data/demo/categories";
 
@@ -28,11 +29,7 @@ export function Header() {
           <SearchForm id="search-header-desktop" className="hidden min-w-0 flex-1 md:flex" />
 
           <div className="ml-auto hidden shrink-0 items-center gap-1 lg:flex">
-            <UtilityButton
-              icon={Heart}
-              label="Guardados"
-              message="Aquí podrás guardar tus productos y ofertas favoritas en cuanto activemos las cuentas de usuario. Todavía no hay datos guardados."
-            />
+            <SavedMenu />
             <UtilityButton
               icon={Bell}
               label="Alertas"
@@ -88,11 +85,7 @@ export function Header() {
             </ul>
 
             <div className="mt-4 flex flex-col gap-1 border-t border-white/10 pt-4">
-              <MobileUtilityDisclosure
-                icon={Heart}
-                label="Guardados"
-                message="Aquí podrás guardar tus productos y ofertas favoritas en cuanto activemos las cuentas de usuario. Todavía no hay datos guardados."
-              />
+              <MobileSavedDisclosure />
               <MobileUtilityDisclosure
                 icon={Bell}
                 label="Alertas"

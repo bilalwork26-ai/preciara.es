@@ -22,18 +22,25 @@ import { extractMerchants, toLegacyProduct } from "./transform";
  */
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
 
-/** Umbral estricto de "Supergangas": por debajo de este % de descuento real, un producto nunca es una supergangas. */
-export const SUPERGANGAS_MIN_DISCOUNT_PERCENT = 30;
+/**
+ * Umbral estricto de "Supergangas": por debajo de este % de descuento
+ * real, un producto nunca es una supergangas. Bajado de 30% a 15% (ver
+ * PR correspondiente) tras comprobar en producción que con el catálogo
+ * real todavía pequeño (solo adidas ES + Trotec), un umbral del 30% dejaba
+ * la sección casi vacía (1 producto) — 15% sigue siendo un descuento real
+ * y verificado, nunca un precio inventado, solo menos exigente.
+ */
+export const SUPERGANGAS_MIN_DISCOUNT_PERCENT = 15;
 
-/** Máximo de tarjetas que muestra "Supergangas" (el bloque pide "entre 5 y 6" — nunca más de 6, puede haber menos si el catálogo no da para tantas). */
-const SUPERGANGAS_LIMIT = 6;
+/** Máximo de tarjetas que muestra "Supergangas" en la portada (el bloque pide "entre 6 y 8" — nunca más, puede haber menos si el catálogo no da para tantas: nunca se rellena con productos por debajo del umbral solo para completar el cupo). */
+const SUPERGANGAS_LIMIT = 8;
 
 /**
  * Cuántas filas se piden a la BD antes de deduplicar/filtrar por umbral
  * (bastante más que `SUPERGANGAS_LIMIT`): con un catálogo donde varias
  * filas son variantes de talla/color del mismo modelo (ver
  * `dealsGridGroupKey` más abajo) y donde solo una fracción del catálogo
- * llega al 30% de descuento, pedir solo `SUPERGANGAS_LIMIT` filas dejaría
+ * llega al umbral de descuento, pedir solo `SUPERGANGAS_LIMIT` filas dejaría
  * casi siempre la sección vacía aunque el catálogo real sí tenga chollos
  * genuinos más adelante en el orden de `id`.
  */
@@ -150,7 +157,8 @@ function compareByDealRank(a: ProductWithOffers, b: ProductWithOffers): number {
  * esta función NUNCA reparte por categoría ni rellena el hueco con
  * productos de menor descuento solo para completar el cupo:
  * "Supergangas" es, por definición, una lista corta y pura de los
- * MEJORES chollos reales del catálogo (descuento_confirmado ≥ 30%), así
+ * MEJORES chollos reales del catálogo (descuento_confirmado ≥
+ * SUPERGANGAS_MIN_DISCOUNT_PERCENT), así
  * que puede devolver menos de `limit` productos — incluso ninguno, si en
  * ese momento el catálogo no tiene ningún chollo tan agresivo — sin que
  * eso sea un error. Inflar la lista con productos que no cumplen el
@@ -196,8 +204,8 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
       merchants: demoMerchants,
     },
     // "Supergangas" nunca sustituye un catálogo real (aunque esté vacío)
-    // por productos inventados: con BD conectada, 0 chollos reales ≥30%
-    // se muestra como 0, nunca como "Tienda Demo A/B" — eso podría
+    // por productos inventados: con BD conectada, 0 chollos reales que
+    // lleguen al umbral se muestra como 0, nunca como "Tienda Demo A/B" — eso podría
     // confundirse con una oferta real vigente. El demo solo sigue
     // sirviendo para cuando no hay BD conectada en absoluto (desarrollo
     // local sin DATABASE_URL) — ver fallbackOnlyWhenUnavailable.
@@ -209,7 +217,7 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
  * Máximo de productos en `/supergangas` (la página completa, enlazada
  * desde el CTA del Hero y desde la píldora "Supergangas" de la
  * navegación principal) — a diferencia del bloque de la portada
- * (`SUPERGANGAS_LIMIT`, 6, solo un adelanto), aquí se listan TODOS los
+ * (`SUPERGANGAS_LIMIT`, 8, solo un adelanto), aquí se listan TODOS los
  * chollos reales del catálogo dentro de `SUPERGANGAS_POOL_SIZE`, no un
  * adelanto acotado a propósito.
  */
@@ -219,10 +227,10 @@ export type OfertasBundle = { products: Product[]; merchants: Merchant[] };
 
 /**
  * Listado completo de "Supergangas" para `/supergangas` — mismo criterio
- * estricto que `getSupergangasBundle` (descuento real ≥30%, una sola
- * tarjeta por modelo, mejor descuento primero), pero sin el recorte a 6
- * de la portada: esta página es el catálogo completo de chollos, no un
- * adelanto.
+ * estricto que `getSupergangasBundle` (descuento real ≥ SUPERGANGAS_MIN_DISCOUNT_PERCENT,
+ * una sola tarjeta por modelo, mejor descuento primero), pero sin el
+ * recorte de la portada: esta página es el catálogo completo de chollos,
+ * no un adelanto.
  */
 export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> {
   return resolveWithFallback({
@@ -245,7 +253,7 @@ export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> 
       merchants: demoMerchants,
     },
     // Mismo criterio que getSupergangasBundle: con BD conectada, 0 chollos
-    // reales ≥30% se muestra como 0, nunca sustituido por demo.
+    // reales que lleguen al umbral se muestra como 0, nunca sustituido por demo.
     fallbackOnlyWhenUnavailable: true,
   });
 }

@@ -7,7 +7,7 @@ import { SupergangasGrid } from "@/components/home/SupergangasGrid";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
-import { getSupergangasBundle } from "@/server/dataSource/home";
+import { getSupergangasBundle, SUPERGANGAS_MIN_DISCOUNT_PERCENT } from "@/server/dataSource/home";
 import { SITE_URL } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 
@@ -82,7 +82,12 @@ export default async function Home() {
           sin contenido real.
         */}
         <div className="mt-8">
-          <SupergangasGrid products={supergangas.data.products} merchants={supergangas.data.merchants} source={supergangas.source} />
+          <SupergangasGrid
+            products={supergangas.data.products}
+            merchants={supergangas.data.merchants}
+            source={supergangas.source}
+            minDiscountPercent={SUPERGANGAS_MIN_DISCOUNT_PERCENT}
+          />
         </div>
       </Container>
 

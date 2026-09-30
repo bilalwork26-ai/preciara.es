@@ -175,9 +175,14 @@ describe("collapseProductVariants", () => {
 
 describe("selectSuperDeals", () => {
   it("descarta cualquier producto por debajo del umbral de descuento", () => {
+    // "Descuento flojo" se calcula SIEMPRE un punto por debajo del umbral
+    // vigente (nunca un % fijo independiente de SUPERGANGAS_MIN_DISCOUNT_PERCENT),
+    // para que este test siga probando de verdad el límite aunque el
+    // umbral vuelva a cambiar en el futuro.
+    const belowThresholdPrice = 100 - (SUPERGANGAS_MIN_DISCOUNT_PERCENT - 1);
     const products = [
-      fakeProduct({ name: "Chollo real", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "65" }] }), // 35%
-      fakeProduct({ name: "Descuento flojo", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "85" }] }), // 15%
+      fakeProduct({ name: "Chollo real", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "65" }] }), // 35%, siempre por encima de cualquier umbral razonable
+      fakeProduct({ name: "Descuento flojo", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: String(belowThresholdPrice) }] }),
       fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
     ];
     const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6);
@@ -185,7 +190,11 @@ describe("selectSuperDeals", () => {
   });
 
   it("incluye un producto exactamente en el umbral (>=, no solo >)", () => {
-    const products = [fakeProduct({ name: "Justo 30%", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "70" }] })];
+    // Descuento calculado para caer EXACTO en SUPERGANGAS_MIN_DISCOUNT_PERCENT, no un % fijo.
+    const exactThresholdPrice = 100 - SUPERGANGAS_MIN_DISCOUNT_PERCENT;
+    const products = [
+      fakeProduct({ name: "Justo en el umbral", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: String(exactThresholdPrice) }] }),
+    ];
     expect(selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toHaveLength(1);
   });
 
@@ -325,7 +334,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     expect(index).toBe(rows!.length - 1);
   });
 
-  it("con BD conectada pero sin ningún chollo real que llegue al 30%, Supergangas se muestra vacía de verdad, nunca sustituida por demo", async () => {
+  it("con BD conectada pero sin ningún chollo real que llegue al umbral, Supergangas se muestra vacía de verdad, nunca sustituida por demo", async () => {
     // Igual que en dataSource/search.test.ts: solo afirma algo cuando de
     // verdad no hay catálogo real en este entorno, para no dar un falso
     // negativo en un entorno con datos reales ya importados.
@@ -362,10 +371,11 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
       data: {
         productId,
         merchantId: merchant.id,
-        // 50% de descuento real: por debajo de SUPERGANGAS_MIN_DISCOUNT_PERCENT
-        // (30%) este producto no aparecería nunca en Supergangas, y varios
-        // tests de este bloque necesitan que sí aparezca para comprobar
-        // otros filtros (activo/inactivo/demo) de forma aislada.
+        // 50% de descuento real: muy por encima de SUPERGANGAS_MIN_DISCOUNT_PERCENT
+        // sea cual sea su valor actual, así que este producto siempre
+        // aparece en Supergangas, y varios tests de este bloque necesitan
+        // que sí aparezca para comprobar otros filtros (activo/inactivo/demo)
+        // de forma aislada.
         currentPrice: 49.99,
         previousPrice: 99.99,
         productUrl: "https://example.invalid/p",
@@ -475,7 +485,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
     }
   });
 
-  it("un producto con descuento por debajo del umbral (30%) nunca aparece en Supergangas", async () => {
+  it("un producto con descuento por debajo del umbral nunca aparece en Supergangas", async () => {
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
     const weakDiscountProduct = await prisma!.product.create({
       data: { slug: `${PREFIX}-descuento-flojo`, name: "Producto con descuento flojo", categoryId },
@@ -484,8 +494,8 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
       data: {
         productId: weakDiscountProduct.id,
         merchantId: merchant.id,
-        currentPrice: 85,
-        previousPrice: 100, // 15%, por debajo de SUPERGANGAS_MIN_DISCOUNT_PERCENT (30%)
+        currentPrice: 92,
+        previousPrice: 100, // 8%, claramente por debajo de SUPERGANGAS_MIN_DISCOUNT_PERCENT sea cual sea su valor actual
         productUrl: "https://example.invalid/descuento-flojo",
         availability: "IN_STOCK",
         lastCheckedAt: new Date(),
@@ -497,9 +507,9 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
     expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeUndefined();
   });
 
-  it("getOfertasBundle no recorta a 6 (a diferencia de getSupergangasBundle, el adelanto de la portada): devuelve TODOS los chollos reales", async () => {
+  it("getOfertasBundle no recorta al límite de la portada (a diferencia de getSupergangasBundle, el adelanto): devuelve TODOS los chollos reales", async () => {
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
-    const manySlugs = Array.from({ length: 8 }, (_, i) => `${PREFIX}-ofertas-full-${i}`);
+    const manySlugs = Array.from({ length: 10 }, (_, i) => `${PREFIX}-ofertas-full-${i}`);
     for (const slug of manySlugs) {
       const product = await prisma!.product.create({ data: { slug, name: `Producto oferta ${slug}`, categoryId } });
       await prisma!.offer.create({
@@ -519,9 +529,9 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
     const supergangas = await getSupergangasBundle();
     const ofertas = await getOfertasBundle();
     if (ofertas.source === "database") {
-      expect(supergangas.data.products.length).toBeLessThanOrEqual(6);
+      expect(supergangas.data.products.length).toBeLessThanOrEqual(8);
       const presentInOfertas = manySlugs.filter((slug) => ofertas.data.products.some((p) => p.slug === slug));
-      expect(presentInOfertas.length).toBe(manySlugs.length); // ninguno se queda fuera por el límite de 6
+      expect(presentInOfertas.length).toBe(manySlugs.length); // ninguno se queda fuera por el límite de la portada
     }
   });
 });
