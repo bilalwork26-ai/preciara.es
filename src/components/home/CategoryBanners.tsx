@@ -1,7 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import * as icons from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { buildCategoryHref } from "./categoryLinks";
 
 /**
@@ -13,29 +12,60 @@ import { buildCategoryHref } from "./categoryLinks";
  * catálogo real en un momento dado: `/categoria/[slug]` ya resuelve
  * BD-o-demo (ver categoryLinks.ts).
  *
- * Icono + degradado de marca en vez de fotografía: este equipo no tiene
- * forma de verificar desde este entorno que una URL de imagen externa
- * inventada no esté rota en producción (sin acceso de red a dominios de
- * imágenes), y ya hubo un incidente real de banners con imágenes rotas.
- * Un icono (mismo set y mismo campo `icon` que ya usa `demoCategories`,
- * resuelto igual que en CategoryRow.tsx) sobre un degradado de los tres
- * colores de marca (navy/teal/coral) es cero-riesgo y visualmente
- * consistente en las ocho tarjetas — decisión explícita del usuario.
- *
- * "Electrónica" enlaza a `tecnologia` (no existe un slug "electronica" en
- * la taxonomía); "Belleza y Salud" enlaza a `salud-cuidado`; "Bricolaje y
- * Jardín" enlaza a `jardin-bricolaje" — mismos nombres de categoría real,
- * con la etiqueta visual que pidió el usuario.
+ * Fotografía real + degradado oscuro superpuesto (nunca solo icono): este
+ * equipo no tiene ninguna vía de red hacia dominios de imágenes desde este
+ * entorno (confirmado dos veces, con curl y con WebFetch — ver el propio
+ * historial de esta conversación), así que no puede obtener ni verificar
+ * por su cuenta que una URL de foto inventada no esté rota en producción.
+ * Las tres primeras (Moda, Electrónica, Hogar) ya llevaban una foto
+ * verificada de una ronda anterior; las cinco restantes las facilitó
+ * explícitamente el usuario (verificadas en su propio navegador) — mismo
+ * criterio que las tres originales: URLs exactas, nunca inventadas aquí.
+ * El degradado oscuro (`from-navy-900/85 via-navy-900/10 to-transparent`,
+ * igual que el diseño original) garantiza que el texto blanco se lea con
+ * claridad sobre cualquier foto, sin depender del contenido de la imagen.
  */
 const CATEGORY_BANNERS = [
-  { slug: "moda", label: "Moda", icon: "Shirt", gradient: "from-navy-800 to-teal-700" },
-  { slug: "deporte", label: "Deporte", icon: "Dumbbell", gradient: "from-teal-600 to-navy-900" },
-  { slug: "tecnologia", label: "Electrónica", icon: "Laptop", gradient: "from-navy-900 to-navy-700" },
-  { slug: "hogar", label: "Hogar", icon: "Home", gradient: "from-coral-600 to-navy-800" },
-  { slug: "electrodomesticos", label: "Electrodomésticos", icon: "Refrigerator", gradient: "from-teal-700 to-navy-800" },
-  { slug: "salud-cuidado", label: "Belleza y Salud", icon: "HeartPulse", gradient: "from-coral-500 to-navy-900" },
-  { slug: "jardin-bricolaje", label: "Bricolaje y Jardín", icon: "Hammer", gradient: "from-navy-700 to-teal-600" },
-  { slug: "infantil", label: "Infantil", icon: "Baby", gradient: "from-teal-500 to-navy-800" },
+  {
+    slug: "moda",
+    label: "Moda",
+    imageUrl: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80",
+  },
+  {
+    slug: "deporte",
+    label: "Deporte",
+    imageUrl: "https://images.unsplash.com/photo-1517649763962-0c623266010b?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    slug: "tecnologia",
+    label: "Electrónica",
+    imageUrl: "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=800&q=80",
+  },
+  {
+    slug: "hogar",
+    label: "Hogar",
+    imageUrl: "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800&q=80",
+  },
+  {
+    slug: "electrodomesticos",
+    label: "Electrodomésticos",
+    imageUrl: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    slug: "salud-cuidado",
+    label: "Belleza y Salud",
+    imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    slug: "jardin-bricolaje",
+    label: "Bricolaje y Jardín",
+    imageUrl: "https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    slug: "infantil",
+    label: "Infantil",
+    imageUrl: "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=800&q=80",
+  },
 ] as const;
 
 export function CategoryBanners() {
@@ -45,30 +75,31 @@ export function CategoryBanners() {
         Categorías destacadas
       </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-        {CATEGORY_BANNERS.map((banner) => {
-          const Icon = (icons as unknown as Record<string, LucideIcon>)[banner.icon] ?? icons.Tag;
-          return (
-            <Link
-              key={banner.slug}
-              href={buildCategoryHref(banner.slug)}
-              aria-label={`Ver ofertas en ${banner.label}`}
-              className={`group relative flex h-32 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-4 shadow-sm transition-transform duration-300 hover:scale-[1.02] sm:h-40 ${banner.gradient}`}
-            >
-              <Icon
-                className="h-9 w-9 shrink-0 text-white/30 transition-transform duration-300 group-hover:scale-110 sm:h-11 sm:w-11"
+        {CATEGORY_BANNERS.map((banner) => (
+          <Link
+            key={banner.slug}
+            href={buildCategoryHref(banner.slug)}
+            aria-label={`Ver ofertas en ${banner.label}`}
+            className="group relative flex h-32 overflow-hidden rounded-2xl bg-navy-900 shadow-sm sm:h-40"
+          >
+            {/* alt="": la imagen es puramente decorativa, el nombre de la categoría ya está en texto real justo debajo (nunca solo dentro de la foto). */}
+            <Image
+              src={banner.imageUrl}
+              alt=""
+              fill
+              sizes="(min-width: 640px) 25vw, 50vw"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/10 to-transparent" aria-hidden="true" />
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4">
+              <span className="font-serif text-base font-bold text-white sm:text-lg">{banner.label}</span>
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-white transition-transform group-hover:translate-x-1"
                 aria-hidden="true"
-                strokeWidth={1.5}
               />
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-serif text-base font-bold text-white sm:text-lg">{banner.label}</span>
-                <ArrowRight
-                  className="h-4 w-4 shrink-0 text-white transition-transform group-hover:translate-x-1"
-                  aria-hidden="true"
-                />
-              </div>
-            </Link>
-          );
-        })}
+            </div>
+          </Link>
+        ))}
       </div>
     </section>
   );
