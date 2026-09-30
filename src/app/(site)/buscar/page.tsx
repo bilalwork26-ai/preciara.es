@@ -5,7 +5,6 @@ import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/
 import { Container } from "@/components/ui/Container";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
-import { SearchForm } from "@/components/home/SearchForm";
 import { searchHomeProducts } from "@/server/dataSource/search";
 
 export const metadata: Metadata = {
@@ -47,10 +46,6 @@ export default async function BuscarPage({
           "Explora el catálogo completo."
         )}
       </p>
-
-      <div className="mt-6 max-w-xl">
-        <SearchForm id="search-buscar-page" />
-      </div>
 
       {results.length === 0 ? (
         <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-16 text-center">
