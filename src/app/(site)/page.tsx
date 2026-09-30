@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { BrandCarousel } from "@/components/home/BrandCarousel";
 import { Hero } from "@/components/home/Hero";
-import { CategoryRow } from "@/components/home/CategoryRow";
 import { CategoryBanners } from "@/components/home/CategoryBanners";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
@@ -33,12 +32,15 @@ const websiteJsonLd = {
  * fijo de tarjetas de Supergangas se retiró (no tenía sentido mostrar 6-8
  * tarjetas fijas con un catálogo de miles de productos — ver
  * CategoryBanners.tsx, ahora el punto de entrada real al catálogo), y
- * `CategoryRow`/`CategoryBanners` son navegación fija sin consulta propia
- * (ver categoryLinks.ts). Sin BD de por medio, la portada vuelve a ser
- * prerenderizable como HTML estático en el build — ya no hace falta
- * `force-dynamic`. "Supergangas" sigue existiendo como página propia
- * (`/supergangas`, ver getOfertasBundle en src/server/dataSource/home.ts):
- * solo se retiró su resumen fijo de la portada.
+ * `CategoryBanners` es navegación fija sin consulta propia (ver
+ * categoryLinks.ts) — la fila de píldoras pequeñas (`CategoryRow`) se
+ * retiró de la portada: duplicaba la misma navegación que el propio grid
+ * fotográfico y le restaba impacto visual. Sin BD de por medio, la
+ * portada vuelve a ser prerenderizable como HTML estático en el build —
+ * ya no hace falta `force-dynamic`. "Supergangas" sigue existiendo como
+ * página propia (`/supergangas`, ver getOfertasBundle en
+ * src/server/dataSource/home.ts): solo se retiró su resumen fijo de la
+ * portada.
  */
 export default function Home() {
   return (
@@ -56,13 +58,7 @@ export default function Home() {
       <Hero />
 
       <Container className="pb-8 pt-6 sm:pt-7">
-        <div id="categorias" className="scroll-mt-24">
-          <CategoryRow />
-        </div>
-
-        <div className="mt-6">
-          <CategoryBanners />
-        </div>
+        <CategoryBanners />
       </Container>
 
       <HowItWorksSection />
