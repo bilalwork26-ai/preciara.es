@@ -244,6 +244,31 @@ function parseDecimalOrThrow(raw: string, fieldName: string, options: { required
   }
 }
 
+/**
+ * `referencePrice` (`rrp_price`) es, a propósito, el ÚNICO campo decimal que
+ * NUNCA rechaza la fila por un valor presente pero ilegible: es un campo
+ * puramente complementario (ver su doc en `types.ts` — solo una señal
+ * inicial de descuento, nunca se usa como precio real) y, sobre todo, su
+ * nombre de columna está SIN CONFIRMAR contra un feed real de Awin (ver nota
+ * de cabecera de este fichero). Si algún comercio trae en esa columna un
+ * valor que `parseDecimalField` no sabe interpretar — un formato inesperado,
+ * un texto tipo "N/A", o simplemente que `rrp_price` no sea la columna
+ * correcta para ese comercio y lo que haya ahí no sea un precio en absoluto
+ * — el efecto debe ser el mismo que si la columna no existiera: `null`,
+ * nunca tirar el producto entero (precio, nombre, disponibilidad... todos
+ * válidos) por un dato secundario que ni siquiera está verificado. Rechazar
+ * la fila aquí sería peor que no tener el dato: convertiría un campo
+ * pensado para mostrar MÁS descuentos desde el primer día en una forma de
+ * mostrar MENOS catálogo.
+ */
+function parseReferencePriceLeniently(raw: string): number | null {
+  try {
+    return parseDecimalField(raw, "rrp_price", { required: false });
+  } catch {
+    return null;
+  }
+}
+
 function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<string, string>, context: { merchant: NormalizedMerchant; fetchedAt: Date }): NormalizedOfferRow {
   const externalId = pickField(headerIndex, record, COLUMN_ALIASES.productId);
   if (!externalId) {
@@ -266,7 +291,7 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
 
   const price = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.price), "search_price", { required: true })!;
   const shippingCost = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.shippingCost), "delivery_cost", { required: false });
-  const referencePrice = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.referencePrice), "rrp_price", { required: false });
+  const referencePrice = parseReferencePriceLeniently(pickField(headerIndex, record, COLUMN_ALIASES.referencePrice));
 
   const merchantDeepLink = pickField(headerIndex, record, COLUMN_ALIASES.merchantDeepLink);
   const affiliateDeepLink = pickField(headerIndex, record, COLUMN_ALIASES.affiliateDeepLink);

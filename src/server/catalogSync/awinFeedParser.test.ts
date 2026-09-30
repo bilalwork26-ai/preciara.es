@@ -183,13 +183,16 @@ describe("parseAwinProductFeed: referencePrice (rrp_price) — precio de referen
     expect(results[0].row.referencePrice).toBe(29.99);
   });
 
-  it("rechaza (fila inválida, no fatal) un rrp_price no numérico, igual que un search_price no numérico", async () => {
+  it("un rrp_price no numérico NUNCA rechaza la fila (a diferencia de search_price): referencePrice cae a null y el resto del producto (precio, nombre, disponibilidad...) se conserva íntegro", async () => {
     const csv = [
       FULL_HEADER,
       row({ aw_product_id: "1", product_name: "P", merchant_category: "C", search_price: "19.99", rrp_price: "no-es-un-numero", currency: "EUR", aw_deep_link: "https://x.invalid/1" }),
     ].join("\n");
     const results = await collect(csv);
-    expect(invalid(results)[0].code).toBe("INVALID_NUMBER");
+    expect(invalid(results)).toHaveLength(0);
+    const [result] = valid(results);
+    expect(result.row.referencePrice).toBeNull();
+    expect(result.row.price).toBe(19.99);
   });
 });
 
