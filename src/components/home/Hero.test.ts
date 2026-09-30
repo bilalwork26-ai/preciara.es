@@ -56,7 +56,7 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(h1Matches[0][1].trim()).toBe("Los mejores productos. Las mejores ofertas.");
   });
 
-  it("el CTA es un enlace real (<a href>) a /supergangas (chollos con descuento real ≥30%, ver getOfertasBundle), con estado hover y sin depender de JS para funcionar", () => {
+  it("el CTA es un enlace real (<a href>) a /supergangas (chollos con descuento real, ver SUPERGANGAS_MIN_DISCOUNT_PERCENT/getOfertasBundle), con estado hover y sin depender de JS para funcionar", () => {
     const ctaMatch = heroSource.match(/<a\s+href="([^"]+)"[^>]*>/);
     expect(ctaMatch?.[1]).toBe("/supergangas");
     expect(heroSource).toMatch(/hover:bg-coral-600/);

@@ -13,7 +13,7 @@
 /** Ruta del índice completo de categorías ("Ver todas"). */
 export const CATEGORIES_INDEX_HREF = "/categorias";
 
-/** Ruta del listado completo de chollos reales (descuento ≥30%) — ver `getOfertasBundle` en `server/dataSource/home.ts`. Único sitio que decide esta URL: el CTA del Hero y la píldora "Supergangas" de `PRIMARY_NAV_ITEMS` enlazan aquí. */
+/** Ruta del listado completo de chollos reales (descuento real, ver `SUPERGANGAS_MIN_DISCOUNT_PERCENT`) — ver `getOfertasBundle` en `server/dataSource/home.ts`. Único sitio que decide esta URL: el CTA del Hero y la píldora "Supergangas" de `PRIMARY_NAV_ITEMS` enlazan aquí. */
 export const OFERTAS_HREF = "/supergangas";
 
 /**

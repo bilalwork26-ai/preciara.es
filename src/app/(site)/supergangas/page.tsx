@@ -20,8 +20,9 @@ export const metadata: Metadata = {
  * Listado completo de "Supergangas" (enlazado desde el CTA del Hero y
  * desde la píldora "Supergangas" de la navegación principal, ver
  * categoryLinks.ts): a diferencia del adelanto de la portada
- * (`SupergangasGrid`, como mucho 6 tarjetas), aquí se muestran TODOS los
- * productos con descuento real ≥30% — ver `getOfertasBundle`.
+ * (`SupergangasGrid`, como mucho SUPERGANGAS_LIMIT tarjetas), aquí se
+ * muestran TODOS los productos con descuento real
+ * ≥SUPERGANGAS_MIN_DISCOUNT_PERCENT — ver `getOfertasBundle`.
  */
 export default async function SupergangasPage() {
   const { data, source } = await getOfertasBundle();
@@ -55,7 +56,7 @@ export default async function SupergangasPage() {
         rejilla vacía: el mensaje de arriba ya lo cuenta.
       */}
       {data.products.length > 0 && (
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4" aria-label={`Productos con descuento de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%`}>
           {data.products.map((product, index) => (
             <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
               <ProductDealCard product={product} merchants={data.merchants} highlight={index === 0} />

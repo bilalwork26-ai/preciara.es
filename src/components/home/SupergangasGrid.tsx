@@ -8,19 +8,22 @@ import { ProductDealCard } from "./ProductDealCard";
  * Sustituye a la antigua "Bajadas destacadas" (`VerifiedDealsGrid`,
  * retirada) por petición explícita: nunca conviven ambos bloques a la
  * vez. Los productos ya llegan filtrados y ordenados por
- * `getSupergangasBundle` (≥30% de descuento real, mayor descuento
- * primero, como mucho 6) — este componente solo pinta lo que recibe, sin
+ * `getSupergangasBundle` (≥`minDiscountPercent` de descuento real, mayor
+ * descuento primero) — este componente solo pinta lo que recibe, sin
  * volver a filtrar ni reordenar nada.
  */
 export function SupergangasGrid({
   products,
   merchants,
   source,
+  minDiscountPercent,
 }: {
   products: Product[];
   merchants: Merchant[];
   /** De dónde vienen `products`/`merchants` (ver `SourcedResult` en `src/server/dataSource/withFallback.ts`): controla si se muestra la etiqueta "Datos demo", nunca se etiqueta catálogo real como demostración. */
   source: "database" | "demo";
+  /** `SUPERGANGAS_MIN_DISCOUNT_PERCENT` (ver `server/dataSource/home.ts`), pasado como prop para no acoplar este componente de presentación a la capa de datos — solo se usa para los textos, el filtrado ya lo hizo `getSupergangasBundle`. */
+  minDiscountPercent: number;
 }) {
   return (
     <section aria-labelledby="supergangas-heading">
@@ -37,10 +40,10 @@ export function SupergangasGrid({
           </h2>
           <p className="mt-1 text-sm text-navy-500">
             {source === "demo"
-              ? "Ejemplo de chollos con descuentos superiores al 30%, con productos de demostración."
+              ? `Ejemplo de chollos con descuentos superiores al ${minDiscountPercent}%, con productos de demostración.`
               : products.length > 0
-                ? "Los descuentos más agresivos de nuestro catálogo real ahora mismo: al menos un 30%, verificados hoy."
-                : "Ahora mismo no hay ningún producto de nuestro catálogo real con un descuento de al menos un 30%. Vuelve pronto."}
+                ? `Los descuentos más agresivos de nuestro catálogo real ahora mismo: al menos un ${minDiscountPercent}%, verificados hoy.`
+                : `Ahora mismo no hay ningún producto de nuestro catálogo real con un descuento de al menos un ${minDiscountPercent}%. Vuelve pronto.`}
           </p>
         </div>
         {products.length > 0 && (
@@ -58,8 +61,8 @@ export function SupergangasGrid({
         Mismo criterio de layout que la antigua "Bajadas destacadas" (ver
         historial de este fichero): rejilla fija de 2 columnas en móvil,
         `flex-wrap` a partir de `sm:` para que la última fila incompleta
-        (aquí, casi siempre — el bloque tiene como mucho 6 tarjetas) nunca
-        deje huecos vacíos reservando ancho de columna.
+        (aquí, casi siempre — el bloque tiene como mucho SUPERGANGAS_LIMIT
+        tarjetas) nunca deje huecos vacíos reservando ancho de columna.
 
         Con catálogo real pero 0 chollos que superen el umbral (nunca con
         demo: demoSupergangas siempre tiene productos), no se pinta una
@@ -67,7 +70,7 @@ export function SupergangasGrid({
         hace falta nada más.
       */}
       {products.length > 0 && (
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4" aria-label="Productos con descuento de al menos un 30%">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4" aria-label={`Productos con descuento de al menos un ${minDiscountPercent}%`}>
           {products.map((product, index) => (
             <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
               <ProductDealCard product={product} merchants={merchants} highlight={index === 0} />

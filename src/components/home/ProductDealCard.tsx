@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Flame, Heart } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
+import { toFavoriteProduct, toggleFavorite, useIsFavorite } from "@/lib/favorites";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
 
@@ -18,7 +18,7 @@ export function ProductDealCard({
   /** true para la tarjeta de mayor descuento de la cuadrícula (ver SupergangasGrid) — nunca se aplica sin descuento real. */
   highlight?: boolean;
 }) {
-  const [saved, setSaved] = useState(false);
+  const saved = useIsFavorite(product.slug);
   const offers = [...product.offers].sort((a, b) => a.price - b.price);
   const best = offers[0];
   // El descuento puede estar en cualquier oferta, no solo en la de precio
@@ -62,7 +62,7 @@ export function ProductDealCard({
         </div>
         <button
           type="button"
-          onClick={() => setSaved((v) => !v)}
+          onClick={() => toggleFavorite(toFavoriteProduct(product, merchants))}
           aria-pressed={saved}
           aria-label={saved ? `Quitar ${displayName} de guardados` : `Guardar ${displayName}`}
           className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-navy-500 shadow-sm transition-colors hover:text-coral-600 sm:right-2 sm:top-2 sm:h-8 sm:w-8"
