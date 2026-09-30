@@ -524,6 +524,50 @@ jobs:
             echo "La portada usa catálogo real (etiqueta 'Datos demo' ausente)."
           fi
 
+      # Investigación puntual: reporte de usuario de botones "Ver ofertas"
+      # duplicados y "flotando" por encima de la cuadrícula. Cuenta cada
+      # aparición del botón real (ancla con la clase bg-teal-600 y texto
+      # "Ver ofertas") sobre el HTML visible (sin el payload de
+      # hidratación) y la compara con el número de tarjetas de producto
+      # reales — si coinciden 1 a 1, no hay duplicación en el HTML que
+      # sirve el servidor (sería un problema de hidratación en el
+      # navegador, no del marcado). También imprime los 80 caracteres
+      # anteriores a cada aparición, para ver si alguna queda fuera de la
+      # tarjeta (p. ej., justo después de <body> en vez de dentro de un
+      # <li> de la cuadrícula).
+      - name: "Investigación: ¿el botón 'Ver ofertas' aparece duplicado o fuera de lugar?"
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync("/tmp/home-visible.html", "utf8");
+
+          const titleRe = /<[a-z]+\b[^>]*\bclass="[^"]*\bline-clamp-2\b[^"]*"[^>]*>([^<]*)</gi;
+          let tm;
+          let cardCount = 0;
+          while ((tm = titleRe.exec(html))) if (!/^(Compara|Toda la|Precios claros|Encuentra|Menos búsquedas|Una forma)/.test(tm[1].trim())) cardCount++;
+
+          const btnRe = /<a[^>]*class="[^"]*bg-teal-600[^"]*"[^>]*>\s*Ver ofertas/g;
+          let bm;
+          let btnCount = 0;
+          const positions = [];
+          while ((bm = btnRe.exec(html))) {
+            btnCount++;
+            positions.push(bm.index);
+          }
+          console.log(`Tarjetas de producto reales: ${cardCount}`);
+          console.log(`Botones "Ver ofertas" encontrados: ${btnCount}`);
+          if (btnCount > cardCount) {
+            console.log(`::error::Hay más botones "Ver ofertas" (${btnCount}) que tarjetas reales (${cardCount}) — posible duplicación real en el HTML.`);
+          } else {
+            console.log("Coincide 1 a 1 con las tarjetas — no hay duplicación en el HTML que sirve el servidor.");
+          }
+          console.log("--- Contexto (80 caracteres antes de cada botón) ---");
+          for (const pos of positions.slice(0, 10)) {
+            console.log(JSON.stringify(html.slice(Math.max(0, pos - 80), pos)));
+          }
+          NODE
+
   awin_list:
     name: "Lista real de feeds de Awin: ¿Adidas está Joined?"
     runs-on: ubuntu-latest
