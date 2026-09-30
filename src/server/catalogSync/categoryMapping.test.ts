@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_CATEGORY_TARGET, mapAwinCategoryText } from "./categoryMapping";
 
-describe("mapAwinCategoryText: mapeo conservador a las cinco categorías cubiertas", () => {
+describe("mapAwinCategoryText: mapeo conservador a las seis categorías cubiertas", () => {
   it.each([
     ["Tecnología", "tecnologia"],
     ["Electrónica y Ordenadores", "tecnologia"],
@@ -22,8 +22,27 @@ describe("mapAwinCategoryText: mapeo conservador a las cinco categorías cubiert
     ["Ciclismo", "deporte"],
     ["Equipamiento de gimnasio", "deporte"],
     ["Balones de baloncesto", "deporte"],
+    ["Deshumidificadores", "hogar"],
+    ["Climatización y aire acondicionado", "hogar"],
+    ["Calefactores eléctricos", "hogar"],
+    ["Ventiladores de pie", "hogar"],
+    ["Herramientas eléctricas", "hogar"],
+    ["Taladros y atornilladores", "hogar"],
+    ["Bricolaje y jardín", "hogar"],
   ])('"%s" se clasifica como %s', (rawText, expectedSlug) => {
     expect(mapAwinCategoryText(rawText).slug).toBe(expectedSlug);
+  });
+
+  it("caso real Trotec: catálogo de clima/deshumidificación/herramientas cae en Hogar, no en 'Otros' (antes de añadir estas palabras clave, caía en Otros)", () => {
+    expect(mapAwinCategoryText("Deshumidificadores y climatizadores para el hogar").slug).toBe("hogar");
+    expect(mapAwinCategoryText("Herramientas de medición y bricolaje profesional").slug).toBe("hogar");
+  });
+
+  it("'portátil' no confunde un deshumidificador/calefactor portátil con un ordenador portátil (bug real: la palabra clave suelta 'portatil' coincidía con cualquier '[algo] portátil', no solo ordenadores)", () => {
+    expect(mapAwinCategoryText("Deshumidificador portátil para el hogar").slug).toBe("hogar");
+    expect(mapAwinCategoryText("Calefactor portátil").slug).not.toBe("tecnologia");
+    // El caso real que sí debe seguir cayendo en Tecnología, vía "ordenador"/"laptop" (no "portatil" suelto).
+    expect(mapAwinCategoryText("Ordenador portátil 15 pulgadas").slug).toBe("tecnologia");
   });
 
   it("un texto de calzado/ropa SIN ninguna señal explícita de deporte sigue cayendo en Moda, no en Deporte", () => {

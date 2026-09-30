@@ -15,11 +15,12 @@ describe("sitemap", () => {
     }
   });
 
-  it("incluye siempre la portada y /categorias", async () => {
+  it("incluye siempre la portada, /categorias y /supergangas", async () => {
     const entries = await sitemap();
     const urls = entries.map((e) => e.url);
     expect(urls).toContain("https://preciara.es");
     expect(urls).toContain("https://preciara.es/categorias");
+    expect(urls).toContain("https://preciara.es/supergangas");
   });
 
   it("incluye /guias y las tres guías de compra", async () => {

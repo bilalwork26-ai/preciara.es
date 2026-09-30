@@ -7,7 +7,7 @@ import { SupergangasGrid } from "@/components/home/SupergangasGrid";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
-import { getSupergangasBundle, getHomeCategories } from "@/server/dataSource/home";
+import { getSupergangasBundle } from "@/server/dataSource/home";
 import { SITE_URL } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 
@@ -41,13 +41,13 @@ const websiteJsonLd = {
 export const dynamic = "force-dynamic";
 
 /**
- * Toda la portada dispara solo 2 llamadas a la capa de datos (categorías,
- * Supergangas), en paralelo, cada una ya resuelta con BD-o-demo (ver
- * src/server/dataSource). Los componentes visuales no cambian: solo
- * reciben por props lo que antes importaban directamente de src/data/demo.
+ * La portada dispara una sola llamada a la capa de datos (Supergangas),
+ * ya resuelta con BD-o-demo (ver src/server/dataSource) — la fila de
+ * categorías (`CategoryRow`) es ahora una navegación fija, sin consulta
+ * propia (ver categoryLinks.ts).
  */
 export default async function Home() {
-  const [categories, supergangas] = await Promise.all([getHomeCategories(), getSupergangasBundle()]);
+  const supergangas = await getSupergangasBundle();
 
   return (
     <>
@@ -65,7 +65,7 @@ export default async function Home() {
 
       <Container className="pb-8 pt-6 sm:pt-7">
         <div id="categorias" className="scroll-mt-24">
-          <CategoryRow categories={categories.data.categories} viewAllHref={categories.data.hasMore ? "/categorias" : undefined} />
+          <CategoryRow />
         </div>
 
         <div className="mt-6">

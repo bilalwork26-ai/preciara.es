@@ -66,8 +66,17 @@ export function Hero() {
             Hasta −70 %
           </span>
 
+          {/*
+            "/supergangas" en duro (no `OFERTAS_HREF` de categoryLinks.ts):
+            este componente se mantiene deliberadamente sin ninguna
+            dependencia propia del proyecto salvo Container (ver el test de
+            este fichero, "no añade ninguna dependencia... solo next/image,
+            lucide-react y Container") — un import más aquí lo rompería.
+            Debe seguir apuntando a lo mismo que OFERTAS_HREF si esa
+            constante cambia alguna vez.
+          */}
           <a
-            href="/buscar"
+            href="/supergangas"
             className="mt-2 inline-flex w-fit items-center gap-2 rounded-full bg-coral-500 px-6 py-2.5 text-sm font-semibold text-navy-900 transition-colors hover:bg-coral-600 hover:text-white"
           >
             Descubrir ofertas

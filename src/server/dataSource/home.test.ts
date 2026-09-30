@@ -10,7 +10,7 @@ import {
   bestDiscountPercent,
   collapseProductVariants,
   dealsGridGroupKey,
-  getHomeCategories,
+  getOfertasBundle,
   getSupergangasBundle,
   selectSuperDeals,
   SUPERGANGAS_MIN_DISCOUNT_PERCENT,
@@ -261,29 +261,6 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     }
   });
 
-  it("getHomeCategories responde con demo sin lanzar", async () => {
-    vi.resetModules();
-    delete process.env.DATABASE_URL;
-    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
-    const { getHomeCategories: fn } = await import("./home");
-    const { source, data } = await fn();
-    expect(source).toBe("demo");
-    expect(data.categories.length).toBeGreaterThan(0);
-  });
-
-  it("getHomeCategories en demo nunca incluye una categoría sin productos demo (evita un enlace de píldora que daría 404 en /categoria/[slug])", async () => {
-    vi.resetModules();
-    delete process.env.DATABASE_URL;
-    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
-    const { getHomeCategories: fn } = await import("./home");
-    const { getCategoryDetail } = await import("./category");
-    const { data } = await fn();
-    for (const category of data.categories) {
-      const detail = await getCategoryDetail(category.slug);
-      expect(detail.status).toBe("found");
-    }
-  });
-
   it("getSupergangasBundle responde con demo sin lanzar", async () => {
     vi.resetModules();
     delete process.env.DATABASE_URL;
@@ -304,20 +281,33 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     const discounts = data.products.map((p) => bestOfferDiscountPercent(p.offers));
     expect(discounts).toEqual([...discounts].sort((a, b) => b - a));
   });
+
+  it("getOfertasBundle responde con demo sin lanzar", async () => {
+    vi.resetModules();
+    delete process.env.DATABASE_URL;
+    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
+    const { getOfertasBundle: fn } = await import("./home");
+    const { source, data } = await fn();
+    expect(source).toBe("demo");
+    expect(data.products.length).toBeGreaterThan(0);
+  });
+
+  it("getOfertasBundle en demo sale ordenado por descuento real descendente, igual que getSupergangasBundle", async () => {
+    vi.resetModules();
+    delete process.env.DATABASE_URL;
+    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
+    const { getOfertasBundle: fn } = await import("./home");
+    const { bestOfferDiscountPercent } = await import("@/lib/format");
+    const { data } = await fn();
+    const discounts = data.products.map((p) => bestOfferDiscountPercent(p.offers));
+    expect(discounts).toEqual([...discounts].sort((a, b) => b - a));
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD local de pruebas)", () => {
   afterEach(async () => {
     if (!prisma) return;
     await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX } } });
-  });
-
-  it("getHomeCategories usa la BD cuando hay categorías activas reales", async () => {
-    const result = await getHomeCategories();
-    // La BD de pruebas de este entorno ya tiene el seed de demostración cargado.
-    expect(result.source === "database" || result.source === "demo").toBe(true);
-    expect(result.data.categories.length).toBeGreaterThan(0);
-    expect(result.data.categories.length).toBeLessThanOrEqual(8);
   });
 
   it("una categoría inactiva no aparece en el resultado de BD", async () => {
@@ -502,5 +492,33 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
 
     const bundle = await getSupergangasBundle();
     expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeUndefined();
+  });
+
+  it("getOfertasBundle no recorta a 6 (a diferencia de getSupergangasBundle, el adelanto de la portada): devuelve TODOS los chollos reales", async () => {
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    const manySlugs = Array.from({ length: 8 }, (_, i) => `${PREFIX}-ofertas-full-${i}`);
+    for (const slug of manySlugs) {
+      const product = await prisma!.product.create({ data: { slug, name: `Producto oferta ${slug}`, categoryId } });
+      await prisma!.offer.create({
+        data: {
+          productId: product.id,
+          merchantId: merchant.id,
+          currentPrice: 50,
+          previousPrice: 100, // 50%
+          productUrl: `https://example.invalid/${slug}`,
+          availability: "IN_STOCK",
+          lastCheckedAt: new Date(),
+          isActive: true,
+        },
+      });
+    }
+
+    const supergangas = await getSupergangasBundle();
+    const ofertas = await getOfertasBundle();
+    if (ofertas.source === "database") {
+      expect(supergangas.data.products.length).toBeLessThanOrEqual(6);
+      const presentInOfertas = manySlugs.filter((slug) => ofertas.data.products.some((p) => p.slug === slug));
+      expect(presentInOfertas.length).toBe(manySlugs.length); // ninguno se queda fuera por el límite de 6
+    }
   });
 });

@@ -8,12 +8,10 @@
 import { demoSupergangas } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import { bestOfferDiscountPercent } from "@/lib/format";
-import type { Category, Merchant, Product } from "@/types";
-import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
+import type { Merchant, Product } from "@/types";
 import { getActiveProductsWithOffers, type ProductWithOffers } from "@/server/repositories/products";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
-import { getDemoCategoriesWithProductCounts } from "./category";
-import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
+import { extractMerchants, toLegacyProduct } from "./transform";
 
 /**
  * Curación histórica: este producto tenía su propio banner secundario en
@@ -23,40 +21,6 @@ import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform
  * haya pedido.
  */
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
-
-/** Máximo de categorías que la portada muestra en escritorio (ver CategoryRow). */
-export const HOME_CATEGORIES_LIMIT = 8;
-
-export type HomeCategoriesBundle = {
-  categories: Category[];
-  /** true si hay más categorías con ofertas activas que las mostradas aquí (activa el enlace "Ver todas"). */
-  hasMore: boolean;
-};
-
-export async function getHomeCategories(): Promise<SourcedResult<HomeCategoriesBundle>> {
-  return resolveWithFallback<HomeCategoriesBundle>({
-    fetchFromDb: async () => {
-      const rows = await getActiveCategoriesWithOfferCounts();
-      if (!rows) return null;
-      return {
-        categories: rows.slice(0, HOME_CATEGORIES_LIMIT).map(toLegacyCategory),
-        hasMore: rows.length > HOME_CATEGORIES_LIMIT,
-      };
-    },
-    demoFallback: (() => {
-      // Solo categorías demo con al menos un producto demo real: las que no
-      // tienen ninguno (ver getDemoCategoriesWithProductCounts) enlazarían a
-      // un `/categoria/[slug]` que responde 404 — nunca se navega hacia una
-      // ruta que no existe de verdad.
-      const demoCategoriesWithProducts = getDemoCategoriesWithProductCounts();
-      return {
-        categories: demoCategoriesWithProducts.slice(0, HOME_CATEGORIES_LIMIT),
-        hasMore: demoCategoriesWithProducts.length > HOME_CATEGORIES_LIMIT,
-      };
-    })(),
-    isSufficient: (bundle) => bundle.categories.length > 0,
-  });
-}
 
 /** Umbral estricto de "Supergangas": por debajo de este % de descuento real, un producto nunca es una supergangas. */
 export const SUPERGANGAS_MIN_DISCOUNT_PERCENT = 30;
@@ -229,6 +193,49 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
         .filter((p) => bestOfferDiscountPercent(p.offers) >= SUPERGANGAS_MIN_DISCOUNT_PERCENT)
         .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers))
         .slice(0, SUPERGANGAS_LIMIT),
+      merchants: demoMerchants,
+    },
+    isSufficient: (bundle) => bundle.products.length > 0,
+  });
+}
+
+/**
+ * Máximo de productos en `/supergangas` (la página completa, enlazada
+ * desde el CTA del Hero y desde la píldora "Supergangas" de la
+ * navegación principal) — a diferencia del bloque de la portada
+ * (`SUPERGANGAS_LIMIT`, 6, solo un adelanto), aquí se listan TODOS los
+ * chollos reales del catálogo dentro de `SUPERGANGAS_POOL_SIZE`, no un
+ * adelanto acotado a propósito.
+ */
+const OFERTAS_PAGE_LIMIT = SUPERGANGAS_POOL_SIZE;
+
+export type OfertasBundle = { products: Product[]; merchants: Merchant[] };
+
+/**
+ * Listado completo de "Supergangas" para `/supergangas` — mismo criterio
+ * estricto que `getSupergangasBundle` (descuento real ≥30%, una sola
+ * tarjeta por modelo, mejor descuento primero), pero sin el recorte a 6
+ * de la portada: esta página es el catálogo completo de chollos, no un
+ * adelanto.
+ */
+export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> {
+  return resolveWithFallback({
+    fetchFromDb: async () => {
+      const rows = await getActiveProductsWithOffers(SUPERGANGAS_POOL_SIZE);
+      if (!rows) return null;
+      const filtered = rows.filter((p) => p.slug !== SECONDARY_BANNER_PRODUCT_SLUG);
+      const selected = selectSuperDeals(filtered, SUPERGANGAS_MIN_DISCOUNT_PERCENT, OFERTAS_PAGE_LIMIT);
+      const products = selected.map((p) => toLegacyProduct(p));
+      return { products, merchants: extractMerchants(selected) };
+    },
+    demoFallback: {
+      // Mismo demo que la portada (ver getSupergangasBundle): en modo demo
+      // no hay más chollos que enseñar, así que la página completa
+      // coincide con el adelanto — nunca se inventan productos demo
+      // adicionales solo para llenar la página.
+      products: demoSupergangas
+        .filter((p) => bestOfferDiscountPercent(p.offers) >= SUPERGANGAS_MIN_DISCOUNT_PERCENT)
+        .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
       merchants: demoMerchants,
     },
     isSufficient: (bundle) => bundle.products.length > 0,

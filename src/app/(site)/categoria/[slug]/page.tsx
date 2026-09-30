@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCategoryDetail } from "@/server/dataSource/category";
-import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
-import { ProductGlyph } from "@/components/ui/ProductGlyph";
-import { DiscountBadge } from "@/components/ui/DiscountBadge";
+import { CategoryProductGrid } from "@/components/category/CategoryProductGrid";
 
 export const dynamic = "force-dynamic";
 
@@ -51,66 +49,7 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
           : `${products.length} productos con ofertas activas.`}
       </p>
 
-      {/*
-        Móvil: rejilla fija de 2 columnas (nunca 1 tarjeta a todo el ancho
-        por fila) con la tarjeta en vertical (foto arriba, texto debajo) —
-        una fila horizontal de icono+texto no cabe con holgura en la mitad
-        del ancho de un móvil. Desde `sm:` en adelante, `flex-wrap` (no
-        `grid` de columnas fijas): con un número de columnas fijo, una
-        última fila incompleta deja columnas vacías visibles (no colapsan
-        solas: siguen teniendo contenido en otras filas). Con flexbox,
-        cada tarjeta crece para repartirse el hueco sobrante de su fila
-        (`min-w`/`max-w` acotan cuánto), así que nunca queda un hueco
-        grande a la derecha, y en monitores anchos caben más tarjetas por
-        fila de forma natural.
-      */}
-      <ul className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4">
-        {products.map((product) => {
-          const best = [...product.offers].sort((a, b) => a.price - b.price)[0];
-          const merchant = merchants.find((m) => m.id === best?.merchantId);
-          const displayName = formatProductDisplayName(product.name, product.brand);
-          // El descuento puede estar en cualquier oferta, no solo en la de
-          // precio más bajo — ver el mismo criterio, con más detalle, en
-          // bestOfferDiscount (src/lib/format.ts) y ProductDealCard.
-          const discount = bestOfferDiscount(product.offers);
-          return (
-            <li key={product.slug} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
-              <a
-                href={`/producto/${product.slug}`}
-                className="flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm transition-colors hover:border-teal-600 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
-              >
-                <div className="relative shrink-0">
-                  <ProductGlyph
-                    icon={product.icon}
-                    imageUrl={product.imageUrl}
-                    alt={displayName}
-                    className="h-16 w-16 sm:h-14 sm:w-14"
-                  />
-                  {discount && (
-                    <div className="absolute left-0.5 top-0.5">
-                      <DiscountBadge percent={discount.percent} size="sm" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 w-full">
-                  <p className="line-clamp-2 text-xs font-medium text-navy-900 sm:truncate sm:text-sm">{displayName}</p>
-                  {best && (
-                    <>
-                      <p className="mt-0.5 flex flex-wrap items-baseline justify-center gap-x-1.5 sm:justify-start">
-                        <span className="text-sm font-semibold text-navy-900 sm:text-base">{formatPrice(best.price)}</span>
-                        {discount && (
-                          <del className="text-xs font-medium text-navy-400 line-through decoration-2">{formatPrice(discount.previousPrice)}</del>
-                        )}
-                      </p>
-                      <p className="hidden text-xs text-navy-300 sm:block">Mejor precio en {merchant?.name}</p>
-                    </>
-                  )}
-                </div>
-              </a>
-            </li>
-          );
-        })}
-      </ul>
+      <CategoryProductGrid products={products} merchants={merchants} categorySlug={category.slug} />
     </Container>
   );
 }
