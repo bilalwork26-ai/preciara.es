@@ -15,7 +15,7 @@ const productWithOffers = Prisma.validator<Prisma.ProductDefaultArgs>()({
     category: { select: { id: true, slug: true, name: true } },
     offers: {
       where: { isActive: true, isDemo: false, merchant: { isActive: true, isDemo: false } },
-      include: { merchant: { select: { id: true, slug: true, name: true } } },
+      include: { merchant: { select: { id: true, slug: true, name: true, logoUrl: true } } },
       orderBy: { currentPrice: "asc" },
     },
   },

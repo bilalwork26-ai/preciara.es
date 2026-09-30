@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Prisma } from "@/generated/prisma";
 import {
   effectiveOfferUrl,
+  extractMerchants,
   iconForCategorySlug,
   relativeLabel,
   toLegacyOffer,
@@ -84,13 +85,14 @@ describe("toLegacyOffer: conversión Decimal -> number sin pérdida", () => {
   function baseOffer(overrides: Partial<Parameters<typeof toLegacyOffer>[0]> = {}) {
     return {
       id: 1,
-      merchant: { id: 1, slug: "tienda-x", name: "Tienda X" },
+      merchant: { id: 1, slug: "tienda-x", name: "Tienda X", logoUrl: null },
       currentPrice: new Prisma.Decimal("129.90"),
       previousPrice: new Prisma.Decimal("149.90"),
       productUrl: "https://tienda-x.example.invalid/p",
       affiliateUrl: null,
       availability: "IN_STOCK",
       lastCheckedAt: new Date(),
+      shippingCost: null,
       ...overrides,
     } as Parameters<typeof toLegacyOffer>[0];
   }
@@ -117,6 +119,18 @@ describe("toLegacyOffer: conversión Decimal -> number sin pérdida", () => {
 
   it("merchantId usa el slug del comercio, no su id numérico interno", () => {
     expect(toLegacyOffer(baseOffer()).merchantId).toBe("tienda-x");
+  });
+
+  it("shippingCost queda null cuando el comercio/feed no lo especifica (nunca se asume gratis)", () => {
+    expect(toLegacyOffer(baseOffer({ shippingCost: null })).shippingCost).toBeNull();
+  });
+
+  it("shippingCost convierte Decimal(0) a 0, sin confundirlo con 'no especificado' (envío gratis confirmado)", () => {
+    expect(toLegacyOffer(baseOffer({ shippingCost: new Prisma.Decimal("0") })).shippingCost).toBe(0);
+  });
+
+  it("shippingCost convierte un importe real de Decimal a number sin pérdida", () => {
+    expect(toLegacyOffer(baseOffer({ shippingCost: new Prisma.Decimal("4.99") })).shippingCost).toBe(4.99);
   });
 });
 
@@ -148,13 +162,14 @@ describe("toLegacyProduct: colapsa ofertas activas repetidas del mismo comercio"
   function offerRow(overrides: Partial<Parameters<typeof toLegacyOffer>[0]> = {}) {
     return {
       id: 1,
-      merchant: { id: 1, slug: "adidas-es", name: "adidas ES" },
+      merchant: { id: 1, slug: "adidas-es", name: "adidas ES", logoUrl: null },
       currentPrice: new Prisma.Decimal("120.00"),
       previousPrice: null,
       productUrl: "https://adidas.example.invalid/p",
       affiliateUrl: null,
       availability: "IN_STOCK",
       lastCheckedAt: new Date(),
+      shippingCost: null,
       ...overrides,
     } as Parameters<typeof toLegacyOffer>[0];
   }
@@ -208,8 +223,8 @@ describe("toLegacyProduct: colapsa ofertas activas repetidas del mismo comercio"
   it("conserva ofertas de comercios distintos con el mismo precio (no son duplicados)", () => {
     const product = toLegacyProduct(
       baseProduct([
-        offerRow({ id: 1, merchant: { id: 1, slug: "adidas-es", name: "adidas ES" } }),
-        offerRow({ id: 2, merchant: { id: 2, slug: "tienda-y", name: "Tienda Y" } }),
+        offerRow({ id: 1, merchant: { id: 1, slug: "adidas-es", name: "adidas ES", logoUrl: null } }),
+        offerRow({ id: 2, merchant: { id: 2, slug: "tienda-y", name: "Tienda Y", logoUrl: null } }),
       ])
     );
     expect(product.offers).toHaveLength(2);
@@ -237,5 +252,25 @@ describe("toLegacyProduct: propagación de brand", () => {
   it("brand queda null cuando el producto no tiene marca conocida", () => {
     const product = toLegacyProduct(baseProduct({ brand: null }));
     expect(product.brand).toBeNull();
+  });
+});
+
+describe("extractMerchants: propagación de logoUrl", () => {
+  function productWithMerchant(merchant: { slug: string; name: string; logoUrl: string | null }) {
+    return {
+      offers: [{ merchant }],
+    } as Parameters<typeof extractMerchants>[0][number];
+  }
+
+  it("propaga logoUrl tal cual cuando el comercio lo trae", () => {
+    const merchants = extractMerchants([
+      productWithMerchant({ slug: "tienda-x", name: "Tienda X", logoUrl: "https://cdn.example.invalid/logo.png" }),
+    ]);
+    expect(merchants[0].logoUrl).toBe("https://cdn.example.invalid/logo.png");
+  });
+
+  it("logoUrl queda null cuando el comercio no tiene logo (hoy, siempre para Awin — nunca se inventa uno)", () => {
+    const merchants = extractMerchants([productWithMerchant({ slug: "tienda-x", name: "Tienda X", logoUrl: null })]);
+    expect(merchants[0].logoUrl).toBeNull();
   });
 });
