@@ -74,10 +74,10 @@ const CATEGORY_BANNERS = [
 export function CategoryBanners() {
   return (
     <section aria-labelledby="category-banners-heading">
-      <h2 id="category-banners-heading" className="sr-only">
-        Categorías destacadas
+      <h2 id="category-banners-heading" className="font-serif text-lg font-semibold text-navy-900 sm:text-xl">
+        Explora por categoría
       </h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {CATEGORY_BANNERS.map((banner) => (
           <Link
             key={banner.slug}

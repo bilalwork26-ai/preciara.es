@@ -57,7 +57,8 @@ export default function Home() {
       <BrandCarousel />
       <Hero />
 
-      <Container className="pb-8 pt-6 sm:pt-7">
+      {/* pt-4/sm:pt-5 (antes pt-6/sm:pt-7): menos aire entre el Hero y el grid de categorías, para que las 8 tarjetas tengan más presencia nada más entrar. */}
+      <Container className="pb-8 pt-4 sm:pt-5">
         <CategoryBanners />
       </Container>
 
