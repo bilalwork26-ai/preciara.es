@@ -8,13 +8,22 @@
  * "Ordenadores y tablets", "Informática"...) en vez de agruparlas todas bajo
  * la categoría real que el usuario ya conoce y navega.
  *
- * COBERTURA DELIBERADAMENTE CONSERVADORA: solo las cinco categorías con
+ * COBERTURA DELIBERADAMENTE CONSERVADORA: solo las categorías con
  * palabras clave lo bastante inequívocas como para clasificar con
  * confianza razonable (Tecnología, Electrodomésticos, Hogar, Infantil,
- * Moda). El resto de la taxonomía de Preciara (Salud y cuidado, Deporte,
+ * Deporte, Moda). El resto de la taxonomía de Preciara (Salud y cuidado,
  * Viajes, Motor, Jardín y bricolaje, Mascotas, Libros y ocio) se deja
  * FUERA a propósito: unas palabras clave adivinadas sin ver un feed real
  * tendrían más riesgo de clasificar mal que de acertar.
+ *
+ * DEPORTE se comprueba ANTES que MODA a propósito: el catálogo real hoy
+ * es 100% Adidas, una marca deportiva — calzado/ropa con una señal de
+ * deporte explícita en el texto (p. ej. "Ropa deportiva", "Fútbol",
+ * "Calzado de running") debe caer en Deporte aunque también contenga
+ * palabras genéricas de Moda ("ropa", "calzado", "zapatilla"). Un texto
+ * de calzado/ropa SIN ninguna señal de deporte (p. ej. "Calzado y
+ * zapatillas" a secas, sin más contexto) sigue cayendo en Moda — ver el
+ * test correspondiente.
  *
  * Cualquier texto que no coincida con ninguna regla cae en
  * `GENERIC_CATEGORY_TARGET` ("Otros") — la fila NUNCA se rechaza ni se
@@ -43,6 +52,7 @@ const TECNOLOGIA: CategoryMappingTarget = { slug: "tecnologia", name: "Tecnolog�
 const ELECTRODOMESTICOS: CategoryMappingTarget = { slug: "electrodomesticos", name: "Electrodomésticos" };
 const HOGAR: CategoryMappingTarget = { slug: "hogar", name: "Hogar" };
 const INFANTIL: CategoryMappingTarget = { slug: "infantil", name: "Infantil" };
+const DEPORTE: CategoryMappingTarget = { slug: "deporte", name: "Deporte" };
 const MODA: CategoryMappingTarget = { slug: "moda", name: "Moda" };
 
 /**
@@ -100,7 +110,36 @@ const KEYWORD_RULES: readonly { target: CategoryMappingTarget; keywords: readonl
   },
   {
     target: INFANTIL,
-    keywords: ["infantil", "bebe", "baby", "juguete", "toy", "kids", "niñ", "nin"],
+    // "nino"/"nina" (ya sin diacríticos, como queda "niño"/"niña" tras
+    // normalize()), nunca el fragmento suelto "nin": coincidía también
+    // dentro de palabras sin relación ("running", "peninsula"...) — bug
+    // real encontrado al añadir la regla de Deporte más abajo.
+    keywords: ["infantil", "bebe", "baby", "juguete", "toy", "kids", "nino", "nina"],
+  },
+  {
+    target: DEPORTE,
+    keywords: [
+      "deporte",
+      "deportiv",
+      "sport",
+      "futbol",
+      "baloncesto",
+      "balonmano",
+      "balon",
+      "padel",
+      "tenis",
+      "ciclismo",
+      "running",
+      "gimnasio",
+      "fitness",
+      "entrenamiento",
+      "training",
+      "trekking",
+      "senderismo",
+      "hiking",
+      "natacion",
+      "gym",
+    ],
   },
   {
     target: MODA,
