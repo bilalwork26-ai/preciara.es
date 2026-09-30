@@ -147,6 +147,67 @@ export const demoProducts: Product[] = [
       { id: "offer-port-d", merchantId: "merchant-d", price: 749, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 2 h" },
     ],
   },
+  /**
+   * "Deporte" ("cat-deporte"), "Salud y cuidado" ("cat-salud") y "Jardín y
+   * bricolaje" ("cat-jardin") no tenían ningún producto en `demoProducts`
+   * (el catálogo de demostración de `getCategoryDetail`, distinto de
+   * `demoSupergangas` más abajo, que sí tiene un producto de "Deporte" pero
+   * no es el catálogo que consulta la ficha de categoría): sin BD real
+   * conectada para esas categorías, `/categoria/[slug]` devolvía
+   * "not-found" (404) en vez del catálogo de demostración que sí sirve
+   * cualquier otra categoría. Los nuevos banners de la portada
+   * (CategoryBanners.tsx) enlazan a las 8 categorías de la taxonomía,
+   * incluidas estas tres, así que necesitan al menos un producto demo
+   * propio para no ser enlaces muertos.
+   */
+  {
+    id: "prod-camiseta-running",
+    slug: "camiseta-tecnica-running",
+    name: "Camiseta técnica running",
+    categoryId: "cat-deporte",
+    icon: "Shirt",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 34.99 },
+      { label: "Dic", date: "2025-12-01", price: 32.99 },
+      { label: "Ene", date: "2026-01-12", price: 24.99 },
+    ],
+    offers: [
+      { id: "offer-camiseta-a", merchantId: "merchant-b", price: 24.99, previousPrice: 34.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 10 min" },
+      { id: "offer-camiseta-b", merchantId: "merchant-d", price: 27.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 50 min" },
+    ],
+  },
+  {
+    id: "prod-crema-facial-spf",
+    slug: "crema-facial-spf-50",
+    name: "Crema facial SPF 50",
+    categoryId: "cat-salud",
+    icon: "HeartPulse",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 24.99 },
+      { label: "Dic", date: "2025-12-01", price: 22.99 },
+      { label: "Ene", date: "2026-01-12", price: 17.99 },
+    ],
+    offers: [
+      { id: "offer-crema-a", merchantId: "merchant-a", price: 17.99, previousPrice: 24.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 18 min" },
+      { id: "offer-crema-b", merchantId: "merchant-c", price: 19.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 55 min" },
+    ],
+  },
+  {
+    id: "prod-taladro-percutor",
+    slug: "taladro-percutor-inalambrico",
+    name: "Taladro percutor inalámbrico",
+    categoryId: "cat-jardin",
+    icon: "Hammer",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 119.99 },
+      { label: "Dic", date: "2025-12-01", price: 109.99 },
+      { label: "Ene", date: "2026-01-12", price: 89.99 },
+    ],
+    offers: [
+      { id: "offer-taladro-a", merchantId: "merchant-d", price: 89.99, previousPrice: 119.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 22 min" },
+      { id: "offer-taladro-b", merchantId: "merchant-b", price: 94.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 1 h" },
+    ],
+  },
 ];
 
 /**

@@ -3,11 +3,9 @@ import { BrandCarousel } from "@/components/home/BrandCarousel";
 import { Hero } from "@/components/home/Hero";
 import { CategoryRow } from "@/components/home/CategoryRow";
 import { CategoryBanners } from "@/components/home/CategoryBanners";
-import { SupergangasGrid } from "@/components/home/SupergangasGrid";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
-import { getSupergangasBundle, SUPERGANGAS_MIN_DISCOUNT_PERCENT } from "@/server/dataSource/home";
 import { SITE_URL } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 
@@ -31,24 +29,18 @@ const websiteJsonLd = {
 };
 
 /**
- * Sin esto, Next intentaría prerenderizar la portada como HTML estático en
- * el build (no detecta las consultas de Prisma como "dinámicas" igual que
- * detecta cookies()/headers()) y serviría esa foto fija para siempre hasta
- * el próximo despliegue. Con `force-dynamic`, cada visita vuelve a
- * resolver BD-o-demo en el momento, y el build nunca llega a ejecutar
- * estas consultas (la página dinámica no se renderiza durante `next build`).
+ * La portada ya no dispara ninguna consulta a la capa de datos: el bloque
+ * fijo de tarjetas de Supergangas se retiró (no tenía sentido mostrar 6-8
+ * tarjetas fijas con un catálogo de miles de productos — ver
+ * CategoryBanners.tsx, ahora el punto de entrada real al catálogo), y
+ * `CategoryRow`/`CategoryBanners` son navegación fija sin consulta propia
+ * (ver categoryLinks.ts). Sin BD de por medio, la portada vuelve a ser
+ * prerenderizable como HTML estático en el build — ya no hace falta
+ * `force-dynamic`. "Supergangas" sigue existiendo como página propia
+ * (`/supergangas`, ver getOfertasBundle en src/server/dataSource/home.ts):
+ * solo se retiró su resumen fijo de la portada.
  */
-export const dynamic = "force-dynamic";
-
-/**
- * La portada dispara una sola llamada a la capa de datos (Supergangas),
- * ya resuelta con BD-o-demo (ver src/server/dataSource) — la fila de
- * categorías (`CategoryRow`) es ahora una navegación fija, sin consulta
- * propia (ver categoryLinks.ts).
- */
-export default async function Home() {
-  const supergangas = await getSupergangasBundle();
-
+export default function Home() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteJsonLd) }} />
@@ -70,24 +62,6 @@ export default async function Home() {
 
         <div className="mt-6">
           <CategoryBanners />
-        </div>
-
-        {/*
-          El panel de comparación lateral ("Compara. Ahorra. Compra
-          mejor.") se retiró: mostraba siempre un producto/historial de
-          demostración fijo (slug curado sin datos reales detrás en el
-          catálogo actual, solo-Adidas), nunca datos verdaderos del
-          visitante — así que "Supergangas" pasa a ocupar todo el ancho
-          disponible en vez de compartirlo con una columna fija de 320px
-          sin contenido real.
-        */}
-        <div className="mt-8">
-          <SupergangasGrid
-            products={supergangas.data.products}
-            merchants={supergangas.data.merchants}
-            source={supergangas.source}
-            minDiscountPercent={SUPERGANGAS_MIN_DISCOUNT_PERCENT}
-          />
         </div>
       </Container>
 
