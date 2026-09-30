@@ -19,6 +19,21 @@ describe("getProductDetail", () => {
       expect(result.status).toBe("found"); // en un entorno con BD real ya sincronizada, también es válido
     }
   });
+
+  // Regresión: `demoSupergangas` (src/data/demo/products.ts) es un
+  // catálogo demo separado de `demoProducts`, con sus propios slugs —
+  // caso real detectado en producción: sin catálogo real todavía, cada
+  // tarjeta demo de "Supergangas" en la Home enlaza a uno de estos
+  // slugs, y sin este fallback llevaban a un 404 real al pulsarlas.
+  it("cae al equivalente de demostración de Supergangas cuando el slug es de ese catálogo (nunca 404, caso real detectado en producción)", async () => {
+    const result = await getProductDetail("zapatillas-running-pro");
+    if (result.status === "found" && result.source === "demo") {
+      expect(result.product.slug).toBe("zapatillas-running-pro");
+      expect(result.product.offers.length).toBeGreaterThan(0);
+    } else {
+      expect(result.status).toBe("found"); // en un entorno con BD real ya sincronizada, también es válido
+    }
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("getProductDetail (integración, BD local de pruebas)", () => {

@@ -5,7 +5,7 @@
  * y "no existe en absoluto" son casos distintos que la página debe poder
  * diferenciar (404 real vs. servir el equivalente de demostración).
  */
-import { demoProducts } from "@/data/demo/products";
+import { demoProducts, demoSupergangas } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Merchant, Product } from "@/types";
 import { getProductBySlug } from "@/server/repositories/products";
@@ -38,7 +38,13 @@ export async function getProductDetail(slug: string): Promise<ProductDetailResul
     };
   }
 
-  const demoProduct = demoProducts.find((p) => p.slug === slug);
+  // `demoSupergangas` (src/data/demo/products.ts) es un catálogo demo
+  // SEPARADO de `demoProducts`, con sus propios slugs (ver el comentario
+  // de ese fichero) — sin buscar también ahí, cualquier tarjeta demo de
+  // "Supergangas" en la Home llevaría a un 404 real al pulsarla, caso
+  // real detectado en producción (sin catálogo real todavía, la Home
+  // sirve 100% demo) el mismo día que se desplegó ese bloque.
+  const demoProduct = [...demoProducts, ...demoSupergangas].find((p) => p.slug === slug);
   if (demoProduct) {
     return { status: "found", source: "demo", product: demoProduct, merchants: demoMerchants };
   }
