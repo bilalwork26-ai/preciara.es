@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Flame } from "lucide-react";
 import type { Merchant, Product } from "@/types";
+import { OFERTAS_HREF } from "./categoryLinks";
 import { ProductDealCard } from "./ProductDealCard";
 
 /**
@@ -41,10 +42,10 @@ export function SupergangasGrid({
           </p>
         </div>
         <Link
-          href="/buscar"
+          href={OFERTAS_HREF}
           className="hidden shrink-0 items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 sm:inline-flex"
         >
-          Ver catálogo completo
+          Ver todas las Supergangas
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </div>

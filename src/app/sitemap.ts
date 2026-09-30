@@ -15,6 +15,7 @@ import { getActiveProductsWithOffers } from "@/server/repositories/products";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: SITE_URL, changeFrequency: "daily", priority: 1 },
+    { url: `${SITE_URL}/supergangas`, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/categorias`, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/guias`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/sobre-preciara`, changeFrequency: "monthly", priority: 0.5 },

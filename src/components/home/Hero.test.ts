@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * instalar una dependencia nueva sin que se pida explícitamente). En su
  * lugar, esta prueba verifica de forma estática y determinista los
  * requisitos de negocio del hero — texto exacto, un único enlace real a
- * `/buscar`, ninguna animación/JS visual, una única fotografía real —
+ * `/supergangas`, ninguna animación/JS visual, una única fotografía real —
  * leyendo el código fuente en vez de renderizarlo. La revisión visual real
  * (composición, recorte de la foto en cada ancho) queda verificada por
  * capturas reales — ver el informe de la tarea.
@@ -56,9 +56,9 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(h1Matches[0][1].trim()).toBe("Los mejores productos. Las mejores ofertas.");
   });
 
-  it("el CTA es un enlace real (<a href>) a /buscar, con estado hover y sin depender de JS para funcionar", () => {
+  it("el CTA es un enlace real (<a href>) a /supergangas (chollos con descuento real ≥30%, ver getOfertasBundle), con estado hover y sin depender de JS para funcionar", () => {
     const ctaMatch = heroSource.match(/<a\s+href="([^"]+)"[^>]*>/);
-    expect(ctaMatch?.[1]).toBe("/buscar");
+    expect(ctaMatch?.[1]).toBe("/supergangas");
     expect(heroSource).toMatch(/hover:bg-coral-600/);
   });
 
@@ -144,7 +144,7 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
   });
 
   it("usa coral para el CTA, como exige el encargo", () => {
-    const ctaMatch = heroSource.match(/<a\s+href="\/buscar"\s+className="([^"]*)"/);
+    const ctaMatch = heroSource.match(/<a\s+href="\/supergangas"\s+className="([^"]*)"/);
     expect(ctaMatch?.[1]).toMatch(/bg-coral-500/);
   });
 
@@ -170,7 +170,7 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(heroSource).toContain("Hasta −70 %");
     const descIndex = heroSource.indexOf("Moda, hogar, tecnología");
     const tagIndex = heroSource.indexOf("Hasta −70 %");
-    const ctaIndex = heroSource.indexOf('href="/buscar"');
+    const ctaIndex = heroSource.indexOf('href="/supergangas"');
     expect(descIndex).toBeGreaterThan(0);
     expect(tagIndex).toBeGreaterThan(descIndex);
     expect(ctaIndex).toBeGreaterThan(tagIndex);

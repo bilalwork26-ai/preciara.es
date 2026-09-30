@@ -16,14 +16,19 @@
  * FUERA a propósito: unas palabras clave adivinadas sin ver un feed real
  * tendrían más riesgo de clasificar mal que de acertar.
  *
- * DEPORTE se comprueba ANTES que MODA a propósito: el catálogo real hoy
- * es 100% Adidas, una marca deportiva — calzado/ropa con una señal de
+ * DEPORTE se comprueba ANTES que MODA a propósito: el primer anunciante
+ * real (Adidas) es una marca deportiva — calzado/ropa con una señal de
  * deporte explícita en el texto (p. ej. "Ropa deportiva", "Fútbol",
  * "Calzado de running") debe caer en Deporte aunque también contenga
  * palabras genéricas de Moda ("ropa", "calzado", "zapatilla"). Un texto
  * de calzado/ropa SIN ninguna señal de deporte (p. ej. "Calzado y
  * zapatillas" a secas, sin más contexto) sigue cayendo en Moda — ver el
  * test correspondiente.
+ *
+ * HOGAR incluye también clima/deshumidificación/herramientas de
+ * bricolaje desde que Trotec se sumó como segundo anunciante real: su
+ * catálogo (deshumidificadores, calefactores, herramientas eléctricas...)
+ * no encajaba en ninguna palabra clave anterior y caía en "Otros".
  *
  * Cualquier texto que no coincida con ninguna regla cae en
  * `GENERIC_CATEGORY_TARGET` ("Otros") — la fila NUNCA se rechaza ni se
@@ -93,8 +98,13 @@ const KEYWORD_RULES: readonly { target: CategoryMappingTarget; keywords: readonl
       "computing",
       "computer",
       "ordenador",
-      "portatil",
       "laptop",
+      // "portatil" ("portátil") se quitó a propósito: pensada para
+      // "ordenador portátil", pero como subcadena suelta coincide con
+      // CUALQUIER "[algo] portátil" de cualquier vertical (caso real
+      // detectado al añadir Trotec: "deshumidificador portátil"), no solo
+      // ordenadores. "ordenador" y "laptop" ya cubren el caso real sin
+      // ese riesgo de falso positivo cruzado.
       "tablet",
       "smartphone",
       "movil",
@@ -160,7 +170,40 @@ const KEYWORD_RULES: readonly { target: CategoryMappingTarget; keywords: readonl
   },
   {
     target: HOGAR,
-    keywords: ["hogar", "home", "mueble", "furniture", "decoracion", "menaje", "textil hogar", "bano", "cocina"],
+    keywords: [
+      "hogar",
+      "home",
+      "mueble",
+      "furniture",
+      "decoracion",
+      "menaje",
+      "textil hogar",
+      "bano",
+      "cocina",
+      // Añadidas al conectar Trotec (clima/deshumidificación/herramientas
+      // de bricolaje) como segundo anunciante real de Awin: su texto de
+      // categoría no tenía ninguna palabra clave que lo cubriera y caía
+      // en "Otros" en vez de en Hogar. Mismo criterio conservador que el
+      // resto del fichero — solo términos de clima/herramienta lo bastante
+      // inequívocos, nunca palabras que puedan significar otra cosa.
+      "deshumidificador",
+      "climatizador",
+      "climatizacion",
+      "aire acondicionado",
+      "calefactor",
+      "calefaccion",
+      "ventilador",
+      "humidificador",
+      "purificador de aire",
+      "generador electrico",
+      "herramienta",
+      "taladro",
+      "amoladora",
+      "lijadora",
+      "atornillador",
+      "bricolaje",
+      "jardin",
+    ],
   },
 ];
 

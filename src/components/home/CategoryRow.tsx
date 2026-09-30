@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
-import type { Category } from "@/types";
-import { buildCategoryHref } from "./categoryLinks";
+import { CATEGORIES_INDEX_HREF, OFERTAS_HREF, PRIMARY_NAV_ITEMS } from "./categoryLinks";
 
 const PILL_FOCUS_CLASSES =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2";
 
-export function CategoryRow({ categories, viewAllHref }: { categories: Category[]; viewAllHref?: string }) {
+/**
+ * Navegación principal fija (`PRIMARY_NAV_ITEMS`, ver categoryLinks.ts):
+ * antes recibía las categorías por props, generadas dinámicamente a
+ * partir de las que tenían ofertas activas en BD — con un catálogo real
+ * todavía pequeño, eso podía dejar solo 2-3 píldoras desalineadas con un
+ * hueco vacío al lado (caso real reportado: "Moda, Otros, Infantil").
+ * Sin props: siempre los mismos 5 elementos + "Ver todas", nunca depende
+ * del inventario del momento.
+ */
+export function CategoryRow() {
   const scrollerRef = useRef<HTMLUListElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -45,38 +53,45 @@ export function CategoryRow({ categories, viewAllHref }: { categories: Category[
     <div className="relative">
       <ul
         ref={scrollerRef}
-        className="no-scrollbar flex snap-x gap-2.5 overflow-x-auto scroll-smooth pb-1"
-        aria-label="Categorías"
+        className="no-scrollbar flex snap-x justify-start gap-2.5 overflow-x-auto scroll-smooth pb-1 sm:justify-center"
+        aria-label="Categorías principales"
         tabIndex={0}
       >
-        {categories.map((category) => {
-          const Icon = (icons as unknown as Record<string, LucideIcon>)[category.icon] ?? icons.Tag;
+        {PRIMARY_NAV_ITEMS.map((item) => {
+          const Icon = (icons as unknown as Record<string, LucideIcon>)[item.icon] ?? icons.Tag;
+          // "Supergangas" no es una categoría más: se destaca en coral
+          // (mismo acento que DiscountBadge/ProductDealCard) para que la
+          // navegación deje claro, de un vistazo, que es el atajo a los
+          // chollos, no una categoría de producto.
+          const isDeals = item.href === OFERTAS_HREF;
           return (
-            <li key={category.id} className="shrink-0 snap-start">
+            <li key={item.href} className="shrink-0 snap-start">
               <a
-                href={buildCategoryHref(category.slug)}
-                aria-label={`Ver ofertas en ${category.name}`}
-                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-border bg-white px-4 py-2.5 text-sm font-medium text-navy-700 shadow-sm transition-colors hover:border-teal-600 hover:text-teal-700 ${PILL_FOCUS_CLASSES}`}
+                href={item.href}
+                aria-label={isDeals ? "Ver Supergangas: chollos con descuento real" : `Ver ofertas en ${item.label}`}
+                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium shadow-sm transition-colors ${PILL_FOCUS_CLASSES} ${
+                  isDeals
+                    ? "border-coral-500 bg-coral-500 text-white hover:bg-coral-600"
+                    : "border-border bg-white text-navy-700 hover:border-teal-600 hover:text-teal-700"
+                }`}
               >
-                <Icon className="h-4 w-4 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
-                {category.name}
+                <Icon className={`h-4 w-4 ${isDeals ? "text-white" : "text-teal-600"}`} aria-hidden="true" strokeWidth={1.75} />
+                {item.label}
               </a>
             </li>
           );
         })}
 
-        {viewAllHref && (
-          <li className="shrink-0 snap-start">
-            <a
-              href={viewAllHref}
-              aria-label="Ver todas las categorías"
-              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-dashed border-navy-300 bg-white px-4 py-2.5 text-sm font-medium text-navy-700 shadow-sm transition-colors hover:border-teal-600 hover:text-teal-700 ${PILL_FOCUS_CLASSES}`}
-            >
-              <LayoutGrid className="h-4 w-4 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
-              Ver todas
-            </a>
-          </li>
-        )}
+        <li className="shrink-0 snap-start">
+          <a
+            href={CATEGORIES_INDEX_HREF}
+            aria-label="Ver todas las categorías"
+            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-dashed border-navy-300 bg-white px-4 py-2.5 text-sm font-medium text-navy-700 shadow-sm transition-colors hover:border-teal-600 hover:text-teal-700 ${PILL_FOCUS_CLASSES}`}
+          >
+            <LayoutGrid className="h-4 w-4 text-teal-600" aria-hidden="true" strokeWidth={1.75} />
+            Ver todas
+          </a>
+        </li>
       </ul>
 
       {canScrollLeft && (
