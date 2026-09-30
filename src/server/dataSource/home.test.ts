@@ -11,13 +11,14 @@ import {
   collapseProductVariants,
   dealsGridGroupKey,
   getHomeCategories,
-  getDealsGridBundle,
-  selectDiverseDeals,
+  getSupergangasBundle,
+  selectSuperDeals,
+  SUPERGANGAS_MIN_DISCOUNT_PERCENT,
 } from "./home";
 
 const PREFIX = "test-home-datasource";
 
-/** Producto mínimo con solo los campos que leen dealsGridGroupKey/bestDiscountPercent/selectDiverseDeals. */
+/** Producto mínimo con solo los campos que leen dealsGridGroupKey/bestDiscountPercent/selectSuperDeals. */
 function fakeProduct(overrides: {
   name: string;
   categoryId: number;
@@ -138,7 +139,7 @@ describe("collapseProductVariants", () => {
     expect(collapsed[0].name).toBe("Pantalón Tastigo 3 Training S"); // 40%, el mayor de las tres
   });
 
-  it("no reparte por categoría ni recorta: devuelve TODOS los modelos distintos, sin límite (a diferencia de selectDiverseDeals)", () => {
+  it("no reparte por categoría ni recorta: devuelve TODOS los modelos distintos, sin límite ni filtro de descuento (a diferencia de selectSuperDeals)", () => {
     const products = [
       fakeProduct({ name: "A1", categoryId: 1 }),
       fakeProduct({ name: "A2", categoryId: 1 }),
@@ -172,102 +173,70 @@ describe("collapseProductVariants", () => {
   });
 });
 
-describe("selectDiverseDeals", () => {
-  it("nunca incluye dos variantes (talla) del mismo modelo: se queda con la de mayor descuento", () => {
+describe("selectSuperDeals", () => {
+  it("descarta cualquier producto por debajo del umbral de descuento", () => {
     const products = [
-      fakeProduct({ name: "Pantalón X 23-34", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "90" }] }),
-      fakeProduct({ name: "Pantalón X 24-30", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "60" }] }),
-      fakeProduct({ name: "Pantalón X 24-32", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }),
+      fakeProduct({ name: "Chollo real", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "65" }] }), // 35%
+      fakeProduct({ name: "Descuento flojo", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "85" }] }), // 15%
+      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
     ];
-    const selected = selectDiverseDeals(products, 24);
-    expect(selected).toHaveLength(1);
-    expect(selected[0].name).toBe("Pantalón X 24-30"); // 40% de descuento, el mayor de las tres
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6);
+    expect(selected.map((p) => p.name)).toEqual(["Chollo real"]);
   });
 
-  it("dentro del límite de racha (2 seguidas), sigue premiando el mayor descuento antes de ceder el turno a otra categoría", () => {
+  it("incluye un producto exactamente en el umbral (>=, no solo >)", () => {
+    const products = [fakeProduct({ name: "Justo 30%", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "70" }] })];
+    expect(selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toHaveLength(1);
+  });
+
+  it("nunca deja dos variantes (talla) del mismo modelo, igual que collapseProductVariants", () => {
+    const products = [
+      fakeProduct({ name: "Pantalón X 23-34", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
+      fakeProduct({ name: "Pantalón X 24-30", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+    ];
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6);
+    expect(selected).toHaveLength(1);
+    expect(selected[0].name).toBe("Pantalón X 24-30"); // 50%, el mayor de las dos
+  });
+
+  it("nunca devuelve más de `limit` productos, aunque más cumplan el umbral", () => {
+    const products = Array.from({ length: 10 }, (_, i) =>
+      fakeProduct({ name: `P${i}`, categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+    );
+    expect(selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toHaveLength(6);
+  });
+
+  it("nunca reparte por categoría: puede devolver varios productos seguidos de la MISMA categoría si son los de mayor descuento", () => {
     const products = [
       fakeProduct({ name: "A1", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
       fakeProduct({ name: "A2", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "20" }] }), // 80%
       fakeProduct({ name: "A3", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "30" }] }), // 70%
       fakeProduct({ name: "B1", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
     ];
-    // Con el límite de 2 tarjetas seguidas de la misma categoría, las dos
-    // primeras posiciones pueden ser ambas de la categoría 1 (son las de
-    // mayor descuento), pero la tercera SÍ debe ceder a la categoría 2 en
-    // vez de repetir una tercera vez la categoría 1 aunque "A3" (70%)
-    // siga teniendo mejor descuento que "B1" (50%).
-    const selected = selectDiverseDeals(products, 3);
-    expect(selected.map((p) => p.name)).toEqual(["A1", "A2", "B1"]);
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 4);
+    expect(selected.map((p) => p.name)).toEqual(["A1", "A2", "A3", "B1"]);
   });
 
-  it("nunca deja más de MAX_CONSECUTIVE_SAME_CATEGORY (2) tarjetas seguidas de la misma categoría, aunque esa categoría concentre todos los mejores descuentos", () => {
+  it("el resultado sale ordenado por % de descuento real descendente", () => {
     const products = [
-      ...[90, 80, 70, 60, 50].map((discount, i) =>
-        fakeProduct({ name: `Calzado${i}`, categoryId: 1, offers: [{ previousPrice: "100", currentPrice: String(100 - discount) }] }),
-      ),
-      fakeProduct({ name: "Ropa", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
-      fakeProduct({ name: "Accesorio", categoryId: 3, offers: [{ previousPrice: "100", currentPrice: "70" }] }), // 30%
+      fakeProduct({ name: "Medio", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
+      fakeProduct({ name: "Máximo", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
+      fakeProduct({ name: "Mínimo", categoryId: 3, offers: [{ previousPrice: "100", currentPrice: "68" }] }), // 32%
     ];
-    const selected = selectDiverseDeals(products, products.length);
-    expect(selected).toHaveLength(products.length); // reparte TODO el catálogo, no lo recorta
-    let run = 1;
-    for (let i = 1; i < selected.length; i++) {
-      run = selected[i].categoryId === selected[i - 1].categoryId ? run + 1 : 1;
-      expect(run).toBeLessThanOrEqual(2);
-    }
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6);
+    expect(selected.map((p) => p.name)).toEqual(["Máximo", "Medio", "Mínimo"]);
   });
 
-  it("nunca devuelve más de `limit` productos", () => {
-    const products = Array.from({ length: 10 }, (_, i) => fakeProduct({ name: `P${i}`, categoryId: 1 }));
-    expect(selectDiverseDeals(products, 3)).toHaveLength(3);
-  });
-
-  it("con menos productos distintos que `limit`, devuelve todos los que haya sin lanzar", () => {
-    const products = [fakeProduct({ name: "Único", categoryId: 1 })];
-    expect(selectDiverseDeals(products, 24)).toHaveLength(1);
-  });
-
-  it("el resultado final está ordenado por % de descuento real descendente, no por el reparto de categorías", () => {
-    // A propósito, la categoría 1 aporta el mayor Y el menor descuento de
-    // todos: si el resultado se quedara en el orden de intercalado por
-    // categoría (ronda a ronda), "A1" (90%) saldría primero pero "A2"
-    // (5%) saldría antes que "B1" (50%) solo por turno de ronda, nunca
-    // por su descuento real.
+  it("con ningún producto que llegue al umbral, devuelve una lista vacía sin inflarla con descuentos menores", () => {
     const products = [
-      fakeProduct({ name: "A1", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
-      fakeProduct({ name: "A2", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }), // 5%
-      fakeProduct({ name: "B1", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+      fakeProduct({ name: "X", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "90" }] }), // 10%
+      fakeProduct({ name: "Y", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
     ];
-    const selected = selectDiverseDeals(products, 3);
-    expect(selected.map((p) => p.name)).toEqual(["A1", "B1", "A2"]);
+    expect(selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toEqual([]);
   });
 
-  it("desempata productos SIN descuento (0%) por fecha de actualización más reciente", () => {
-    const products = [
-      fakeProduct({ name: "Viejo", categoryId: 1, updatedAt: new Date("2026-01-01T00:00:00Z") }),
-      fakeProduct({ name: "Reciente", categoryId: 2, updatedAt: new Date("2026-06-01T00:00:00Z") }),
-    ];
-    const selected = selectDiverseDeals(products, 2);
-    expect(selected.map((p) => p.name)).toEqual(["Reciente", "Viejo"]);
-  });
-
-  it("desempata productos con el MISMO % de descuento por fecha de actualización más reciente", () => {
-    const products = [
-      fakeProduct({
-        name: "Descuento viejo",
-        categoryId: 1,
-        offers: [{ previousPrice: "100", currentPrice: "50" }], // 50%
-        updatedAt: new Date("2026-01-01T00:00:00Z"),
-      }),
-      fakeProduct({
-        name: "Descuento reciente",
-        categoryId: 2,
-        offers: [{ previousPrice: "100", currentPrice: "50" }], // mismo 50%
-        updatedAt: new Date("2026-06-01T00:00:00Z"),
-      }),
-    ];
-    const selected = selectDiverseDeals(products, 2);
-    expect(selected.map((p) => p.name)).toEqual(["Descuento reciente", "Descuento viejo"]);
+  it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
+    expect(selectSuperDeals([], SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toEqual([]);
   });
 });
 
@@ -315,14 +284,25 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     }
   });
 
-  it("getDealsGridBundle responde con demo sin lanzar", async () => {
+  it("getSupergangasBundle responde con demo sin lanzar", async () => {
     vi.resetModules();
     delete process.env.DATABASE_URL;
     delete (globalThis as Record<string, unknown>).__preciaraPrisma;
-    const { getDealsGridBundle: fn } = await import("./home");
+    const { getSupergangasBundle: fn } = await import("./home");
     const { source, data } = await fn();
     expect(source).toBe("demo");
     expect(data.products.length).toBeGreaterThan(0);
+  });
+
+  it("getSupergangasBundle en demo sale ordenado por descuento real descendente (la primera tarjeta, destacada, es siempre el mayor chollo)", async () => {
+    vi.resetModules();
+    delete process.env.DATABASE_URL;
+    delete (globalThis as Record<string, unknown>).__preciaraPrisma;
+    const { getSupergangasBundle: fn } = await import("./home");
+    const { bestOfferDiscountPercent } = await import("@/lib/format");
+    const { data } = await fn();
+    const discounts = data.products.map((p) => bestOfferDiscountPercent(p.offers));
+    expect(discounts).toEqual([...discounts].sort((a, b) => b - a));
   });
 });
 
@@ -355,21 +335,21 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home (integración, BD lo
     expect(index).toBe(rows!.length - 1);
   });
 
-  it("si en este entorno la base solo tiene catálogo demo, la cuadrícula de bajadas cae al fallback demo", async () => {
+  it("si en este entorno la base solo tiene catálogo demo, Supergangas cae al fallback demo", async () => {
     // Igual que en dataSource/search.test.ts: solo afirma algo cuando de
     // verdad no hay catálogo real en este entorno, para no dar un falso
     // negativo en un entorno con datos reales ya importados.
     const realCatalogProbe = await getActiveProductsWithOffers(1);
     const hasRealCatalog = (realCatalogProbe?.length ?? 0) > 0;
     if (!hasRealCatalog) {
-      const bundle = await getDealsGridBundle();
+      const bundle = await getSupergangasBundle();
       expect(bundle.source).toBe("demo");
       expect(bundle.data.products.length).toBeGreaterThan(0);
     }
   });
 });
 
-describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de bajadas (integración)", () => {
+describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integración)", () => {
   const productSlug = `${PREFIX}-producto-destacado`;
   const merchantSlug = `${PREFIX}-comercio`;
   let categoryId: number;
@@ -389,7 +369,12 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
       data: {
         productId,
         merchantId: merchant.id,
+        // 50% de descuento real: por debajo de SUPERGANGAS_MIN_DISCOUNT_PERCENT
+        // (30%) este producto no aparecería nunca en Supergangas, y varios
+        // tests de este bloque necesitan que sí aparezca para comprobar
+        // otros filtros (activo/inactivo/demo) de forma aislada.
         currentPrice: 49.99,
+        previousPrice: 99.99,
         productUrl: "https://example.invalid/p",
         availability: "IN_STOCK",
         lastCheckedAt: new Date(),
@@ -405,7 +390,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
     await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX } } });
   });
 
-  it("un producto sin ninguna oferta activa no aparece en la cuadrícula de bajadas", async () => {
+  it("un producto sin ninguna oferta activa no aparece en Supergangas", async () => {
     const inactiveOfferProduct = await prisma!.product.create({
       data: { slug: `${PREFIX}-sin-ofertas`, name: "Sin ofertas activas", categoryId },
     });
@@ -415,6 +400,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
         productId: inactiveOfferProduct.id,
         merchantId: merchant2.id,
         currentPrice: 10,
+        previousPrice: 20, // 50%: el descuento por sí solo no basta, la oferta está inactiva
         productUrl: "https://example.invalid/x",
         availability: "IN_STOCK",
         lastCheckedAt: new Date(),
@@ -422,22 +408,22 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
       },
     });
 
-    const bundle = await getDealsGridBundle();
+    const bundle = await getSupergangasBundle();
     expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-sin-ofertas`)).toBeUndefined();
-    // El producto con oferta activa sí debe aparecer.
+    // El producto con oferta activa y descuento real sí debe aparecer.
     if (bundle.source === "database") {
       expect(bundle.data.products.find((p) => p.slug === productSlug)).toBeDefined();
     }
   });
 
-  it("un producto inactivo no aparece aunque tenga ofertas activas", async () => {
+  it("un producto inactivo no aparece aunque tenga ofertas activas y descuento real", async () => {
     await prisma!.product.update({ where: { id: productId }, data: { isActive: false } });
-    const bundle = await getDealsGridBundle();
+    const bundle = await getSupergangasBundle();
     expect(bundle.data.products.find((p) => p.slug === productSlug)).toBeUndefined();
     await prisma!.product.update({ where: { id: productId }, data: { isActive: true } }); // limpieza
   });
 
-  it("un producto marcado isDemo=true nunca aparece en la cuadrícula, aunque haya catálogo real junto a él", async () => {
+  it("un producto marcado isDemo=true nunca aparece en Supergangas, aunque haya catálogo real junto a él", async () => {
     const demoMerchant = await prisma!.merchant.create({
       data: { slug: `${PREFIX}-comercio-demo`, name: "Comercio demo", websiteUrl: "https://example.invalid", isDemo: true },
     });
@@ -449,6 +435,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
         productId: demoProduct.id,
         merchantId: demoMerchant.id,
         currentPrice: 1,
+        previousPrice: 5, // 80%: el mayor descuento del lote, pero es demo y nunca debe colarse
         productUrl: "https://example.invalid/demo-en-mezcla",
         availability: "IN_STOCK",
         lastCheckedAt: new Date(),
@@ -457,7 +444,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
       },
     });
 
-    const bundle = await getDealsGridBundle();
+    const bundle = await getSupergangasBundle();
     expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-producto-demo-en-mezcla`)).toBeUndefined();
     // El producto real de este mismo bloque sigue apareciendo con normalidad.
     if (bundle.source === "database") {
@@ -465,7 +452,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
     }
   });
 
-  it("varias tallas del mismo modelo (mismo nombre salvo el rango de talla) nunca aparecen juntas en la cuadrícula", async () => {
+  it("varias tallas del mismo modelo (mismo nombre salvo el rango de talla), todas con descuento real, nunca aparecen juntas en Supergangas", async () => {
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
     const sizeVariantSlugs = [`${PREFIX}-talla-23-34`, `${PREFIX}-talla-24-30`, `${PREFIX}-talla-24-32`];
     for (const slug of sizeVariantSlugs) {
@@ -478,6 +465,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
           productId: variant.id,
           merchantId: merchant.id,
           currentPrice: 29.99,
+          previousPrice: 49.99, // 40%: todas las variantes cumplen el umbral, para que el test compruebe de verdad la deduplicación (y no el filtro de descuento)
           productUrl: `https://example.invalid/talla-${size}`,
           availability: "IN_STOCK",
           lastCheckedAt: new Date(),
@@ -486,11 +474,33 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: cuadrícula de baja
       });
     }
 
-    const bundle = await getDealsGridBundle();
+    const bundle = await getSupergangasBundle();
     const present = sizeVariantSlugs.filter((slug) => bundle.data.products.some((p) => p.slug === slug));
     if (bundle.source === "database") {
       // Como mucho una de las tres tallas, nunca varias tarjetas del mismo modelo.
       expect(present.length).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("un producto con descuento por debajo del umbral (30%) nunca aparece en Supergangas", async () => {
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    const weakDiscountProduct = await prisma!.product.create({
+      data: { slug: `${PREFIX}-descuento-flojo`, name: "Producto con descuento flojo", categoryId },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: weakDiscountProduct.id,
+        merchantId: merchant.id,
+        currentPrice: 85,
+        previousPrice: 100, // 15%, por debajo de SUPERGANGAS_MIN_DISCOUNT_PERCENT (30%)
+        productUrl: "https://example.invalid/descuento-flojo",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+      },
+    });
+
+    const bundle = await getSupergangasBundle();
+    expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeUndefined();
   });
 });

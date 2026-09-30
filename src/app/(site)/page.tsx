@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { BrandCarousel } from "@/components/home/BrandCarousel";
 import { Hero } from "@/components/home/Hero";
 import { CategoryRow } from "@/components/home/CategoryRow";
-import { VerifiedDealsGrid } from "@/components/home/VerifiedDealsGrid";
+import { CategoryBanners } from "@/components/home/CategoryBanners";
+import { SupergangasGrid } from "@/components/home/SupergangasGrid";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { MarqueeBand } from "@/components/home/MarqueeBand";
 import { Container } from "@/components/ui/Container";
-import { getDealsGridBundle, getHomeCategories } from "@/server/dataSource/home";
+import { getSupergangasBundle, getHomeCategories } from "@/server/dataSource/home";
 import { SITE_URL } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 
@@ -41,12 +42,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * Toda la portada dispara solo 2 llamadas a la capa de datos (categorías,
- * cuadrícula de bajadas), en paralelo, cada una ya resuelta con BD-o-demo
- * (ver src/server/dataSource). Los componentes visuales no cambian: solo
+ * Supergangas), en paralelo, cada una ya resuelta con BD-o-demo (ver
+ * src/server/dataSource). Los componentes visuales no cambian: solo
  * reciben por props lo que antes importaban directamente de src/data/demo.
  */
 export default async function Home() {
-  const [categories, dealsGrid] = await Promise.all([getHomeCategories(), getDealsGridBundle()]);
+  const [categories, supergangas] = await Promise.all([getHomeCategories(), getSupergangasBundle()]);
 
   return (
     <>
@@ -67,17 +68,21 @@ export default async function Home() {
           <CategoryRow categories={categories.data.categories} viewAllHref={categories.data.hasMore ? "/categorias" : undefined} />
         </div>
 
+        <div className="mt-6">
+          <CategoryBanners />
+        </div>
+
         {/*
           El panel de comparación lateral ("Compara. Ahorra. Compra
           mejor.") se retiró: mostraba siempre un producto/historial de
           demostración fijo (slug curado sin datos reales detrás en el
           catálogo actual, solo-Adidas), nunca datos verdaderos del
-          visitante — así que "Bajadas destacadas" pasa a ocupar todo el
-          ancho disponible en vez de compartirlo con una columna fija de
-          320px sin contenido real.
+          visitante — así que "Supergangas" pasa a ocupar todo el ancho
+          disponible en vez de compartirlo con una columna fija de 320px
+          sin contenido real.
         */}
-        <div className="mt-6">
-          <VerifiedDealsGrid products={dealsGrid.data.products} merchants={dealsGrid.data.merchants} source={dealsGrid.source} />
+        <div className="mt-8">
+          <SupergangasGrid products={supergangas.data.products} merchants={supergangas.data.merchants} source={supergangas.source} />
         </div>
       </Container>
 
