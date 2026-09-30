@@ -46,6 +46,25 @@ export type NormalizedOfferRow = {
   imageUrl: string | null;
   /** Precio actual, en la unidad menor habitual (p. ej. 19.99), nunca negativo. */
   price: number;
+  /**
+   * Precio de referencia ("antes de la rebaja") que la propia fuente
+   * declara para esta fila, si lo trae — p. ej. la columna `rrp_price`
+   * del feed de Awin. `null` si la fuente no lo aporta.
+   *
+   * NUNCA se usa directamente como `Offer.previousPrice`: solo sirve como
+   * señal inicial para una oferta que Preciara ve por primera vez (o que
+   * todavía no tiene ningún descuento propio observado), y solo si es
+   * estrictamente mayor que `price` — ver `applyOffer.ts`. El histórico
+   * real de precio (la bajada que Preciara observa entre dos
+   * sincronizaciones propias) sigue siendo la fuente de verdad una vez
+   * que existe; este campo nunca la sobrescribe. Sin esto, un comercio
+   * recién conectado (su primera sincronización) no tiene ningún
+   * descuento que mostrar hasta que su precio cambie una segunda vez
+   * respecto a lo que Preciara ya había visto — puede tardar semanas,
+   * aunque el propio comercio ya muestre una rebaja real en su feed
+   * desde el primer día.
+   */
+  referencePrice: number | null;
   shippingCost: number | null;
   /** Código ISO 4217 de 3 letras, p. ej. "EUR". */
   currency: string;

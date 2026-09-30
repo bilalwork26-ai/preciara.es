@@ -148,6 +148,7 @@ function normalizeAmazonItem(item: AmazonPaapiItem, fetchedAt: Date): Normalized
     category,
     imageUrl: item.Images?.Primary?.Large?.URL?.trim() || null,
     price: listing.Price.Amount,
+    referencePrice: null, // PA-API no expone aquí un precio de referencia ("antes") fiable — ver referencePrice en types.ts
     shippingCost: null, // ver comentario de cabecera
     currency: (listing.Price.Currency || "EUR").toUpperCase(),
     availability: resolveAmazonAvailability(listing.Availability),

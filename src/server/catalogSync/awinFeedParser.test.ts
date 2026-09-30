@@ -8,7 +8,7 @@ const MERCHANT_A: NormalizedMerchant = { slug: "tienda-a", name: "Tienda A", web
 const MERCHANT_B: NormalizedMerchant = { slug: "tienda-b", name: "Tienda B", websiteUrl: "https://tienda-b.example.invalid" };
 
 const FULL_HEADER =
-  "aw_product_id,merchant_product_id,product_name,brand_name,product_model,model_number,merchant_category,merchant_image_url,aw_image_url,large_image,image_url,search_price,currency,delivery_cost,merchant_deep_link,aw_deep_link,in_stock,product_GTIN,ean,upc";
+  "aw_product_id,merchant_product_id,product_name,brand_name,product_model,model_number,merchant_category,merchant_image_url,aw_image_url,large_image,image_url,search_price,rrp_price,currency,delivery_cost,merchant_deep_link,aw_deep_link,in_stock,product_GTIN,ean,upc";
 
 /** Entrecomilla un valor al estilo RFC 4180 si contiene coma, comilla o salto de línea (duplicando las comillas internas); si no, lo deja tal cual. */
 function csvField(value: string): string {
@@ -155,6 +155,41 @@ describe("parseAwinProductFeed: precio y moneda, válidos e inválidos", () => {
     const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "P", merchant_category: "C", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
     const results = await collect(csv);
     expect(invalid(results)[0].code).toBe("MISSING_FIELD");
+  });
+});
+
+describe("parseAwinProductFeed: referencePrice (rrp_price) — precio de referencia declarado por la fuente, ver types.ts", () => {
+  it("lee rrp_price en referencePrice cuando el feed lo trae", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ aw_product_id: "1", product_name: "P", merchant_category: "C", search_price: "19.99", rrp_price: "29.99", currency: "EUR", aw_deep_link: "https://x.invalid/1" }),
+    ].join("\n");
+    const results = valid(await collect(csv));
+    expect(results[0].row.referencePrice).toBe(29.99);
+  });
+
+  it("sin columna rrp_price (o vacía), referencePrice es null — nunca se inventa ni se rechaza la fila", async () => {
+    const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "P", merchant_category: "C", search_price: "19.99", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
+    const results = valid(await collect(csv));
+    expect(results[0].row.referencePrice).toBeNull();
+  });
+
+  it("acepta rrp_price con coma decimal, igual que search_price", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ aw_product_id: "1", product_name: "P", merchant_category: "C", search_price: "19,99", rrp_price: "29,99", currency: "EUR", aw_deep_link: "https://x.invalid/1" }),
+    ].join("\n");
+    const results = valid(await collect(csv));
+    expect(results[0].row.referencePrice).toBe(29.99);
+  });
+
+  it("rechaza (fila inválida, no fatal) un rrp_price no numérico, igual que un search_price no numérico", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ aw_product_id: "1", product_name: "P", merchant_category: "C", search_price: "19.99", rrp_price: "no-es-un-numero", currency: "EUR", aw_deep_link: "https://x.invalid/1" }),
+    ].join("\n");
+    const results = await collect(csv);
+    expect(invalid(results)[0].code).toBe("INVALID_NUMBER");
   });
 });
 

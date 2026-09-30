@@ -413,6 +413,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runCsvImport: canonicalGtin (bloqueo
       category: { slug: GTIN_CATEGORY, name: "Categoría de prueba" },
       imageUrl: null,
       price: 25,
+      referencePrice: null,
       shippingCost: null,
       currency: "EUR",
       availability: "IN_STOCK" as never,
