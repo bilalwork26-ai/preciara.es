@@ -93,7 +93,15 @@ export function CategoryBanners() {
               sizes="(min-width: 640px) 25vw, 50vw"
               className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/10 to-transparent" aria-hidden="true" />
+            {/*
+              from-black/95 (antes navy-900/85): sobre fotos claras (p. ej.
+              Bricolaje, Electrónica) navy-900/85 seguía dejando pasar
+              demasiado brillo de fondo bajo el texto blanco — negro puro
+              a mayor opacidad, más el escalón intermedio via-black/50
+              (antes /10), da el contraste que el texto/icono necesitan
+              en cualquier foto, clara u oscura.
+            */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" aria-hidden="true" />
             <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-6">
               <span className="font-serif text-xl font-bold text-white sm:text-2xl">{banner.label}</span>
               <ArrowRight

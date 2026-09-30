@@ -48,9 +48,15 @@ export function Hero() {
         <div className="hero-fade-x absolute inset-0" aria-hidden="true" />
       </div>
 
+      {/*
+        leading-tight (1.25) en el h1 de abajo, no leading-[1.1]: esa
+        línea tan ajustada recortaba las tildes/ascendentes de Fraunces,
+        la tipografía serif de display — su altura de mayúscula/acento
+        supera la caja de línea que implica un interlineado tan justo.
+      */}
       <Container>
-        <div className="relative z-10 flex flex-col justify-center gap-3 py-8 sm:min-h-[380px] sm:max-w-md sm:py-0 lg:min-h-[420px] lg:max-w-lg">
-          <h1 className="font-serif text-3xl font-bold leading-[1.1] text-white sm:text-4xl lg:text-5xl">
+        <div className="relative z-10 flex flex-col justify-center gap-3 py-10 sm:min-h-[380px] sm:max-w-md sm:py-6 lg:min-h-[420px] lg:max-w-lg">
+          <h1 className="font-serif text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-5xl">
             Los mejores productos. Las mejores ofertas.
           </h1>
 

@@ -22,13 +22,16 @@ const steps = [
 
 /**
  * Sección compacta de la portada, entre la cuadrícula de ofertas y la
- * marquesina. Fondo `bg-beige` (nunca navy ni coral): se lee como su
- * propia franja informativa, sin competir con el hero ni con las tarjetas
- * de ofertas que vienen justo antes.
+ * marquesina. Fondo `bg-teal-50` (antes `bg-beige`, que creaba un salto
+ * cromático brusco frente al resto de la portada, mayormente blanca):
+ * un neutro casi blanco, ya usado en el resto de la interfaz (p. ej. el
+ * icono de cada paso más abajo), da la franja informativa propia que
+ * necesita sin competir con el hero ni con el grid de categorías justo
+ * antes.
  */
 export function HowItWorksSection() {
   return (
-    <section className="bg-beige">
+    <section className="bg-teal-50">
       <Container className="py-10 sm:py-12">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
