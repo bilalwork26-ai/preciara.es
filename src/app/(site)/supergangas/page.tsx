@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { Flame } from "lucide-react";
 import { getOfertasBundle, SUPERGANGAS_MIN_DISCOUNT_PERCENT } from "@/server/dataSource/home";
+import { getCategoriesIndex } from "@/server/dataSource/category";
+import { demoCategories } from "@/data/demo/categories";
 import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
-import { ProductDealCard } from "@/components/home/ProductDealCard";
+import { OfertasCatalog } from "@/components/supergangas/OfertasCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,27 @@ export const metadata: Metadata = {
  * ≥SUPERGANGAS_MIN_DISCOUNT_PERCENT — ver `getOfertasBundle`.
  */
 export default async function SupergangasPage() {
-  const { data, source } = await getOfertasBundle();
+  const [{ data, source }, categoriesIndex] = await Promise.all([getOfertasBundle(), getCategoriesIndex()]);
+
+  // `Product.categoryId` guarda el slug de la categoría con datos reales de
+  // BD, pero el id interno del demo (p. ej. "cat-hogar") con datos de
+  // demostración (quirk histórico del adaptador BD-o-demo, ver
+  // transform.ts/category.ts) — se indexa por las dos claves a la vez para
+  // que el desplegable muestre el nombre bonito sea cual sea la fuente
+  // activa, sin tener que saber de antemano cuál es.
+  //
+  // `categoriesIndex` se queda corto en demo: solo trae categorías con al
+  // menos un producto en el catálogo demo GENERAL (`demoProducts`), pero
+  // `demoSupergangas` es una lista curada aparte que puede incluir una
+  // categoría sin representación ahí (caso real: "Deporte") — sin este
+  // añadido, esa opción del desplegable se quedaría con el id crudo
+  // ("cat-deporte") en vez de su nombre. `demoCategories` (la lista
+  // completa, sin filtrar) siempre cubre el hueco.
+  const categoryNameById: Record<string, string> = {};
+  for (const category of [...categoriesIndex.categories, ...demoCategories]) {
+    categoryNameById[category.slug] = category.name;
+    categoryNameById[category.id] = category.name;
+  }
 
   const breadcrumbJsonLd = buildBreadcrumbList([
     { name: "Inicio", path: "/" },
@@ -49,21 +71,11 @@ export default async function SupergangasPage() {
       </p>
 
       {/*
-        Mismo criterio de layout que SupergangasGrid (portada): rejilla
-        fija de 2 columnas en móvil, `flex-wrap` a partir de `sm:` para
-        que la última fila incompleta nunca deje huecos vacíos. Con
-        catálogo real pero 0 chollos (nunca con demo), no se pinta una
-        rejilla vacía: el mensaje de arriba ya lo cuenta.
+        Filtros por categoría/tienda + rejilla paginada en cliente (ver
+        OfertasCatalog.tsx) — con catálogo real pero 0 chollos (nunca con
+        demo), no se pinta nada más: el mensaje de arriba ya lo cuenta.
       */}
-      {data.products.length > 0 && (
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:flex-wrap sm:gap-4" aria-label={`Productos con descuento de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%`}>
-          {data.products.map((product, index) => (
-            <div key={product.id} className="sm:min-w-[220px] sm:max-w-[380px] sm:flex-1">
-              <ProductDealCard product={product} merchants={data.merchants} highlight={index === 0} />
-            </div>
-          ))}
-        </div>
-      )}
+      {data.products.length > 0 && <OfertasCatalog products={data.products} merchants={data.merchants} categoryNameById={categoryNameById} />}
     </Container>
   );
 }

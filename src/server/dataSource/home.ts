@@ -147,22 +147,93 @@ function compareByDealRank(a: ProductWithOffers, b: ProductWithOffers): number {
 }
 
 /**
+ * Comercio de la oferta que le da a `product` su `bestDiscountPercent`
+ * (mismo bucle, mismo criterio de empate que esa función — ver arriba):
+ * el comercio "dueño" del chollo a efectos de repartir por tienda en
+ * `interleaveByMerchant`. `null` si ninguna oferta trae el campo
+ * `merchant` (nunca ocurre con datos reales de Prisma — `productWithOffers`
+ * siempre lo incluye — solo en fixtures de test que no lo fijan).
+ */
+function bestDiscountMerchantId(product: ProductWithOffers): number | null {
+  let max = 0;
+  let merchantId: number | null = null;
+  for (const offer of product.offers) {
+    if (!offer.previousPrice) continue;
+    const previous = offer.previousPrice.toNumber();
+    if (previous <= 0) continue;
+    const percent = ((previous - offer.currentPrice.toNumber()) / previous) * 100;
+    if (percent > max) {
+      max = percent;
+      merchantId = (offer as { merchant?: { id: number } }).merchant?.id ?? null;
+    }
+  }
+  return merchantId;
+}
+
+/**
+ * Reparte `products` round-robin por comercio (según `bestDiscountMerchantId`):
+ * primero el mejor chollo de cada comercio (en el orden en que aparece
+ * cada uno por primera vez — el propio comercio del chollo #1 siempre va
+ * primero, así que la posición destacada sigue siendo siempre el mejor
+ * descuento real de TODO el catálogo), luego el segundo mejor de cada
+ * uno, y así sucesivamente. Nunca deja fuera ni rellena con nada que no
+ * estuviera ya en `products` — solo reordena: con un único comercio
+ * disponible, el resultado es idéntico al orden de entrada.
+ *
+ * Caso real que motiva esto: con dos anunciantes de Awin aprobados
+ * (adidas ES y Trotec) y descuentos típicamente más agresivos en uno de
+ * los dos, ordenar por descuento puro dejaba la portada con las 8
+ * tarjetas del mismo comercio — nunca se veía ni un solo chollo del
+ * otro, aunque existiera y cumpliera el umbral. A diferencia de la
+ * antigua "Bajadas destacadas" (`selectDiverseDeals`, retirada — ver el
+ * historial de este fichero), que SÍ rellenaba el cupo con productos por
+ * debajo del umbral, esto nunca inventa ni degrada nada: reparte
+ * exclusivamente entre chollos que YA cumplen `minDiscountPercent`.
+ */
+export function interleaveByMerchant(products: ProductWithOffers[]): ProductWithOffers[] {
+  const groups = new Map<string, ProductWithOffers[]>();
+  const order: string[] = [];
+  products.forEach((product, index) => {
+    const merchantId = bestDiscountMerchantId(product);
+    // Sin comercio identificable (solo fixtures de test), cada producto
+    // es su propio grupo de 1 — el resultado no cambia respecto al orden
+    // de entrada.
+    const key = merchantId !== null ? `m:${merchantId}` : `p:${index}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key)!.push(product);
+  });
+
+  const result: ProductWithOffers[] = [];
+  let remaining = products.length;
+  while (remaining > 0) {
+    for (const key of order) {
+      const group = groups.get(key)!;
+      if (group.length === 0) continue;
+      result.push(group.shift()!);
+      remaining--;
+    }
+  }
+  return result;
+}
+
+/**
  * Elige como máximo `limit` productos para "Supergangas": deduplica
  * variantes con `collapseProductVariants` (que ya deja el resultado
- * ordenado por `compareByDealRank`, mayor descuento primero) y se queda
- * solo con los que llegan a `minDiscountPercent` de descuento real.
+ * ordenado por `compareByDealRank`, mayor descuento primero), se queda
+ * solo con los que llegan a `minDiscountPercent` de descuento real, y
+ * reparte el resultado entre comercios con `interleaveByMerchant` — ver
+ * ahí el porqué.
  *
- * A propósito, y a diferencia de la antigua "Bajadas destacadas"
- * (`selectDiverseDeals`, retirada — ver el historial de este fichero),
- * esta función NUNCA reparte por categoría ni rellena el hueco con
- * productos de menor descuento solo para completar el cupo:
- * "Supergangas" es, por definición, una lista corta y pura de los
- * MEJORES chollos reales del catálogo (descuento_confirmado ≥
- * SUPERGANGAS_MIN_DISCOUNT_PERCENT), así
- * que puede devolver menos de `limit` productos — incluso ninguno, si en
- * ese momento el catálogo no tiene ningún chollo tan agresivo — sin que
- * eso sea un error. Inflar la lista con productos que no cumplen el
- * umbral solo para enseñar más tarjetas convertiría la sección en
+ * Sigue sin rellenar el hueco con productos de menor descuento solo para
+ * completar el cupo: "Supergangas" es, por definición, una lista corta y
+ * pura de los MEJORES chollos reales del catálogo (descuento_confirmado
+ * ≥ SUPERGANGAS_MIN_DISCOUNT_PERCENT), así que puede devolver menos de
+ * `limit` productos — incluso ninguno, si en ese momento el catálogo no
+ * tiene ningún chollo tan agresivo — sin que eso sea un error. Inflar la
+ * lista con productos que no cumplen el umbral convertiría la sección en
  * publicidad engañosa.
  */
 export function selectSuperDeals(
@@ -170,9 +241,8 @@ export function selectSuperDeals(
   minDiscountPercent: number,
   limit: number,
 ): ProductWithOffers[] {
-  return collapseProductVariants(products)
-    .filter((product) => bestDiscountPercent(product) >= minDiscountPercent)
-    .slice(0, limit);
+  const qualifying = collapseProductVariants(products).filter((product) => bestDiscountPercent(product) >= minDiscountPercent);
+  return interleaveByMerchant(qualifying).slice(0, limit);
 }
 
 export type SupergangasBundle = { products: Product[]; merchants: Merchant[] };

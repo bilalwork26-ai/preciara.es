@@ -18,17 +18,25 @@ import {
 
 const PREFIX = "test-home-datasource";
 
-/** Producto mínimo con solo los campos que leen dealsGridGroupKey/bestDiscountPercent/selectSuperDeals. */
+/**
+ * Producto mínimo con solo los campos que leen
+ * dealsGridGroupKey/bestDiscountPercent/selectSuperDeals. `merchantId` es
+ * opcional a propósito: la mayoría de tests de este fichero no lo
+ * necesitan (interleaveByMerchant, sin comercio, trata cada producto como
+ * su propio grupo — ver home.ts), y solo los tests de diversidad de
+ * comercio (más abajo) lo fijan.
+ */
 function fakeProduct(overrides: {
   name: string;
   categoryId: number;
-  offers?: { previousPrice: string | null; currentPrice: string }[];
+  offers?: { previousPrice: string | null; currentPrice: string; merchantId?: number }[];
   /** Por defecto "ahora": solo hace falta fijarlo quien prueba el desempate por fecha (ver `compareByDealRank`). */
   updatedAt?: Date;
 }): ProductWithOffers {
   const offers = (overrides.offers ?? [{ previousPrice: null, currentPrice: "10" }]).map((o) => ({
     previousPrice: o.previousPrice === null ? null : new Prisma.Decimal(o.previousPrice),
     currentPrice: new Prisma.Decimal(o.currentPrice),
+    ...(o.merchantId !== undefined ? { merchant: { id: o.merchantId } } : {}),
   }));
   return {
     name: overrides.name,
@@ -246,6 +254,63 @@ describe("selectSuperDeals", () => {
 
   it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
     expect(selectSuperDeals([], SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toEqual([]);
+  });
+});
+
+describe("selectSuperDeals: diversidad de comercio (nunca un único comercio ocupa todas las tarjetas)", () => {
+  it("con dos comercios con chollos reales, reparte round-robin: primero el mejor de cada uno, luego el segundo de cada uno", () => {
+    const products = [
+      fakeProduct({ name: "AdidasA", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10", merchantId: 1 }] }), // 90%
+      fakeProduct({ name: "AdidasB", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "20", merchantId: 1 }] }), // 80%
+      fakeProduct({ name: "AdidasC", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "30", merchantId: 1 }] }), // 70%
+      fakeProduct({ name: "TrotecA", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "60", merchantId: 2 }] }), // 40%
+      fakeProduct({ name: "TrotecB", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "70", merchantId: 2 }] }), // 30%
+    ];
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 4);
+    expect(selected.map((p) => p.name)).toEqual(["AdidasA", "TrotecA", "AdidasB", "TrotecB"]);
+  });
+
+  it("la posición destacada (la primera) sigue siendo siempre el mejor descuento real de TODO el catálogo, sea cual sea su comercio", () => {
+    const products = [
+      fakeProduct({ name: "TrotecMejor", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "5", merchantId: 2 }] }), // 95%, el mejor de todos
+      fakeProduct({ name: "AdidasA", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "40", merchantId: 1 }] }), // 60%
+      fakeProduct({ name: "AdidasB", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50", merchantId: 1 }] }), // 50%
+    ];
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 3);
+    expect(selected[0].name).toBe("TrotecMejor");
+  });
+
+  it("un comercio con muchos menos chollos que el límite sigue apareciendo, nunca queda fuera solo por tener menos productos que el otro", () => {
+    const manyAdidas = Array.from({ length: 8 }, (_, i) =>
+      fakeProduct({ name: `Adidas${i}`, categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50", merchantId: 1 }] })
+    );
+    const oneTrotec = fakeProduct({
+      name: "TrotecUnico",
+      categoryId: 2,
+      offers: [{ previousPrice: "100", currentPrice: "40", merchantId: 2 }], // 60%
+    });
+    const selected = selectSuperDeals([...manyAdidas, oneTrotec], SUPERGANGAS_MIN_DISCOUNT_PERCENT, 8);
+    expect(selected.some((p) => p.name === "TrotecUnico")).toBe(true);
+  });
+
+  it("con un único comercio disponible, el resultado es idéntico al orden por descuento puro (no hay nada que repartir)", () => {
+    const products = [
+      fakeProduct({ name: "A", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10", merchantId: 1 }] }), // 90%
+      fakeProduct({ name: "B", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "30", merchantId: 1 }] }), // 70%
+      fakeProduct({ name: "C", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50", merchantId: 1 }] }), // 50%
+    ];
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 3);
+    expect(selected.map((p) => p.name)).toEqual(["A", "B", "C"]);
+  });
+
+  it("sin datos de comercio en absoluto (fixtures antiguas sin merchantId), el resultado es idéntico al orden de entrada — compatible con el resto de tests de este bloque", () => {
+    const products = [
+      fakeProduct({ name: "A1", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
+      fakeProduct({ name: "A2", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "20" }] }), // 80%
+      fakeProduct({ name: "B1", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+    ];
+    const selected = selectSuperDeals(products, SUPERGANGAS_MIN_DISCOUNT_PERCENT, 3);
+    expect(selected.map((p) => p.name)).toEqual(["A1", "A2", "B1"]);
   });
 });
 
