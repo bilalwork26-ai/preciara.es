@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { buildCategoryHref } from "./categoryLinks";
+import { buildCategoryHref, CATEGORIES_INDEX_HREF } from "./categoryLinks";
 
 /**
  * Ocho banners visuales, uno por categoría real de la taxonomía (ver
@@ -74,16 +74,30 @@ const CATEGORY_BANNERS = [
 export function CategoryBanners() {
   return (
     <section aria-labelledby="category-banners-heading">
-      <h2 id="category-banners-heading" className="font-serif text-lg font-semibold text-navy-900 sm:text-xl">
-        Explora por categoría
-      </h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 id="category-banners-heading" className="font-serif text-lg font-semibold text-navy-900 sm:text-xl">
+            Explora por categoría
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Compara precios y encuentra las mejores ofertas organizadas por sectores
+          </p>
+        </div>
+        <Link
+          href={CATEGORIES_INDEX_HREF}
+          className="inline-flex w-fit shrink-0 items-center gap-1 rounded text-sm font-semibold text-teal-700 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+        >
+          Ver todas las categorías
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {CATEGORY_BANNERS.map((banner) => (
           <Link
             key={banner.slug}
             href={buildCategoryHref(banner.slug)}
             aria-label={`Ver ofertas en ${banner.label}`}
-            className="group relative flex h-56 overflow-hidden rounded-2xl bg-navy-900 shadow-sm sm:h-64"
+            className="group relative flex h-56 overflow-hidden rounded-2xl bg-navy-900 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:h-64"
           >
             {/* alt="": la imagen es puramente decorativa, el nombre de la categoría ya está en texto real justo debajo (nunca solo dentro de la foto). */}
             <Image

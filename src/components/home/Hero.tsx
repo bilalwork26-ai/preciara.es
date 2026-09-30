@@ -53,9 +53,13 @@ export function Hero() {
         línea tan ajustada recortaba las tildes/ascendentes de Fraunces,
         la tipografía serif de display — su altura de mayúscula/acento
         supera la caja de línea que implica un interlineado tan justo.
+        pt-3 adicional (encima de py-10/sm:py-6): con leading-tight ya
+        corregido, la "L" de "Los" seguía rozando el borde superior del
+        contenedor en capturas reales — este margen extra da el respiro
+        final que faltaba.
       */}
       <Container>
-        <div className="relative z-10 flex flex-col justify-center gap-3 py-10 sm:min-h-[380px] sm:max-w-md sm:py-6 lg:min-h-[420px] lg:max-w-lg">
+        <div className="relative z-10 flex flex-col justify-center gap-3 pt-3 py-10 sm:min-h-[380px] sm:max-w-md sm:py-6 lg:min-h-[420px] lg:max-w-lg">
           <h1 className="font-serif text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-5xl">
             Los mejores productos. Las mejores ofertas.
           </h1>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCategoryHref, OFERTAS_HREF } from "./categoryLinks";
+import { buildCategoryHref, CATEGORIES_INDEX_HREF, OFERTAS_HREF } from "./categoryLinks";
 
 describe("buildCategoryHref", () => {
   it("enlaza a la ficha de categoría real, no a /buscar", () => {
@@ -30,5 +30,12 @@ describe("OFERTAS_HREF", () => {
   it("apunta a /supergangas (nunca a /buscar, que está excluida de robots.txt)", () => {
     expect(OFERTAS_HREF).toBe("/supergangas");
     expect(OFERTAS_HREF).not.toMatch(/\/buscar/);
+  });
+});
+
+describe("CATEGORIES_INDEX_HREF", () => {
+  it("apunta a /categorias (el índice real, indexable, nunca /buscar)", () => {
+    expect(CATEGORIES_INDEX_HREF).toBe("/categorias");
+    expect(CATEGORIES_INDEX_HREF).not.toMatch(/\/buscar/);
   });
 });
