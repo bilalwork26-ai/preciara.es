@@ -13,6 +13,9 @@
 /** Ruta del listado completo de chollos reales (descuento real, ver `SUPERGANGAS_MIN_DISCOUNT_PERCENT`) — ver `getOfertasBundle` en `server/dataSource/home.ts`. Único sitio que decide esta URL: el CTA del Hero enlaza aquí. */
 export const OFERTAS_HREF = "/supergangas";
 
+/** Ruta del índice completo de categorías ("Ver todas las categorías") — ver `CategoryBanners.tsx`. */
+export const CATEGORIES_INDEX_HREF = "/categorias";
+
 /**
  * `encodeURIComponent` por defensa: los slugs ya se generan siempre en
  * minúsculas/con guiones (`Category.slug`, `@db.VarChar(120)`, nunca con
