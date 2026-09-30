@@ -14,13 +14,16 @@ import { buildCategoryHref } from "./categoryLinks";
  *
  * Fotografía real + degradado oscuro superpuesto (nunca solo icono): este
  * equipo no tiene ninguna vía de red hacia dominios de imágenes desde este
- * entorno (confirmado dos veces, con curl y con WebFetch — ver el propio
- * historial de esta conversación), así que no puede obtener ni verificar
- * por su cuenta que una URL de foto inventada no esté rota en producción.
- * Las tres primeras (Moda, Electrónica, Hogar) ya llevaban una foto
- * verificada de una ronda anterior; las cinco restantes las facilitó
- * explícitamente el usuario (verificadas en su propio navegador) — mismo
- * criterio que las tres originales: URLs exactas, nunca inventadas aquí.
+ * entorno (confirmado varias veces, con curl y con WebFetch — ver el
+ * propio historial de esta conversación), así que no puede obtener ni
+ * verificar por su cuenta que una URL de foto inventada no esté rota, ni
+ * que el contenido de una foto ya asignada sea el correcto para su
+ * categoría. Todas las URLs de este fichero las facilitó explícitamente
+ * el usuario, verificadas en su propio navegador contra el sitio real —
+ * nunca inventadas aquí. La asignación Moda/Deporte se corrigió tras un
+ * reporte del usuario con una captura real de producción: la foto que
+ * llevaba "Moda" era en realidad de gimnasio/pesas (ahora en "Deporte"),
+ * y la URL que llevaba "Deporte" no cargaba.
  * El degradado oscuro (`from-navy-900/85 via-navy-900/10 to-transparent`,
  * igual que el diseño original) garantiza que el texto blanco se lea con
  * claridad sobre cualquier foto, sin depender del contenido de la imagen.
@@ -29,12 +32,12 @@ const CATEGORY_BANNERS = [
   {
     slug: "moda",
     label: "Moda",
-    imageUrl: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80",
+    imageUrl: "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80",
   },
   {
     slug: "deporte",
     label: "Deporte",
-    imageUrl: "https://images.unsplash.com/photo-1517649763962-0c623266010b?auto=format&fit=crop&w=800&q=80",
+    imageUrl: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80",
   },
   {
     slug: "tecnologia",
@@ -80,7 +83,7 @@ export function CategoryBanners() {
             key={banner.slug}
             href={buildCategoryHref(banner.slug)}
             aria-label={`Ver ofertas en ${banner.label}`}
-            className="group relative flex h-32 overflow-hidden rounded-2xl bg-navy-900 shadow-sm sm:h-40"
+            className="group relative flex h-56 overflow-hidden rounded-2xl bg-navy-900 shadow-sm sm:h-64"
           >
             {/* alt="": la imagen es puramente decorativa, el nombre de la categoría ya está en texto real justo debajo (nunca solo dentro de la foto). */}
             <Image
@@ -91,10 +94,10 @@ export function CategoryBanners() {
               className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/10 to-transparent" aria-hidden="true" />
-            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4">
-              <span className="font-serif text-base font-bold text-white sm:text-lg">{banner.label}</span>
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-6">
+              <span className="font-serif text-xl font-bold text-white sm:text-2xl">{banner.label}</span>
               <ArrowRight
-                className="h-4 w-4 shrink-0 text-white transition-transform group-hover:translate-x-1"
+                className="h-5 w-5 shrink-0 text-white transition-transform group-hover:translate-x-1"
                 aria-hidden="true"
               />
             </div>
