@@ -1,0 +1,61 @@
+name: "[Temporal] Verificacion de despliegue en produccion"
+
+# Comprobacion puntual, disparada a mano (workflow_dispatch), para
+# confirmar que preciara.es en produccion esta sirviendo el commit
+# correcto tras un despliegue -- nunca se ejecuta automaticamente (sin
+# `schedule` ni `push`/`pull_request`), asi que nunca genera alertas por
+# correo por su cuenta. Pensado para borrarse en cuanto deje de hacer
+# falta (mismo criterio que el resto de comprobaciones ad-hoc de este
+# repositorio).
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: "Commit que deberia estar sirviendo produccion (se compara con la cabecera x-build-commit)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Comprobar x-build-commit y rutas nuevas en preciara.es
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cabeceras de la portada (sin cache)
+        run: |
+          echo "== GET https://preciara.es/ =="
+          curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            -D - -o /tmp/home.html "https://preciara.es/?cachebust=$(date +%s)"
+
+      - name: Comparar x-build-commit con el commit esperado (si se indico)
+        if: ${{ inputs.expected_commit != '' }}
+        run: |
+          actual=$(curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            -D - -o /dev/null "https://preciara.es/?cachebust=$(date +%s)" | grep -i '^x-build-commit:' | tr -d '\r' | awk '{print $2}')
+          echo "Commit esperado:  ${{ inputs.expected_commit }}"
+          echo "Commit detectado: $actual"
+          if [ "$actual" != "${{ inputs.expected_commit }}" ]; then
+            echo "::error::El commit servido no coincide con el esperado."
+            exit 1
+          fi
+          echo "Coincide."
+
+      - name: Comprobar la ficha de producto de una tarjeta de Supergangas (antes daba 404)
+        run: |
+          href=$(grep -oE '/producto/[a-z0-9-]+' /tmp/home.html | head -1)
+          echo "Enlace de producto encontrado en la Home: $href"
+          if [ -z "$href" ]; then
+            echo "::error::No se encontro ningun enlace /producto/... en la Home."
+            exit 1
+          fi
+          code=$(curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            -o /dev/null -w "%{http_code}" "https://preciara.es${href}")
+          echo "${href} -> ${code}"
+          if [ "$code" != "200" ]; then
+            echo "::error::${href} respondio ${code}, se esperaba 200 (el fix de la PR #57 no esta desplegado)"
+            exit 1
+          fi
