@@ -25,15 +25,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # --connect-timeout/--max-time cortos y --retry: distingue en
+      # segundos un fallo de red persistente de uno puntual, en vez de
+      # esperar el timeout de red por defecto (varios minutos) en cada
+      # intento -- la primera ejecucion de este workflow tardo 270s en
+      # fallar con "Couldn't connect to server" por esto mismo.
       - name: Cabeceras de la portada (sin cache)
         run: |
           echo "== GET https://preciara.es/ =="
-          curl -sS -D - -o /tmp/home.html "https://preciara.es/?cachebust=$(date +%s)"
+          curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            -D - -o /tmp/home.html "https://preciara.es/?cachebust=$(date +%s)"
 
       - name: Comparar x-build-commit con el commit esperado (si se indico)
         if: ${{ inputs.expected_commit != '' }}
         run: |
-          actual=$(curl -sS -D - -o /dev/null "https://preciara.es/?cachebust=$(date +%s)" | grep -i '^x-build-commit:' | tr -d '\r' | awk '{print $2}')
+          actual=$(curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            -D - -o /dev/null "https://preciara.es/?cachebust=$(date +%s)" | grep -i '^x-build-commit:' | tr -d '\r' | awk '{print $2}')
           echo "Commit esperado:  ${{ inputs.expected_commit }}"
           echo "Commit detectado: $actual"
           if [ "$actual" != "${{ inputs.expected_commit }}" ]; then
@@ -45,7 +52,8 @@ jobs:
       - name: Comprobar que las rutas nuevas de esta sesion responden
         run: |
           for path in "/" "/categoria/moda" "/categoria/tecnologia" "/categoria/hogar" "/categorias"; do
-            code=$(curl -sS -o /dev/null -w "%{http_code}" "https://preciara.es${path}")
+            code=$(curl -sS --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 5 --retry-all-errors \
+              -o /dev/null -w "%{http_code}" "https://preciara.es${path}")
             echo "$path -> $code"
             if [ "$code" != "200" ]; then
               echo "::error::${path} respondio $code, se esperaba 200"
