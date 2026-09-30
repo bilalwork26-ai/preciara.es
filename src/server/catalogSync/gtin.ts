@@ -29,7 +29,26 @@ function computeCheckDigit(data13: string): number {
 
 export type GtinValidationResult =
   | { valid: true; normalized: string; originalLength: 8 | 12 | 13 | 14 }
-  | { valid: false; reason: "EMPTY" | "NOT_NUMERIC" | "INVALID_LENGTH" | "INVALID_CHECK_DIGIT" };
+  | { valid: false; reason: "EMPTY" | "NOT_NUMERIC" | "INVALID_LENGTH" | "INVALID_CHECK_DIGIT" | "PLACEHOLDER_REPEATED_DIGIT" };
+
+/**
+ * Un código con el mismo dígito repetido en toda su longitud (p. ej.
+ * "00000000000000" o "11111111111111") NUNCA es un GTIN real de GS1 — es el
+ * valor de relleno/placeholder más habitual en feeds de comercios para "sin
+ * código de barras" (sobre todo el de puros ceros). Su dígito de control
+ * siempre resulta trivialmente válido (la suma ponderada de un mismo dígito
+ * repetido siempre es múltiplo del propio patrón), así que sin esta
+ * comprobación `validateGtin` lo aceptaría como un GTIN válido — y, al ser
+ * SIEMPRE el mismo valor normalizado, `findOrCreateProductByCanonicalGtin`
+ * (`applyOffer.ts`) fusionaría silenciosamente en un único `Product` todas
+ * las filas de un feed que use ese mismo placeholder, sin importar cuántos
+ * productos realmente distintos sean. Se trata exactamente igual que
+ * "sin GTIN" (nunca un error fatal de fila): la oferta simplemente cae a la
+ * identidad estable por (source, merchant, externalId) — ver applyOffer.ts.
+ */
+function isRepeatedDigitPlaceholder(cleaned: string): boolean {
+  return new Set(cleaned).size === 1;
+}
 
 /**
  * Valida un GTIN de cualquiera de las cuatro longitudes reconocidas y lo
@@ -43,6 +62,7 @@ export function validateGtin(raw: string): GtinValidationResult {
   if (!cleaned) return { valid: false, reason: "EMPTY" };
   if (!/^\d+$/.test(cleaned)) return { valid: false, reason: "NOT_NUMERIC" };
   if (!VALID_LENGTHS.has(cleaned.length)) return { valid: false, reason: "INVALID_LENGTH" };
+  if (isRepeatedDigitPlaceholder(cleaned)) return { valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" };
 
   const padded = cleaned.padStart(14, "0");
   const dataDigits = padded.slice(0, 13);

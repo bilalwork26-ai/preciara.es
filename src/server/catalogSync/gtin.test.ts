@@ -70,6 +70,34 @@ describe("validateGtin: rechazo estricto (nunca coincidencia aproximada)", () =>
   });
 });
 
+describe("validateGtin: rechaza códigos placeholder de un único dígito repetido", () => {
+  it("rechaza un GTIN-14 de puros ceros (el placeholder de 'sin código de barras' más habitual en feeds de comercios)", () => {
+    expect(validateGtin("00000000000000")).toEqual({ valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" });
+  });
+
+  it("rechaza el mismo placeholder en las otras tres longitudes reconocidas (8, 12 y 13)", () => {
+    expect(validateGtin("00000000")).toEqual({ valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" });
+    expect(validateGtin("000000000000")).toEqual({ valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" });
+    expect(validateGtin("0000000000000")).toEqual({ valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" });
+  });
+
+  it("rechaza también un dígito distinto de cero repetido (p. ej. puros unos), no solo ceros", () => {
+    expect(validateGtin("11111111111111")).toEqual({ valid: false, reason: "PLACEHOLDER_REPEATED_DIGIT" });
+  });
+
+  it("sin esta comprobación, un GTIN de puros ceros pasaría el dígito de control (motivo del propio defecto): lo confirma directamente sobre el cálculo de dígito de control", () => {
+    // Regresión explícita: antes de este fix, validateGtin aceptaba este
+    // valor como válido porque la suma ponderada de puros ceros es 0, y
+    // (10 - 0 % 10) % 10 también es 0 — el dígito de control "cuadra" por
+    // pura coincidencia aritmética, nunca porque sea un GTIN real.
+    expect(validateGtin("00000000000000").valid).toBe(false);
+  });
+
+  it("normalizeGtinOrNull también lo rechaza (null, nunca un valor inventado)", () => {
+    expect(normalizeGtinOrNull("00000000000000")).toBeNull();
+  });
+});
+
 describe("validateGtin: normalización de formato", () => {
   it("ignora espacios y guiones habituales al copiar/exportar códigos de barras", () => {
     const withFormatting = `${VALID_EAN_13.slice(0, 1)}-${VALID_EAN_13.slice(1, 6)} ${VALID_EAN_13.slice(6)}`;
