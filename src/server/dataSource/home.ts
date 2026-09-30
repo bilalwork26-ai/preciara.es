@@ -5,8 +5,9 @@
  * un número pequeño y fijo de consultas (hoy: 2), nunca una por
  * componente ni una por producto.
  */
-import { demoDealsGrid } from "@/data/demo/products";
+import { demoSupergangas } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
+import { bestOfferDiscountPercent } from "@/lib/format";
 import type { Category, Merchant, Product } from "@/types";
 import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers, type ProductWithOffers } from "@/server/repositories/products";
@@ -17,10 +18,9 @@ import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform
 /**
  * Curación histórica: este producto tenía su propio banner secundario en
  * la portada (ya retirado, sustituido por el hero estático único, ver
- * Hero.tsx) y por eso se excluye de la cuadrícula de bajadas, igual que
- * hace hoy `demoDealsGrid` con el producto de demo equivalente — se
- * mantiene la exclusión para no cambiar el catálogo que la cuadrícula
- * muestra hoy sin que se haya pedido.
+ * Hero.tsx) y por eso se excluye de "Supergangas" — se mantiene la
+ * exclusión para no cambiar el catálogo que la sección muestra sin que se
+ * haya pedido.
  */
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
 
@@ -58,18 +58,22 @@ export async function getHomeCategories(): Promise<SourcedResult<HomeCategoriesB
   });
 }
 
-/** Máximo de tarjetas que muestra "Bajadas destacadas". */
-const DEALS_GRID_LIMIT = 24;
+/** Umbral estricto de "Supergangas": por debajo de este % de descuento real, un producto nunca es una supergangas. */
+export const SUPERGANGAS_MIN_DISCOUNT_PERCENT = 30;
+
+/** Máximo de tarjetas que muestra "Supergangas" (el bloque pide "entre 5 y 6" — nunca más de 6, puede haber menos si el catálogo no da para tantas). */
+const SUPERGANGAS_LIMIT = 6;
 
 /**
- * Cuántas filas se piden a la BD antes de deduplicar/diversificar
- * (bastante más que `DEALS_GRID_LIMIT`): con un catálogo donde varias
+ * Cuántas filas se piden a la BD antes de deduplicar/filtrar por umbral
+ * (bastante más que `SUPERGANGAS_LIMIT`): con un catálogo donde varias
  * filas son variantes de talla/color del mismo modelo (ver
- * `dealsGridGroupKey` más abajo), pedir solo `DEALS_GRID_LIMIT` filas
- * podría dejar la cuadrícula con muy pocos productos distintos aunque el
- * catálogo real tenga más variedad más adelante en el orden de `id`.
+ * `dealsGridGroupKey` más abajo) y donde solo una fracción del catálogo
+ * llega al 30% de descuento, pedir solo `SUPERGANGAS_LIMIT` filas dejaría
+ * casi siempre la sección vacía aunque el catálogo real sí tenga chollos
+ * genuinos más adelante en el orden de `id`.
  */
-const DEALS_GRID_POOL_SIZE = 200;
+const SUPERGANGAS_POOL_SIZE = 200;
 
 /**
  * Clave de agrupación para no repetir el mismo modelo en varias tarjetas:
@@ -87,7 +91,8 @@ const DEALS_GRID_POOL_SIZE = 200;
  *     "XL", "XXL", "2XL", "3XL"... ("... XS Maroon" / "... 2XL Maroon")
  * Es una heurística sobre el texto real que sirve Awin (no hay un campo
  * de "modelo base" ni de talla por separado en el feed) — nunca se
- * guarda, solo decide qué mostrar en "Bajadas destacadas". La talla
+ * guarda, solo decide qué mostrar en "Supergangas" (y, con el mismo
+ * criterio, en `/categoria/[slug]` y `/buscar`). La talla
  * suelta de adulto (30-50) se quita siempre que aparece; un número de
  * modelo corto como el "5" de "Pureboost 5" nunca cae en ese rango, así
  * que no hace falta más cautela ahí. Las tallas infantiles/junior EU
@@ -127,10 +132,10 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
 /**
  * Deduplica por `dealsGridGroupKey`, quedándose con la variante de mayor
  * descuento relativo de cada grupo — nunca dos tarjetas de la misma
- * prenda en distinta talla/color. Reutilizado por `selectDiverseDeals`
+ * prenda en distinta talla/color. Reutilizado por `selectSuperDeals`
  * (portada) y también, directamente, por `/categoria/[slug]` y `/buscar`
- * (`category.ts`/`search.ts`): esos dos listados no necesitan el reparto
- * por categoría ni el límite de abajo (muestran TODO el catálogo
+ * (`category.ts`/`search.ts`): esos dos listados no necesitan el umbral
+ * de descuento ni el límite de abajo (muestran TODO el catálogo
  * filtrado, no un top acotado), pero sí el mismo criterio de "una sola
  * tarjeta por modelo" — repetirlo ahí sería el mismo bug de variantes
  * duplicadas que esta función ya resuelve aquí.
@@ -143,9 +148,9 @@ export function bestDiscountPercent(product: ProductWithOffers): number {
  * y `/buscar` (que no vuelven a ordenar el resultado de esta función)
  * podían mostrar productos sin descuento por delante de otros con un
  * descuento real, simplemente porque su grupo se vio antes en el orden
- * de llegada. `selectDiverseDeals` ya reordenaba el suyo al final por su
- * cuenta, pero corregirlo aquí, en el origen, evita depender de que cada
- * consumidor futuro se acuerde de hacerlo también.
+ * de llegada. Corregirlo aquí, en el origen, evita depender de que cada
+ * consumidor futuro (incluido `selectSuperDeals`, que confía en que el
+ * resultado ya llegue ordenado) se acuerde de hacerlo también.
  */
 export function collapseProductVariants(products: ProductWithOffers[]): ProductWithOffers[] {
   const bestPerGroup = new Map<string, ProductWithOffers>();
@@ -171,115 +176,61 @@ function compareByDealRank(a: ProductWithOffers, b: ProductWithOffers): number {
 }
 
 /**
- * Cuántas tarjetas seguidas de la MISMA categoría deja pasar la
- * cuadrícula antes de forzar que la siguiente sea de otra (si queda
- * alguna con productos disponibles). `categoryId` es la única señal de
- * "tipo de producto" que existe hoy en el esquema — no hay una
- * subcategoría más fina que distinga, por ejemplo, calzado del resto de
- * ropa dentro de una misma categoría ("Deporte") — así que este límite
- * evita rachas de la misma categoría, no necesariamente del mismo tipo de
- * prenda dentro de ella.
+ * Elige como máximo `limit` productos para "Supergangas": deduplica
+ * variantes con `collapseProductVariants` (que ya deja el resultado
+ * ordenado por `compareByDealRank`, mayor descuento primero) y se queda
+ * solo con los que llegan a `minDiscountPercent` de descuento real.
+ *
+ * A propósito, y a diferencia de la antigua "Bajadas destacadas"
+ * (`selectDiverseDeals`, retirada — ver el historial de este fichero),
+ * esta función NUNCA reparte por categoría ni rellena el hueco con
+ * productos de menor descuento solo para completar el cupo:
+ * "Supergangas" es, por definición, una lista corta y pura de los
+ * MEJORES chollos reales del catálogo (descuento_confirmado ≥ 30%), así
+ * que puede devolver menos de `limit` productos — incluso ninguno, si en
+ * ese momento el catálogo no tiene ningún chollo tan agresivo — sin que
+ * eso sea un error. Inflar la lista con productos que no cumplen el
+ * umbral solo para enseñar más tarjetas convertiría la sección en
+ * publicidad engañosa.
  */
-const MAX_CONSECUTIVE_SAME_CATEGORY = 2;
-
-/**
- * Elige como máximo `limit` productos para "Bajadas destacadas":
- * 1. Deduplica variantes con `collapseProductVariants` (ver arriba).
- * 2. Ordena el catálogo de cada categoría por `compareByDealRank`.
- * 3. Intercala esas listas puesto a puesto: en cada posición elige, entre
- *    TODAS las categorías, el producto con mejor descuento — salvo que
- *    eso alargue una racha de la misma categoría más allá de
- *    `MAX_CONSECUTIVE_SAME_CATEGORY`, en cuyo caso elige el mejor producto
- *    de entre las demás categorías con productos pendientes. Solo si
- *    TODAS las categorías con productos pendientes ya están en el límite
- *    de racha (porque solo queda esa categoría con stock) se deja pasar
- *    igualmente, para no acortar la cuadrícula por debajo de `limit`
- *    teniendo catálogo de sobra. Con esto, la primera tarjeta (la
- *    destacada — ver `VerifiedDealsGrid`) siempre es el mejor chollo
- *    global, pero el resto de la parrilla queda repartida entre
- *    categorías en vez de llenarse con un único tipo de producto.
- */
-export function selectDiverseDeals(products: ProductWithOffers[], limit: number): ProductWithOffers[] {
-  const byCategory = new Map<number, ProductWithOffers[]>();
-  for (const product of collapseProductVariants(products)) {
-    const list = byCategory.get(product.categoryId) ?? [];
-    list.push(product);
-    byCategory.set(product.categoryId, list);
-  }
-  const categoryLists = [...byCategory.values()];
-  for (const list of categoryLists) {
-    list.sort(compareByDealRank);
-  }
-
-  return interleaveWithCategoryCap(categoryLists, limit, MAX_CONSECUTIVE_SAME_CATEGORY);
-}
-
-function interleaveWithCategoryCap(
-  categoryLists: ProductWithOffers[][],
+export function selectSuperDeals(
+  products: ProductWithOffers[],
+  minDiscountPercent: number,
   limit: number,
-  maxConsecutive: number,
 ): ProductWithOffers[] {
-  const cursors = categoryLists.map(() => 0);
-  const result: ProductWithOffers[] = [];
-  let lastCategoryId: number | null = null;
-  let streak = 0;
-
-  while (result.length < limit) {
-    let bestIndex = -1;
-    let bestIndexIgnoringCap = -1;
-
-    for (let i = 0; i < categoryLists.length; i++) {
-      const list = categoryLists[i];
-      if (cursors[i] >= list.length) continue;
-      const candidate = list[cursors[i]];
-
-      if (
-        bestIndexIgnoringCap === -1 ||
-        compareByDealRank(candidate, categoryLists[bestIndexIgnoringCap][cursors[bestIndexIgnoringCap]]) < 0
-      ) {
-        bestIndexIgnoringCap = i;
-      }
-
-      const wouldExceedCap = candidate.categoryId === lastCategoryId && streak >= maxConsecutive;
-      if (
-        !wouldExceedCap &&
-        (bestIndex === -1 || compareByDealRank(candidate, categoryLists[bestIndex][cursors[bestIndex]]) < 0)
-      ) {
-        bestIndex = i;
-      }
-    }
-
-    const chosenIndex = bestIndex !== -1 ? bestIndex : bestIndexIgnoringCap;
-    if (chosenIndex === -1) break; // ninguna categoría tiene ya productos pendientes
-
-    const chosen = categoryLists[chosenIndex][cursors[chosenIndex]];
-    cursors[chosenIndex] += 1;
-    result.push(chosen);
-
-    if (chosen.categoryId === lastCategoryId) {
-      streak += 1;
-    } else {
-      lastCategoryId = chosen.categoryId;
-      streak = 1;
-    }
-  }
-
-  return result;
+  return collapseProductVariants(products)
+    .filter((product) => bestDiscountPercent(product) >= minDiscountPercent)
+    .slice(0, limit);
 }
 
-export type DealsGridBundle = { products: Product[]; merchants: Merchant[] };
+export type SupergangasBundle = { products: Product[]; merchants: Merchant[] };
 
-export async function getDealsGridBundle(): Promise<SourcedResult<DealsGridBundle>> {
+export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasBundle>> {
   return resolveWithFallback({
     fetchFromDb: async () => {
-      const rows = await getActiveProductsWithOffers(DEALS_GRID_POOL_SIZE);
+      const rows = await getActiveProductsWithOffers(SUPERGANGAS_POOL_SIZE);
       if (!rows) return null;
       const filtered = rows.filter((p) => p.slug !== SECONDARY_BANNER_PRODUCT_SLUG);
-      const selected = selectDiverseDeals(filtered, DEALS_GRID_LIMIT);
+      const selected = selectSuperDeals(filtered, SUPERGANGAS_MIN_DISCOUNT_PERCENT, SUPERGANGAS_LIMIT);
       const products = selected.map((p) => toLegacyProduct(p));
       return { products, merchants: extractMerchants(selected) };
     },
-    demoFallback: { products: demoDealsGrid, merchants: demoMerchants },
+    demoFallback: {
+      // Mismo criterio que `fetchFromDb` de arriba, aplicado a mano
+      // porque los productos demo usan el tipo `Product` legado (no
+      // `ProductWithOffers`) y no pasan por `selectSuperDeals`:
+      // - Filtro defensivo: garantiza que un futuro cambio en los precios
+      //   de `demoSupergangas` nunca pueda colar, en silencio, un
+      //   producto demo por debajo del umbral real.
+      // - Orden por mayor descuento primero: sin esto, la tarjeta
+      //   destacada (`highlight` en `ProductDealCard`, la primera del
+      //   array) no sería necesariamente la de mayor descuento real.
+      products: demoSupergangas
+        .filter((p) => bestOfferDiscountPercent(p.offers) >= SUPERGANGAS_MIN_DISCOUNT_PERCENT)
+        .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers))
+        .slice(0, SUPERGANGAS_LIMIT),
+      merchants: demoMerchants,
+    },
     isSufficient: (bundle) => bundle.products.length > 0,
   });
 }

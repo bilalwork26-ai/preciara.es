@@ -15,7 +15,7 @@ export function ProductDealCard({
 }: {
   product: Product;
   merchants: Merchant[];
-  /** true para la tarjeta de mayor bajada de precio de la cuadrícula (ver VerifiedDealsGrid) — nunca se aplica sin descuento real. */
+  /** true para la tarjeta de mayor descuento de la cuadrícula (ver SupergangasGrid) — nunca se aplica sin descuento real. */
   highlight?: boolean;
 }) {
   const [saved, setSaved] = useState(false);

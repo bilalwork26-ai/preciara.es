@@ -159,3 +159,112 @@ export const demoDealsGrid = demoProducts.filter((p) => p.id !== "prod-portatil-
 
 /** Producto del banner promocional secundario. */
 export const demoSecondaryBannerProduct = demoProducts.find((p) => p.id === "prod-portatil-14")!;
+
+/**
+ * Productos de demostración exclusivos para "Supergangas": ninguno de
+ * `demoProducts` llega al umbral estricto de descuento (≥30%, ver
+ * `SUPERGANGAS_MIN_DISCOUNT_PERCENT` en `server/dataSource/home.ts`) salvo
+ * uno solo ("Zapatillas urbanas", 31%), así que ese catálogo no basta para
+ * ilustrar el bloque con varios chollos de ejemplo. Este bloque, más
+ * pequeño y separado, existe únicamente para ese caso — `demoProducts`/
+ * `demoDealsGrid` no cambian, así que ningún otro sitio de la web se ve
+ * afectado por estos precios.
+ */
+export const demoSupergangas: Product[] = [
+  {
+    id: "prod-superganga-auriculares",
+    slug: "auriculares-bluetooth-deportivos",
+    name: "Auriculares Bluetooth deportivos",
+    categoryId: "cat-tecnologia",
+    icon: "Headphones",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 89.99 },
+      { label: "Dic", date: "2025-12-01", price: 89.99 },
+      { label: "Ene", date: "2026-01-12", price: 54.99 },
+    ],
+    offers: [
+      { id: "offer-sg-auri-a", merchantId: "merchant-a", price: 54.99, previousPrice: 89.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 10 min" },
+      { id: "offer-sg-auri-b", merchantId: "merchant-b", price: 59.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 30 min" },
+    ],
+  },
+  {
+    id: "prod-superganga-sudadera",
+    slug: "sudadera-tecnica-running",
+    name: "Sudadera técnica running",
+    categoryId: "cat-deporte",
+    icon: "Shirt",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 59.99 },
+      { label: "Dic", date: "2025-12-01", price: 59.99 },
+      { label: "Ene", date: "2026-01-12", price: 39.99 },
+    ],
+    offers: [
+      { id: "offer-sg-sud-a", merchantId: "merchant-b", price: 39.99, previousPrice: 59.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 22 min" },
+      { id: "offer-sg-sud-b", merchantId: "merchant-c", price: 42.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 1 h" },
+    ],
+  },
+  {
+    id: "prod-superganga-aspirador",
+    slug: "robot-aspirador-compacto",
+    name: "Robot aspirador compacto",
+    categoryId: "cat-hogar",
+    icon: "Bot",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 199 },
+      { label: "Dic", date: "2025-12-01", price: 199 },
+      { label: "Ene", date: "2026-01-12", price: 129 },
+    ],
+    offers: [
+      { id: "offer-sg-asp-a", merchantId: "merchant-a", price: 129, previousPrice: 199, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 15 min" },
+      { id: "offer-sg-asp-b", merchantId: "merchant-c", price: 139, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 50 min" },
+    ],
+  },
+  {
+    id: "prod-superganga-freidora",
+    slug: "freidora-de-aire-4l",
+    name: "Freidora de aire 4 L",
+    categoryId: "cat-electro",
+    icon: "CookingPot",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 69.99 },
+      { label: "Dic", date: "2025-12-01", price: 69.99 },
+      { label: "Ene", date: "2026-01-12", price: 44.99 },
+    ],
+    offers: [
+      { id: "offer-sg-frei-a", merchantId: "merchant-d", price: 44.99, previousPrice: 69.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 40 min" },
+      { id: "offer-sg-frei-b", merchantId: "merchant-b", price: 47.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 2 h" },
+    ],
+  },
+  {
+    id: "prod-superganga-mochila",
+    slug: "mochila-infantil-escolar",
+    name: "Mochila infantil escolar",
+    categoryId: "cat-infantil",
+    icon: "Backpack",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 39.99 },
+      { label: "Dic", date: "2025-12-01", price: 39.99 },
+      { label: "Ene", date: "2026-01-12", price: 24.99 },
+    ],
+    offers: [
+      { id: "offer-sg-moch-a", merchantId: "merchant-c", price: 24.99, previousPrice: 39.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 5 min" },
+      { id: "offer-sg-moch-b", merchantId: "merchant-a", price: 27.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 1 h" },
+    ],
+  },
+  {
+    id: "prod-superganga-zapatillas",
+    slug: "zapatillas-running-pro",
+    name: "Zapatillas running Pro",
+    categoryId: "cat-moda",
+    icon: "Footprints",
+    priceHistory: [
+      { label: "Nov", date: "2025-11-01", price: 79.99 },
+      { label: "Dic", date: "2025-12-01", price: 79.99 },
+      { label: "Ene", date: "2026-01-12", price: 49.99 },
+    ],
+    offers: [
+      { id: "offer-sg-zap-a", merchantId: "merchant-b", price: 49.99, previousPrice: 79.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 12 min" },
+      { id: "offer-sg-zap-b", merchantId: "merchant-d", price: 54.99, currency: "EUR", url: "#", inStock: true, verified: true, lastCheckedLabel: "hace 45 min" },
+    ],
+  },
+];

@@ -35,6 +35,13 @@ const nextConfig: NextConfig = {
   images: {
     // Calidad usada por las imágenes del hero (src="/images/hero-*.webp").
     qualities: [75, 82],
+    // Unsplash: fondo de los banners de categoría de la portada (ver
+    // CategoryBanners.tsx). A diferencia de las fotos de producto
+    // (ProductGlyph, un dominio de comercio arbitrario distinto por cada
+    // anunciante — ver el comentario de ese fichero), este es un único
+    // dominio fijo y de confianza, así que sí puede pasar por
+    // `next/image` con su optimización habitual.
+    remotePatterns: [{ protocol: "https", hostname: "images.unsplash.com" }],
   },
   async headers() {
     return [
