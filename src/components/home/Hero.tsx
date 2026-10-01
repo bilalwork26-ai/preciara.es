@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { ArrowRight, Tag } from "lucide-react";
+import { ArrowRight, Flame, Tag } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 
 /**
@@ -84,14 +84,36 @@ export function Hero() {
             lucide-react y Container") — un import más aquí lo rompería.
             Debe seguir apuntando a lo mismo que OFERTAS_HREF si esa
             constante cambia alguna vez.
+
+            CTA principal de toda la web (pedido explícitamente así):
+            tamaño XL, pill, gradiente coral de alto impacto y un glow
+            estático (sombra coral difusa, sin transición propia — el
+            componente sigue sin ninguna animación). La micro-etiqueta de
+            arriba ("Ofertas actualizadas cada día") es deliberadamente
+            genérica, nunca una cifra inventada tipo "+3.000 ofertas": el
+            catálogo real todavía es pequeño (solo dos anunciantes
+            conectados) y esta web nunca muestra un número que no pueda
+            verificar — ver la cultura "nunca se inventa un dato" de todo
+            el proyecto (GTIN, precios, envío...). "Cada día" sí es
+            verificable: el ciclo de sincronización de Awin corre dos
+            veces al día (ver awinOrchestrator.ts).
           */}
-          <a
-            href="/supergangas"
-            className="mt-2 inline-flex w-fit items-center gap-2 rounded-full bg-coral-500 px-6 py-2.5 text-sm font-semibold text-navy-900 transition-colors hover:bg-coral-600 hover:text-white"
-          >
-            Descubrir ofertas
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </a>
+          <div className="relative mt-3 w-fit">
+            <span
+              aria-hidden="true"
+              className="absolute -top-3 left-5 z-10 inline-flex items-center rounded-full bg-navy-900 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-coral-100 ring-1 ring-coral-500/70 sm:-top-3.5 sm:text-[11px]"
+            >
+              Ofertas actualizadas cada día
+            </span>
+            <a
+              href="/supergangas"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-coral-500 to-coral-600 px-7 py-3.5 text-base font-extrabold text-white shadow-[0_12px_32px_-8px_rgba(240,100,73,0.65)] transition-colors hover:from-coral-600 hover:to-[#7a2a16] sm:px-9 sm:py-4 sm:text-lg"
+            >
+              <Flame className="h-5 w-5 shrink-0" aria-hidden="true" />
+              Descubrir ofertas
+              <ArrowRight className="h-5 w-5 shrink-0" aria-hidden="true" />
+            </a>
+          </div>
 
           <p className="text-xs text-navy-100">Precios claros · Varias tiendas</p>
         </div>

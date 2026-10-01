@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Flame, Heart } from "lucide-react";
+import { ArrowRight, Flame, Heart, Clock } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { toFavoriteProduct, toggleFavorite, useIsFavorite } from "@/lib/favorites";
 import { ProductGlyph } from "@/components/ui/ProductGlyph";
 import { DiscountBadge } from "@/components/ui/DiscountBadge";
+import { MerchantLogo } from "@/components/ui/MerchantLogo";
 
 export function ProductDealCard({
   product,
@@ -35,29 +36,46 @@ export function ProductDealCard({
   // por texto contra el nombre real guardado en la BD.
   const displayName = formatProductDisplayName(product.name, product.brand);
 
+  const bestMerchant = merchants.find((m) => m.id === best.merchantId);
+
   return (
     <div
       className={`flex h-full flex-col rounded-2xl border bg-white p-2 sm:p-4 ${
         isHighlighted ? "border-coral-500 shadow-md ring-2 ring-coral-500/30" : "border-border shadow-sm"
       }`}
     >
-      {isHighlighted && (
-        <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-coral-600 sm:mb-2 sm:text-[11px]">
-          <Flame className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" strokeWidth={2} />
-          Mayor bajada
-        </p>
-      )}
       <div className="relative">
-        <Link href={`/producto/${product.slug}`} aria-label={`Ver detalle de ${displayName}`}>
-          <ProductGlyph
-            icon={product.icon}
-            imageUrl={product.imageUrl}
-            alt={displayName}
-            className="h-16 w-full rounded-lg sm:h-32 sm:rounded-xl"
-            iconClassName="h-7 w-7 text-navy-700 sm:h-12 sm:w-12"
-          />
+        {/*
+          Imagen + título fusionados en un único enlace (antes dos <Link>
+          separados al mismo destino): un área de clic más grande y
+          continua, sin huecos "muertos" entre la foto y el nombre.
+          `group` habilita el zoom sutil de la foto al pasar el ratón
+          (hover:scale-105 en ProductGlyph), recortado por `overflow-hidden`
+          aquí para que el zoom nunca se salga de la esquina redondeada.
+        */}
+        <Link href={`/producto/${product.slug}`} className="group block" aria-label={`Ver detalle de ${displayName}`}>
+          <div className="overflow-hidden rounded-lg sm:rounded-xl">
+            <ProductGlyph
+              icon={product.icon}
+              imageUrl={product.imageUrl}
+              alt={displayName}
+              className="h-16 w-full rounded-lg transition-transform duration-300 group-hover:scale-105 sm:h-32 sm:rounded-xl"
+              iconClassName="h-7 w-7 text-navy-700 sm:h-12 sm:w-12"
+            />
+          </div>
+          <span className="mt-1 block line-clamp-1 text-xs font-medium text-navy-900 group-hover:text-teal-700 sm:mt-3 sm:line-clamp-2 sm:text-sm">
+            {displayName}
+          </span>
         </Link>
-        <div className="absolute left-1 top-1 sm:left-2 sm:top-2">
+
+        {/* Badges apilados en la esquina superior izquierda de la FOTO, nunca como línea aparte encima de la tarjeta: "Mayor bajada" (si aplica) y el % de descuento, mismo orden en toda la web. */}
+        <div className="pointer-events-none absolute left-1 top-1 flex flex-col items-start gap-1 sm:left-2 sm:top-2">
+          {isHighlighted && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-navy-900 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm sm:px-2 sm:text-[10px]">
+              <Flame className="h-2.5 w-2.5 shrink-0 text-coral-400 sm:h-3 sm:w-3" aria-hidden="true" strokeWidth={2.5} />
+              Mayor bajada
+            </span>
+          )}
           <DiscountBadge percent={percent} />
         </div>
         <button
@@ -70,13 +88,6 @@ export function ProductDealCard({
           <Heart className={`h-3 w-3 sm:h-4 sm:w-4 ${saved ? "fill-coral-500 text-coral-500" : ""}`} aria-hidden="true" strokeWidth={1.75} />
         </button>
       </div>
-
-      <Link
-        href={`/producto/${product.slug}`}
-        className="mt-1 block line-clamp-1 text-xs font-medium text-navy-900 hover:text-teal-700 sm:mt-3 sm:line-clamp-2 sm:text-sm"
-      >
-        {displayName}
-      </Link>
 
       {/* `mt-auto` ancla este bloque (precio + info secundaria + botón) al
           fondo de la tarjeta: como las tarjetas de una misma fila se
@@ -93,10 +104,23 @@ export function ProductDealCard({
       {/* Información secundaria (tienda, resto de ofertas, frescura del
           dato) oculta en móvil a propósito: en una tarjeta de 2 columnas
           por fila no cabe sin obligar a una tarjeta mucho más alta que
-          las demás — sigue visible desde `sm:` en adelante. */}
-      <p className="hidden text-xs text-navy-300 sm:block">
-        Mejor precio en {merchants.find((m) => m.id === best.merchantId)?.name}
-      </p>
+          las demás — sigue visible desde `sm:` en adelante. La tienda
+          lleva su logo/inicial (MerchantLogo) para que destaque, en vez
+          de ser solo texto suelto. */}
+      {/*
+        <div>, no <p>: MerchantLogo puede renderizar un <div> (avatar de
+        inicial, el único caso real hoy — ninguna fuente conectada trae
+        logoUrl, ver MerchantLogo.tsx) y un <div> dentro de un <p> es HTML
+        inválido — el navegador cierra el <p> solo y React lo marca como
+        error de hidratación.
+      */}
+      <div className="mt-0.5 hidden items-center gap-1 text-xs text-navy-300 sm:flex">
+        <MerchantLogo
+          merchant={{ name: bestMerchant?.name ?? "Tienda asociada", accentColor: bestMerchant?.accentColor ?? "var(--color-navy-500)", logoUrl: bestMerchant?.logoUrl }}
+          className="h-4 w-4 shrink-0 rounded-[4px]"
+        />
+        Mejor precio en <span className="font-medium text-navy-500">{bestMerchant?.name}</span>
+      </div>
 
       {offers.length > 1 && (
         // Solo tiene sentido listar el resto de tiendas cuando hay más de
@@ -116,14 +140,17 @@ export function ProductDealCard({
         </ul>
       )}
 
-      <p className="mt-2 hidden text-[11px] text-navy-300 sm:block">Actualizado {best.lastCheckedLabel}</p>
+      <p className="mt-2 hidden items-center gap-1 text-[11px] text-navy-300 sm:flex">
+        <Clock className="h-3 w-3 shrink-0" aria-hidden="true" strokeWidth={1.75} />
+        Actualizado {best.lastCheckedLabel}
+      </p>
 
       <a
         href={`/buscar?q=${encodeURIComponent(product.name)}`}
-        className="mt-1.5 inline-flex items-center justify-center gap-1 rounded-full bg-teal-600 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-teal-700 sm:mt-3 sm:py-2 sm:text-xs"
+        className="mt-1.5 inline-flex items-center justify-center gap-1 rounded-full border border-teal-600 py-1.5 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-600 hover:text-white sm:mt-3 sm:py-2 sm:text-xs"
       >
         Ver ofertas
-        <span aria-hidden="true">→</span>
+        <ArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
       </a>
     </div>
   );

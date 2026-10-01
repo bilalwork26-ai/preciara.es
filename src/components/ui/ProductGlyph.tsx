@@ -16,6 +16,11 @@ import type { LucideIcon } from "lucide-react";
  * de comercio arbitrarios (uno distinto por cada anunciante de cada feed
  * de afiliación), así que no hay una lista de dominios fija que se pueda
  * mantener en `images.remotePatterns`.
+ *
+ * Fondo `bg-gray-50` (antes `bg-beige`): un tono neutro, el mismo en
+ * todas las tarjetas, deja que la foto del producto sea lo único con
+ * color real — el beige cálido competía visualmente con fotos de
+ * cualquier tono (sobre todo las de fondo blanco de muchos feeds).
  */
 export function ProductGlyph({
   icon,
@@ -49,14 +54,14 @@ export function ProductGlyph({
           // — evita falsos positivos con miniaturas legítimas pequeñas.
           if (img.naturalWidth < 2 || img.naturalHeight < 2) setImageFailed(true);
         }}
-        className={`rounded-xl bg-beige object-contain ${className ?? "h-14 w-14"}`}
+        className={`rounded-xl bg-gray-50 object-contain ${className ?? "h-14 w-14"}`}
       />
     );
   }
 
   return (
     <div
-      className={`flex items-center justify-center rounded-xl bg-beige ${className ?? "h-14 w-14"}`}
+      className={`flex items-center justify-center rounded-xl bg-gray-50 ${className ?? "h-14 w-14"}`}
       aria-hidden="true"
     >
       <IconComponent className={iconClassName ?? "h-6 w-6 text-navy-700"} strokeWidth={1.75} />
