@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Flame } from "lucide-react";
-import { getOfertasBundle, SUPERGANGAS_MIN_DISCOUNT_PERCENT } from "@/server/dataSource/home";
+import { getOfertasBundle } from "@/server/dataSource/home";
 import { getCategoriesIndex } from "@/server/dataSource/category";
 import { demoCategories } from "@/data/demo/categories";
 import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
@@ -12,19 +12,20 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Supergangas",
-  description: `Todos los chollos reales de Preciara: productos con un descuento confirmado de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%.`,
+  description: "Todo el catálogo activo de Preciara en un único listado, de todas las tiendas, ordenado por mayor descuento.",
   alternates: { canonical: "/supergangas" },
   openGraph: { title: "Supergangas — Preciara", type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
   twitter: { card: "summary_large_image", title: "Supergangas — Preciara", images: [DEFAULT_OG_IMAGE_PATH] },
 };
 
 /**
- * Listado completo de "Supergangas" (enlazado desde el CTA del Hero y
- * desde la píldora "Supergangas" de la navegación principal, ver
- * categoryLinks.ts): a diferencia del adelanto de la portada
- * (`SupergangasGrid`, como mucho SUPERGANGAS_LIMIT tarjetas), aquí se
- * muestran TODOS los productos con descuento real
- * ≥SUPERGANGAS_MIN_DISCOUNT_PERCENT — ver `getOfertasBundle`.
+ * Listado completo de "Supergangas" (enlazado desde el CTA "Descubrir
+ * ofertas" del Hero y desde la píldora "Supergangas" de la navegación
+ * principal, ver categoryLinks.ts): a diferencia del adelanto curado de
+ * la portada (`SupergangasGrid`, como mucho SUPERGANGAS_LIMIT tarjetas y
+ * solo con descuento ≥ SUPERGANGAS_MIN_DISCOUNT_PERCENT), esta página
+ * NUNCA aplica un umbral de descuento mínimo: muestra TODAS las ofertas
+ * activas del catálogo, con o sin descuento — ver `getOfertasBundle`.
  */
 export default async function SupergangasPage() {
   const [{ data, source }, categoriesIndex] = await Promise.all([getOfertasBundle(), getCategoriesIndex()]);
@@ -66,8 +67,8 @@ export default async function SupergangasPage() {
         {source === "demo"
           ? "Datos de demostración: aún no está conectado el catálogo real."
           : data.products.length > 0
-            ? `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} con un descuento real de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%.`
-            : `Ahora mismo no hay ningún producto de nuestro catálogo real con un descuento de al menos un ${SUPERGANGAS_MIN_DISCOUNT_PERCENT}%. Vuelve pronto.`}
+            ? `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} de todas las tiendas, ordenados por mayor descuento.`
+            : "Ahora mismo no hay ningún producto activo en nuestro catálogo real. Vuelve pronto."}
       </p>
 
       {/*
