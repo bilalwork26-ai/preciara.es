@@ -74,14 +74,30 @@ const SUPERGANGAS_POOL_SIZE = 200;
  * sigue más texto (color, género...) — el patrón real de Awin para
  * tallas sueltas ("42 Cloud White Hombre") siempre trae algo detrás; un
  * número de modelo al final del nombre, sin nada después, nunca se toca.
+ *
+ * Antes de aplicar esas reglas de talla, el nombre se normaliza (quita
+ * diacríticos, unifica variantes tipográficas de guion/comillas a una
+ * forma simple, quita puntuación que no distingue el modelo) y, al
+ * final, también se quitan medias tallas en formato decimal ("37.5"/"38,5"
+ * — alternativa real a "37 1/3" para la misma talla). Sin esto, dos filas
+ * del mismo modelo podían no agruparse solo por una tilde, un guion largo
+ * (–) en vez de uno normal, o una media talla en decimal en vez de
+ * fracción — mismo bug de tarjetas duplicadas que esta función ya existía
+ * para resolver, solo que con un margen de coincidencia más estrecho.
  */
 export function dealsGridGroupKey(product: Pick<ProductWithOffers, "name">): string {
   return product.name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // diacríticos (tildes/diéresis) — mismo criterio que categoryMapping.ts
+    .replace(/[“”"'`´]/g, "")
+    .replace(/[–—]/g, "-") // guion medio/largo tipográfico -> guion normal, para que sigan cayendo en las reglas de rango de abajo
     .replace(/\b\d{1,3}-\d{1,3}\b/g, "")
     .replace(/\b\d{1,2}\s+\d\/\d\b/g, "")
+    .replace(/\b\d{2}[.,]5\b/g, "") // media talla en formato decimal (37.5/38,5), alternativa real a "37 1/3"
     .replace(/\b(?:3\d|4\d|50)\b/g, "")
     .replace(/\b(?:1[6-9]|2\d)\b(?=\s)/g, "")
     .replace(/\b\d{0,2}X{0,3}(?:S|M|L)\b/gi, "")
+    .replace(/[.,;:!¡¿?]+/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();

@@ -46,7 +46,13 @@ export interface Offer {
   verified: boolean;
   /** Etiqueta legible de cuándo se comprobó por última vez (dato de demo). */
   lastCheckedLabel: string;
-  /** Gastos de envío en EUR. `null`/ausente = el comercio o la fuente no lo especifica — nunca se asume envío gratis por defecto (ver formatShippingCost en lib/format.ts). 0 = envío gratis confirmado. */
+  /**
+   * Gastos de envío en EUR, tal como los ingiere el feed — se conserva en
+   * el dato aunque ya no se muestre ni se use en ningún cálculo de la UI
+   * (ver la ficha de producto, `/producto/[slug]/page.tsx`): "PRECIO" y
+   * "Mejor precio" se basan única y exclusivamente en el PVP del
+   * producto. `null`/ausente = el comercio o la fuente no lo especifica.
+   */
   shippingCost?: number | null;
 }
 

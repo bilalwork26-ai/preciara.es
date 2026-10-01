@@ -152,6 +152,7 @@ export async function runScheduledAwinSync(apiKey: string, feedListUrl: string |
       feedsDiscovered: summary.feedsDiscovered,
       feedsApproved: summary.feedsApproved,
       feedsSkippedNotJoined: summary.feedsSkippedNotJoined,
+      feedsSkippedNonSpanishLanguage: summary.feedsSkippedNonSpanishLanguage,
       feedsInvalidInList: summary.feedsInvalidInList,
       advertisersProcessed: summary.advertisersProcessed,
       advertisersSuccessful: summary.advertisersSuccessful,

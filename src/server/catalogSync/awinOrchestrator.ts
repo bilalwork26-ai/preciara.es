@@ -252,6 +252,8 @@ export type AwinOrchestratorSummary = {
   feedsDiscovered: number;
   feedsApproved: number;
   feedsSkippedNotJoined: number;
+  /** Feeds `approved` excluidos por idioma (ver `isSpanishFeedLanguage`): aprobados por Awin, pero en un idioma distinto del español, así que nunca se descargan ni se ingieren — nunca se cuentan como `feedsSkippedNotJoined`. */
+  feedsSkippedNonSpanishLanguage: number;
   feedsInvalidInList: number;
   /** Cuántas entradas `approved` de la lista eran un duplicado EXACTO (mismo `id`) de una ya vista — se descargan una sola vez. */
   feedsDuplicate: number;
@@ -367,11 +369,42 @@ function resolveDeps(deps: AwinOrchestratorDeps | undefined): ResolvedDeps {
   };
 }
 
+/**
+ * Valores de `Language` que identifican un feed en español — comparación
+ * EXACTA (tras recortar espacios y pasar a minúsculas) o como prefijo de
+ * un código de configuración regional ("es-ES", "es_ES"), nunca una
+ * coincidencia parcial que pudiera colar otro idioma.
+ */
+const SPANISH_LANGUAGE_SIGNALS: readonly string[] = ["es", "spa", "spanish", "español", "espanol", "castellano"];
+
+/**
+ * `true` si el feed es español — o si no declara idioma en absoluto
+ * (`language` ausente/vacío NUNCA se descarta solo por eso: varios feeds
+ * reales de producción no traen esta columna rellena, y tratar "sin dato"
+ * como "no español" dejaría fuera catálogo real válido). `false` SOLO
+ * cuando el feed declara explícitamente un idioma distinto del español —
+ * el caso real que motiva esto: un anunciante (Trotec) con varios feeds
+ * por idioma/mercado bajo el MISMO `advertiserId` (ver el comentario de
+ * cabecera del fichero sobre por qué varios feeds de un mismo anunciante
+ * son, a propósito, el mismo comercio) — sin este filtro, el feed en
+ * portugués del mismo anunciante se ingiere igual que el feed español, y
+ * sus títulos en portugués ("Ventoinha", "Humidificador de ar"...) acaban
+ * mezclados en el catálogo de Preciara, que es exclusivamente en español.
+ */
+function isSpanishFeedLanguage(language: string | null): boolean {
+  if (!language) return true;
+  const normalized = language.trim().toLowerCase();
+  return SPANISH_LANGUAGE_SIGNALS.some(
+    (signal) => normalized === signal || normalized.startsWith(`${signal}-`) || normalized.startsWith(`${signal}_`)
+  );
+}
+
 type FeedListClassification = {
   listFatalError: boolean;
   feedsDiscovered: number;
   feedsApproved: number;
   feedsSkippedNotJoined: number;
+  feedsSkippedNonSpanishLanguage: number;
   feedsInvalidInList: number;
   feedsDuplicate: number;
   listHadInvalidRows: boolean;
@@ -385,6 +418,7 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
   let feedsDiscovered = 0;
   let feedsApproved = 0;
   let feedsSkippedNotJoined = 0;
+  let feedsSkippedNonSpanishLanguage = 0;
   let feedsInvalidInList = 0;
   let feedsDuplicate = 0;
   let listHadInvalidRows = false;
@@ -409,6 +443,14 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
         continue; // feed duplicado exacto: se descarga una sola vez, nunca dos.
       }
       seenFeedIds.add(entry.id);
+      // Nunca se descarga ni se ingiere un feed en un idioma distinto del
+      // español (ver `isSpanishFeedLanguage`) — se cuenta aparte, nunca se
+      // confunde con "no aprobado" (`feedsSkippedNotJoined`): el feed SÍ
+      // está aprobado, solo no es el idioma del catálogo de Preciara.
+      if (!isSpanishFeedLanguage(entry.language)) {
+        feedsSkippedNonSpanishLanguage += 1;
+        continue;
+      }
       const group = advertiserGroups.get(entry.advertiserId) ?? { advertiserName: entry.advertiserName, feeds: [] };
       group.feeds.push(entry);
       advertiserGroups.set(entry.advertiserId, group);
@@ -422,7 +464,17 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
     listFatalError = true;
   }
 
-  return { listFatalError, feedsDiscovered, feedsApproved, feedsSkippedNotJoined, feedsInvalidInList, feedsDuplicate, listHadInvalidRows, advertiserGroups };
+  return {
+    listFatalError,
+    feedsDiscovered,
+    feedsApproved,
+    feedsSkippedNotJoined,
+    feedsSkippedNonSpanishLanguage,
+    feedsInvalidInList,
+    feedsDuplicate,
+    listHadInvalidRows,
+    advertiserGroups,
+  };
 }
 
 /** Procesa TODOS los feeds de un anunciante, secuencialmente y en orden determinista (por `id` de feed) — nunca se detiene ante el fallo de uno de ellos: todos sus feeds `Joined` se intentan igual. */
@@ -597,6 +649,7 @@ export async function runAwinCatalogSyncCycle(options: AwinOrchestratorOptions):
       feedsDiscovered: classification.feedsDiscovered,
       feedsApproved: classification.feedsApproved,
       feedsSkippedNotJoined: classification.feedsSkippedNotJoined,
+      feedsSkippedNonSpanishLanguage: classification.feedsSkippedNonSpanishLanguage,
       feedsInvalidInList: classification.feedsInvalidInList,
       feedsDuplicate: classification.feedsDuplicate,
       advertisersProcessed: advertisers.length,

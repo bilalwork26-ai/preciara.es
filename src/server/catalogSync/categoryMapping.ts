@@ -60,6 +60,9 @@ const INFANTIL: CategoryMappingTarget = { slug: "infantil", name: "Infantil" };
 const DEPORTE: CategoryMappingTarget = { slug: "deporte", name: "Deporte" };
 const MODA: CategoryMappingTarget = { slug: "moda", name: "Moda" };
 
+/** Palabras clave de Infantil — extraídas a una constante propia porque `mapAwinProductCategory` también las necesita para comprobar el NOMBRE del producto (ver más abajo), no solo el texto de categoría. */
+const INFANTIL_KEYWORDS: readonly string[] = ["infantil", "bebe", "baby", "juguete", "toy", "kids", "nino", "nina"];
+
 /**
  * Reglas en orden de comprobación — de más específico a más genérico, para
  * que un texto ambiguo ("electrodomésticos de cocina") caiga en la
@@ -124,7 +127,7 @@ const KEYWORD_RULES: readonly { target: CategoryMappingTarget; keywords: readonl
     // normalize()), nunca el fragmento suelto "nin": coincidía también
     // dentro de palabras sin relación ("running", "peninsula"...) — bug
     // real encontrado al añadir la regla de Deporte más abajo.
-    keywords: ["infantil", "bebe", "baby", "juguete", "toy", "kids", "nino", "nina"],
+    keywords: INFANTIL_KEYWORDS,
   },
   {
     target: DEPORTE,
@@ -212,17 +215,61 @@ function normalize(text: string): string {
   return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+function matchKeywordRules(normalizedText: string, rules: typeof KEYWORD_RULES): CategoryMappingTarget | null {
+  for (const rule of rules) {
+    if (rule.keywords.some((keyword) => normalizedText.includes(keyword))) return rule.target;
+  }
+  return null;
+}
+
 /**
  * Clasifica el texto de categoría de un feed en la taxonomía existente de
  * Preciara. Nunca lanza y nunca devuelve un valor vacío: si ninguna regla
  * coincide con suficiente confianza, devuelve `GENERIC_CATEGORY_TARGET`.
  */
 export function mapAwinCategoryText(rawCategoryText: string): CategoryMappingTarget {
-  const normalized = normalize(rawCategoryText);
-  for (const rule of KEYWORD_RULES) {
-    if (rule.keywords.some((keyword) => normalized.includes(keyword))) {
-      return rule.target;
-    }
-  }
-  return GENERIC_CATEGORY_TARGET;
+  return matchKeywordRules(normalize(rawCategoryText), KEYWORD_RULES) ?? GENERIC_CATEGORY_TARGET;
+}
+
+/**
+ * Palabras que, en el NOMBRE de un producto ya clasificado como Infantil
+ * por su texto de categoría, indican de forma inequívoca una variante de
+ * ADULTO de la misma línea — caso real reportado: zapatillas de
+ * running/trail de adulto apareciendo en /categoria/infantil. El texto de
+ * categoría que aporta el comercio agrupa a veces TODA una familia de
+ * producto (p. ej. "Zapatillas Running Niño/Niña") bajo un único nodo que
+ * también lista las tallas/variantes de adulto de esa misma familia — el
+ * texto de categoría por sí solo no basta para garantizar que una fila
+ * concreta sea realmente infantil, así que esta función comprueba además
+ * el nombre del producto, la única fuente real por fila.
+ */
+const ADULT_ONLY_KEYWORDS: readonly string[] = ["hombre", "mujer", "adulto", "caballero", "senora"];
+
+/** Las mismas `KEYWORD_RULES`, sin la regla de Infantil — usada para reclasificar una fila que la cabecera de categoría marcó como Infantil pero cuyo propio nombre la desmiente (ver `mapAwinProductCategory`). */
+const NON_INFANTIL_RULES = KEYWORD_RULES.filter((rule) => rule.target !== INFANTIL);
+
+/**
+ * Clasifica un producto completo: el texto de categoría del feed Y su
+ * propio nombre, nunca solo el primero. Si el texto de categoría resuelve
+ * a Infantil pero el NOMBRE trae una señal explícita e inequívoca de
+ * adulto ("Hombre", "Mujer", "Adulto"...) sin ningún término infantil que
+ * la acompañe, la fila se reclasifica usando el resto de reglas (texto de
+ * categoría + nombre, sin la regla de Infantil) — nunca se descarta la
+ * fila, solo se corrige su categoría. En cualquier otro caso (sin señal
+ * de adulto, o con señal infantil también en el nombre) se respeta el
+ * resultado de `mapAwinCategoryText` tal cual.
+ */
+export function mapAwinProductCategory(rawCategoryText: string, rawProductName: string): CategoryMappingTarget {
+  const categoryTarget = mapAwinCategoryText(rawCategoryText);
+  if (categoryTarget !== INFANTIL) return categoryTarget;
+
+  const normalizedName = normalize(rawProductName);
+  const hasAdultSignal = ADULT_ONLY_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+  if (!hasAdultSignal) return categoryTarget;
+
+  const hasChildrenSignalInName = INFANTIL_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+  if (hasChildrenSignalInName) return categoryTarget;
+
+  const combinedText = normalize(`${rawCategoryText} ${rawProductName}`);
+  return matchKeywordRules(combinedText, NON_INFANTIL_RULES) ?? GENERIC_CATEGORY_TARGET;
 }

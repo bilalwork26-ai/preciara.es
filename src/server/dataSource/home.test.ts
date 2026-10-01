@@ -109,6 +109,31 @@ describe("dealsGridGroupKey: agrupa variantes de talla del mismo modelo", () => 
     expect(a).toBe(b);
     expect(a).toContain("cloud white"); // el color nunca se quita, solo la talla
   });
+
+  it("dos nombres que solo difieren en una tilde (misma palabra, con y sin diacrítico) dan la misma clave", () => {
+    const a = dealsGridGroupKey({ name: "Pantalón Running Técnico" });
+    const b = dealsGridGroupKey({ name: "Pantalon Running Tecnico" });
+    expect(a).toBe(b);
+  });
+
+  it("un guion largo/medio tipográfico (–/—) en un rango de talla se trata igual que un guion normal", () => {
+    const a = dealsGridGroupKey({ name: "Pantalón Firebird Utility 23–34 Black Mujer" });
+    const b = dealsGridGroupKey({ name: "Pantalón Firebird Utility 24-30 Black Mujer" });
+    expect(a).toBe(b);
+  });
+
+  it("una media talla en formato decimal (37.5/38,5) se quita igual que una con fracción (37 1/3)", () => {
+    const a = dealsGridGroupKey({ name: "Zapatilla Running 37.5 Cloud White" });
+    const b = dealsGridGroupKey({ name: "Zapatilla Running 38,5 Cloud White" });
+    expect(a).toBe(b);
+    expect(a).toContain("cloud white");
+  });
+
+  it("comillas y puntuación que no distinguen el modelo (comas, puntos, comillas tipográficas) no impiden agrupar el mismo modelo", () => {
+    const a = dealsGridGroupKey({ name: 'Zapatilla "Pro", Edición Especial.' });
+    const b = dealsGridGroupKey({ name: "Zapatilla Pro Edición Especial" });
+    expect(a).toBe(b);
+  });
 });
 
 describe("bestDiscountPercent", () => {

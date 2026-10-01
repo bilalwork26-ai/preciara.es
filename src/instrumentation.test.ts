@@ -10,6 +10,7 @@ function buildSummary(overrides: Partial<AwinOrchestratorSummary> = {}): AwinOrc
     feedsDiscovered: 0,
     feedsApproved: 0,
     feedsSkippedNotJoined: 0,
+    feedsSkippedNonSpanishLanguage: 0,
     feedsInvalidInList: 0,
     feedsDuplicate: 0,
     advertisersProcessed: 0,
