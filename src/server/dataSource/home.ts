@@ -272,17 +272,27 @@ export function selectSuperDeals(
 
 /**
  * Mismo pipeline que `selectSuperDeals` (deduplica variantes, reparte
- * entre comercios) pero SIN ningún filtro de descuento mínimo ni recorte
+ * entre comercios) pero SIN ningún umbral de descuento MÍNIMO ni recorte
  * final: usada por `/supergangas` completa (ver `getOfertasBundle`), que
- * debe mostrar TODAS las ofertas activas del catálogo — con descuento
- * real, con un descuento pequeño o sin ningún descuento — nunca solo las
- * que superan un umbral. El orden (mayor descuento primero, ver
- * `compareByDealRank` dentro de `collapseProductVariants`) sigue siendo
- * el mismo que "Supergangas": los chollos más fuertes encabezan la
- * página, pero ningún producto se oculta por tener menos descuento.
+ * debe mostrar TODAS las ofertas con descuento real del catálogo, por
+ * pequeño que sea — nunca solo las que superan un % alto como el del
+ * adelanto de portada.
+ *
+ * SÍ exige que exista descuento (`bestDiscountPercent(product) > 0`):
+ * una "oferta" o "ganga" implica, por definición, que el precio actual es
+ * menor que un precio anterior real — un producto a su PVP normal, sin
+ * ningún precio tachado, nunca es una ganga, aunque "sin umbral mínimo"
+ * signifique que cualquier descuento, por pequeño que sea, basta para
+ * aparecer. Caso real que motivó esto: tras quitar el umbral del 15%,
+ * productos sin ningún descuento (p. ej. unas zapatillas a su precio de
+ * tarifa) empezaron a aparecer en la página sin ninguna pastilla de %
+ * ni precio tachado — contradice el propio nombre de la sección. El
+ * orden (mayor descuento primero, ver `compareByDealRank` dentro de
+ * `collapseProductVariants`) sigue siendo el mismo que "Supergangas".
  */
 export function selectAllOfertas(products: ProductWithOffers[]): ProductWithOffers[] {
-  return interleaveByMerchant(collapseProductVariants(products));
+  const withActiveDiscount = collapseProductVariants(products).filter((product) => bestDiscountPercent(product) > 0);
+  return interleaveByMerchant(withActiveDiscount);
 }
 
 export type SupergangasBundle = { products: Product[]; merchants: Merchant[] };
@@ -345,11 +355,13 @@ export type OfertasBundle = { products: Product[]; merchants: Merchant[] };
  * navegación): a diferencia del adelanto curado de portada
  * (`getSupergangasBundle`, como mucho `SUPERGANGAS_LIMIT` tarjetas y solo
  * con descuento ≥ `SUPERGANGAS_MIN_DISCOUNT_PERCENT`), esta página NUNCA
- * aplica un umbral de descuento mínimo: muestra TODAS las ofertas activas
- * del catálogo, de todas las tiendas, con descuento real, con un
- * descuento pequeño o sin ningún descuento — ordenadas por mayor
- * descuento primero (ver `selectAllOfertas`/`compareByDealRank`), pero
- * sin ocultar nada por debajo de ningún porcentaje.
+ * aplica un umbral de descuento MÍNIMO alto: muestra TODAS las ofertas
+ * con descuento real del catálogo, de todas las tiendas, por pequeño que
+ * sea ese descuento — ordenadas por mayor descuento primero (ver
+ * `selectAllOfertas`/`compareByDealRank`). SÍ exige que exista descuento
+ * real (precio actual < precio anterior, ver `selectAllOfertas`): un
+ * producto a su PVP normal, sin precio tachado ni pastilla de %, nunca es
+ * una "ganga" y nunca aparece aquí.
  */
 export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> {
   return resolveWithFallback({
@@ -364,11 +376,18 @@ export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> 
     demoFallback: {
       // A diferencia del adelanto de portada (que usa `demoSupergangas`,
       // una lista aparte curada con descuentos altos), esta página usa el
-      // catálogo demo GENERAL (`demoProducts`): sin filtro de descuento,
-      // "todas las ofertas activas" en modo demo son todos los productos
-      // demo, no solo los ya curados como chollos. Mismo orden que con BD
-      // real: mayor descuento primero, sin ocultar los que no tienen.
-      products: [...demoProducts].sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
+      // catálogo demo GENERAL (`demoProducts`): sin umbral de descuento
+      // mínimo, "todas las ofertas" en modo demo son todos los productos
+      // demo CON descuento real, no solo los ya curados como chollos.
+      // Filtro defensivo (`bestOfferDiscountPercent > 0`): hoy los 10
+      // productos de `demoProducts` ya tienen descuento real, pero un
+      // futuro producto demo sin `previousPrice` nunca debe colarse aquí
+      // sin tachado/pastilla de %, el mismo criterio que `fetchFromDb`
+      // (ver `selectAllOfertas`). Mismo orden que con BD real: mayor
+      // descuento primero.
+      products: demoProducts
+        .filter((p) => bestOfferDiscountPercent(p.offers) > 0)
+        .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
       merchants: demoMerchants,
     },
     // "Supergangas" nunca sustituye un catálogo real (aunque esté vacío)
