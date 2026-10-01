@@ -5,7 +5,7 @@
  * un número pequeño y fijo de consultas (hoy: 2), nunca una por
  * componente ni una por producto.
  */
-import { demoSupergangas } from "@/data/demo/products";
+import { demoProducts, demoSupergangas } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import { bestOfferDiscountPercent } from "@/lib/format";
 import type { Merchant, Product } from "@/types";
@@ -23,12 +23,21 @@ import { extractMerchants, toLegacyProduct } from "./transform";
 const SECONDARY_BANNER_PRODUCT_SLUG = "portatil-14-16gb-512gb";
 
 /**
- * Umbral estricto de "Supergangas": por debajo de este % de descuento
- * real, un producto nunca es una supergangas. Bajado de 30% a 15% (ver
- * PR correspondiente) tras comprobar en producción que con el catálogo
- * real todavía pequeño (solo adidas ES + Trotec), un umbral del 30% dejaba
- * la sección casi vacía (1 producto) — 15% sigue siendo un descuento real
- * y verificado, nunca un precio inventado, solo menos exigente.
+ * Umbral estricto del ADELANTO de "Supergangas" en la portada (ver
+ * `getSupergangasBundle`/`SupergangasGrid`): por debajo de este % de
+ * descuento real, un producto nunca aparece en ese bloque de como mucho
+ * `SUPERGANGAS_LIMIT` tarjetas. Bajado de 30% a 15% (ver PR
+ * correspondiente) tras comprobar en producción que con el catálogo real
+ * todavía pequeño (solo adidas ES + Trotec), un umbral del 30% dejaba la
+ * sección casi vacía (1 producto) — 15% sigue siendo un descuento real y
+ * verificado, nunca un precio inventado, solo menos exigente.
+ *
+ * SOLO afecta a ese adelanto curado de portada. La página completa
+ * `/supergangas` (ver `getOfertasBundle`/`selectAllOfertas`) nunca aplica
+ * este ni ningún otro umbral de descuento: muestra TODAS las ofertas
+ * activas del catálogo, con o sin descuento — "Descubrir ofertas" (el CTA
+ * del Hero que enlaza ahí) debe llevar al catálogo completo, no a un
+ * listado recortado por un mínimo de descuento.
  */
 export const SUPERGANGAS_MIN_DISCOUNT_PERCENT = 15;
 
@@ -261,6 +270,21 @@ export function selectSuperDeals(
   return interleaveByMerchant(qualifying).slice(0, limit);
 }
 
+/**
+ * Mismo pipeline que `selectSuperDeals` (deduplica variantes, reparte
+ * entre comercios) pero SIN ningún filtro de descuento mínimo ni recorte
+ * final: usada por `/supergangas` completa (ver `getOfertasBundle`), que
+ * debe mostrar TODAS las ofertas activas del catálogo — con descuento
+ * real, con un descuento pequeño o sin ningún descuento — nunca solo las
+ * que superan un umbral. El orden (mayor descuento primero, ver
+ * `compareByDealRank` dentro de `collapseProductVariants`) sigue siendo
+ * el mismo que "Supergangas": los chollos más fuertes encabezan la
+ * página, pero ningún producto se oculta por tener menos descuento.
+ */
+export function selectAllOfertas(products: ProductWithOffers[]): ProductWithOffers[] {
+  return interleaveByMerchant(collapseProductVariants(products));
+}
+
 export type SupergangasBundle = { products: Product[]; merchants: Merchant[] };
 
 export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasBundle>> {
@@ -300,46 +324,58 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
 }
 
 /**
- * Máximo de productos en `/supergangas` (la página completa, enlazada
- * desde el CTA del Hero y desde la píldora "Supergangas" de la
- * navegación principal) — a diferencia del bloque de la portada
- * (`SUPERGANGAS_LIMIT`, 8, solo un adelanto), aquí se listan TODOS los
- * chollos reales del catálogo dentro de `SUPERGANGAS_POOL_SIZE`, no un
- * adelanto acotado a propósito.
+ * Cuántas filas se piden a la BD para `/supergangas` completa (ver
+ * `getOfertasBundle`) — deliberadamente mucho más alto que
+ * `SUPERGANGAS_POOL_SIZE`: esa otra constante existe para alimentar un
+ * FILTRO de descuento mínimo que ya reduce mucho el conjunto antes de
+ * mostrarlo, pero esta página ya no aplica ningún filtro de descuento
+ * (ver `selectAllOfertas`) — debe poder servir el catálogo activo
+ * COMPLETO, así que necesita un tope mucho más generoso para que un
+ * catálogo que crezca a miles de productos siga mostrándose entero. Sigue
+ * siendo un tope técnico de seguridad (una consulta nunca debe ser
+ * literalmente sin límite), no un recorte de catálogo a propósito.
  */
-const OFERTAS_PAGE_LIMIT = SUPERGANGAS_POOL_SIZE;
+const OFERTAS_PAGE_POOL_SIZE = 5000;
 
 export type OfertasBundle = { products: Product[]; merchants: Merchant[] };
 
 /**
- * Listado completo de "Supergangas" para `/supergangas` — mismo criterio
- * estricto que `getSupergangasBundle` (descuento real ≥ SUPERGANGAS_MIN_DISCOUNT_PERCENT,
- * una sola tarjeta por modelo, mejor descuento primero), pero sin el
- * recorte de la portada: esta página es el catálogo completo de chollos,
- * no un adelanto.
+ * Listado completo de "Supergangas" para `/supergangas` (el destino del
+ * CTA "Descubrir ofertas" del Hero y de la píldora "Supergangas" de la
+ * navegación): a diferencia del adelanto curado de portada
+ * (`getSupergangasBundle`, como mucho `SUPERGANGAS_LIMIT` tarjetas y solo
+ * con descuento ≥ `SUPERGANGAS_MIN_DISCOUNT_PERCENT`), esta página NUNCA
+ * aplica un umbral de descuento mínimo: muestra TODAS las ofertas activas
+ * del catálogo, de todas las tiendas, con descuento real, con un
+ * descuento pequeño o sin ningún descuento — ordenadas por mayor
+ * descuento primero (ver `selectAllOfertas`/`compareByDealRank`), pero
+ * sin ocultar nada por debajo de ningún porcentaje.
  */
 export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> {
   return resolveWithFallback({
     fetchFromDb: async () => {
-      const rows = await getActiveProductsWithOffers(SUPERGANGAS_POOL_SIZE);
+      const rows = await getActiveProductsWithOffers(OFERTAS_PAGE_POOL_SIZE);
       if (!rows) return null;
       const filtered = rows.filter((p) => p.slug !== SECONDARY_BANNER_PRODUCT_SLUG);
-      const selected = selectSuperDeals(filtered, SUPERGANGAS_MIN_DISCOUNT_PERCENT, OFERTAS_PAGE_LIMIT);
+      const selected = selectAllOfertas(filtered);
       const products = selected.map((p) => toLegacyProduct(p));
       return { products, merchants: extractMerchants(selected) };
     },
     demoFallback: {
-      // Mismo demo que la portada (ver getSupergangasBundle): en modo demo
-      // no hay más chollos que enseñar, así que la página completa
-      // coincide con el adelanto — nunca se inventan productos demo
-      // adicionales solo para llenar la página.
-      products: demoSupergangas
-        .filter((p) => bestOfferDiscountPercent(p.offers) >= SUPERGANGAS_MIN_DISCOUNT_PERCENT)
-        .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
+      // A diferencia del adelanto de portada (que usa `demoSupergangas`,
+      // una lista aparte curada con descuentos altos), esta página usa el
+      // catálogo demo GENERAL (`demoProducts`): sin filtro de descuento,
+      // "todas las ofertas activas" en modo demo son todos los productos
+      // demo, no solo los ya curados como chollos. Mismo orden que con BD
+      // real: mayor descuento primero, sin ocultar los que no tienen.
+      products: [...demoProducts].sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
       merchants: demoMerchants,
     },
-    // Mismo criterio que getSupergangasBundle: con BD conectada, 0 chollos
-    // reales que lleguen al umbral se muestra como 0, nunca sustituido por demo.
+    // "Supergangas" nunca sustituye un catálogo real (aunque esté vacío)
+    // por productos inventados: con BD conectada, 0 productos activos se
+    // muestra como 0, nunca como "Tienda Demo A/B". El demo solo sigue
+    // sirviendo para cuando no hay BD conectada en absoluto (desarrollo
+    // local sin DATABASE_URL).
     fallbackOnlyWhenUnavailable: true,
   });
 }

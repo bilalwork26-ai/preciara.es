@@ -5,16 +5,16 @@ import type { Merchant, Product } from "@/types";
 import { ALL_FILTER_VALUE, availableCategoryOptions, availableMerchantOptions, filterOfertas } from "@/lib/ofertasFilters";
 import { ProductDealCard } from "@/components/home/ProductDealCard";
 
-/** Cuántas tarjetas se muestran de entrada (y cuántas más añade cada pulsación de "Mostrar más"): con SUPERGANGAS_POOL_SIZE (200) como tope real del catálogo, cargar todo de golpe en el DOM sería excesivo — paginación en cliente, sin ida y vuelta al servidor, ya que `products` llega completo desde la página. */
+/** Cuántas tarjetas se muestran de entrada (y cuántas más añade cada pulsación de "Mostrar más"): `products` puede llegar a ser el catálogo activo completo (ver OFERTAS_PAGE_POOL_SIZE en server/dataSource/home.ts), así que cargar todo de golpe en el DOM sería excesivo — paginación en cliente, sin ida y vuelta al servidor, ya que `products` llega completo desde la página. */
 const PAGE_SIZE = 24;
 
 /**
  * Catálogo completo de `/supergangas` con filtros por categoría y
  * tienda (lógica de filtrado en `src/lib/ofertasFilters.ts`, probada
  * aparte) — a diferencia del adelanto de la portada, esta página nunca
- * recorta el catálogo a un puñado de tarjetas: `products` ya llega
- * completo (hasta `SUPERGANGAS_POOL_SIZE`), este componente solo decide
- * cuánto enseña de golpe.
+ * recorta el catálogo por descuento ni a un puñado de tarjetas: `products`
+ * ya llega con TODAS las ofertas activas del catálogo (ver
+ * `getOfertasBundle`), este componente solo decide cuánto enseña de golpe.
  */
 export function OfertasCatalog({
   products,

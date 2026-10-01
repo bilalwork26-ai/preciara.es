@@ -12,6 +12,7 @@ import {
   dealsGridGroupKey,
   getOfertasBundle,
   getSupergangasBundle,
+  selectAllOfertas,
   selectSuperDeals,
   SUPERGANGAS_MIN_DISCOUNT_PERCENT,
 } from "./home";
@@ -279,6 +280,49 @@ describe("selectSuperDeals", () => {
 
   it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
     expect(selectSuperDeals([], SUPERGANGAS_MIN_DISCOUNT_PERCENT, 6)).toEqual([]);
+  });
+});
+
+describe("selectAllOfertas: nunca filtra por descuento (usada por /supergangas completa, a diferencia de selectSuperDeals)", () => {
+  it("incluye productos por debajo de cualquier umbral razonable, e incluso sin ningún descuento", () => {
+    const products = [
+      fakeProduct({ name: "Chollo real", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "65" }] }), // 35%
+      fakeProduct({ name: "Descuento flojo", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }), // 5%
+      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
+    ];
+    const selected = selectAllOfertas(products);
+    expect(selected.map((p) => p.name).sort()).toEqual(["Chollo real", "Descuento flojo", "Sin descuento"]);
+  });
+
+  it("sigue deduplicando variantes del mismo modelo, igual que selectSuperDeals/collapseProductVariants", () => {
+    const products = [
+      fakeProduct({ name: "Pantalón X 23-34", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
+      fakeProduct({ name: "Pantalón X 24-30", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "50" }] }), // 50%
+    ];
+    const selected = selectAllOfertas(products);
+    expect(selected).toHaveLength(1);
+    expect(selected[0].name).toBe("Pantalón X 24-30"); // 50%, el mayor de las dos
+  });
+
+  it("nunca recorta: devuelve TODOS los productos de entrada (tras deduplicar variantes), sin ningún límite propio", () => {
+    const products = Array.from({ length: 50 }, (_, i) =>
+      fakeProduct({ name: `P${i}`, categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }),
+    );
+    expect(selectAllOfertas(products)).toHaveLength(50);
+  });
+
+  it("el resultado sigue ordenado por % de descuento real descendente, con los productos sin descuento al final, nunca ocultos", () => {
+    const products = [
+      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
+      fakeProduct({ name: "Máximo", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
+      fakeProduct({ name: "Medio", categoryId: 3, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
+    ];
+    const selected = selectAllOfertas(products);
+    expect(selected.map((p) => p.name)).toEqual(["Máximo", "Medio", "Sin descuento"]);
+  });
+
+  it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
+    expect(selectAllOfertas([])).toEqual([]);
   });
 });
 
@@ -575,7 +619,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
     }
   });
 
-  it("un producto con descuento por debajo del umbral nunca aparece en Supergangas", async () => {
+  it("un producto con descuento por debajo del umbral nunca aparece en el adelanto de portada (Supergangas), pero SÍ aparece en la página completa /supergangas (getOfertasBundle, que no aplica ningún umbral)", async () => {
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
     const weakDiscountProduct = await prisma!.product.create({
       data: { slug: `${PREFIX}-descuento-flojo`, name: "Producto con descuento flojo", categoryId },
@@ -593,8 +637,40 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
       },
     });
 
-    const bundle = await getSupergangasBundle();
-    expect(bundle.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeUndefined();
+    const supergangas = await getSupergangasBundle();
+    expect(supergangas.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeUndefined();
+
+    const ofertas = await getOfertasBundle();
+    if (ofertas.source === "database") {
+      expect(ofertas.data.products.find((p) => p.slug === `${PREFIX}-descuento-flojo`)).toBeDefined();
+    }
+  });
+
+  it("un producto SIN ningún descuento (sin previousPrice) nunca aparece en el adelanto de portada, pero sí en /supergangas completa: esta página nunca oculta nada por falta de descuento", async () => {
+    const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
+    const noDiscountProduct = await prisma!.product.create({
+      data: { slug: `${PREFIX}-sin-descuento`, name: "Producto sin ningún descuento", categoryId },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: noDiscountProduct.id,
+        merchantId: merchant.id,
+        currentPrice: 42,
+        // Sin previousPrice: ningún descuento real, nunca uno inventado.
+        productUrl: "https://example.invalid/sin-descuento",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+      },
+    });
+
+    const supergangas = await getSupergangasBundle();
+    expect(supergangas.data.products.find((p) => p.slug === `${PREFIX}-sin-descuento`)).toBeUndefined();
+
+    const ofertas = await getOfertasBundle();
+    if (ofertas.source === "database") {
+      expect(ofertas.data.products.find((p) => p.slug === `${PREFIX}-sin-descuento`)).toBeDefined();
+    }
   });
 
   it("getOfertasBundle no recorta al límite de la portada (a diferencia de getSupergangasBundle, el adelanto): devuelve TODOS los chollos reales", async () => {
