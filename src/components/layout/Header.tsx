@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import * as icons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Menu, X, Bell, User } from "lucide-react";
+import { Menu, X, Bell, User, Flame } from "lucide-react";
 import { Logo } from "@/components/icons/Logo";
 import { Container } from "@/components/ui/Container";
 import { CategoriesMenu } from "./CategoriesMenu";
@@ -28,31 +28,61 @@ export function Header() {
 
           <SearchForm id="search-header-desktop" className="hidden min-w-0 flex-1 md:flex" />
 
-          <div className="ml-auto hidden shrink-0 items-center gap-1 lg:flex">
-            <SavedMenu />
-            <UtilityButton
-              icon={Bell}
-              label="Alertas"
-              message="Las alertas de precio llegarán en una fase posterior: te avisaremos cuando un producto baje al precio que elijas. Aún no está disponible."
-            />
-            <UtilityButton
-              icon={User}
-              label="Mi cuenta"
-              message="El registro y el inicio de sesión están en construcción. Cuando estén listos, podrás gestionar tu cuenta desde aquí."
-              withChevron
-            />
+          <div className="ml-auto hidden shrink-0 items-center gap-3 lg:flex">
+            {/*
+              CTA principal de la web, también en la cabecera fija (ver
+              Hero.tsx para el CTA grande de portada): versión compacta,
+              mismo gradiente/icono de fuego, siempre visible durante el
+              scroll gracias a que <header> ya es sticky top-0.
+            */}
+            <Link
+              href="/supergangas"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-coral-500 to-coral-600 px-4 py-2 text-sm font-bold text-white shadow-[0_4px_18px_-4px_rgba(240,100,73,0.6)] transition-colors hover:from-coral-600 hover:to-[#7a2a16]"
+            >
+              <Flame className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Descubrir ofertas
+            </Link>
+            <div className="flex items-center gap-1">
+              <SavedMenu />
+              <UtilityButton
+                icon={Bell}
+                label="Alertas"
+                message="Las alertas de precio llegarán en una fase posterior: te avisaremos cuando un producto baje al precio que elijas. Aún no está disponible."
+              />
+              <UtilityButton
+                icon={User}
+                label="Mi cuenta"
+                message="El registro y el inicio de sesión están en construcción. Cuando estén listos, podrás gestionar tu cuenta desde aquí."
+                withChevron
+              />
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="ml-auto inline-flex items-center justify-center rounded-full p-2 text-ivory lg:hidden"
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            aria-label={open ? "Cerrar menú" : "Abrir menú"}
-          >
-            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          {/*
+            Móvil/tablet (< lg): versión icono-solo del mismo CTA, junto al
+            botón de menú — sin texto para no competir por espacio con el
+            logo/buscador en pantallas estrechas, pero siempre visible
+            (nunca escondida dentro del menú desplegable).
+          */}
+          <div className="ml-auto flex items-center gap-2 lg:hidden">
+            <Link
+              href="/supergangas"
+              aria-label="Descubrir ofertas"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-coral-500 to-coral-600 text-white shadow-[0_4px_18px_-4px_rgba(240,100,73,0.6)] transition-colors hover:from-coral-600 hover:to-[#7a2a16]"
+            >
+              <Flame className="h-4 w-4" aria-hidden="true" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="inline-flex items-center justify-center rounded-full p-2 text-ivory"
+              aria-expanded={open}
+              aria-controls="mobile-nav"
+              aria-label={open ? "Cerrar menú" : "Abrir menú"}
+            >
+              {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
         </div>
 
         <div className="pb-3 md:hidden">

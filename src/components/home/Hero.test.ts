@@ -59,7 +59,7 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
   it("el CTA es un enlace real (<a href>) a /supergangas (chollos con descuento real, ver SUPERGANGAS_MIN_DISCOUNT_PERCENT/getOfertasBundle), con estado hover y sin depender de JS para funcionar", () => {
     const ctaMatch = heroSource.match(/<a\s+href="([^"]+)"[^>]*>/);
     expect(ctaMatch?.[1]).toBe("/supergangas");
-    expect(heroSource).toMatch(/hover:bg-coral-600/);
+    expect(heroSource).toMatch(/hover:from-coral-600/);
   });
 
   it("nunca muestra precio, descuento ni historial de un único producto (el catálogo tiene muchos productos, sería engañoso)", () => {
@@ -143,9 +143,30 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(fadeYBlock).toMatch(/transparent/);
   });
 
-  it("usa coral para el CTA, como exige el encargo", () => {
+  it("CTA principal: gradiente coral de alto impacto, pill XL, negrita, glow (sombra coral difusa) e icono de fuego — el CTA indiscutible de la web", () => {
     const ctaMatch = heroSource.match(/<a\s+href="\/supergangas"\s+className="([^"]*)"/);
-    expect(ctaMatch?.[1]).toMatch(/bg-coral-500/);
+    const ctaClassName = ctaMatch?.[1] ?? "";
+    expect(ctaClassName).toMatch(/bg-gradient-to-r/);
+    expect(ctaClassName).toMatch(/from-coral-500/);
+    expect(ctaClassName).toMatch(/to-coral-600/);
+    expect(ctaClassName).toMatch(/rounded-full/);
+    expect(ctaClassName).toMatch(/font-extrabold/);
+    expect(ctaClassName).toMatch(/shadow-\[/); // glow estático (ver comentario junto al CTA): nunca shadow-sm/shadow-md genérico
+    // Padding XL, no el py-2.5 discreto de antes.
+    expect(ctaClassName).toMatch(/py-3\.5/);
+    expect(heroSource).toMatch(/<Flame className="[^"]*" aria-hidden="true" \/>/); // icono de fuego junto al texto
+  });
+
+  it("micro-etiqueta dinámica sobre el CTA: genérica y verificable ('cada día', por el ciclo real de sincronización de Awin), NUNCA una cifra inventada tipo '+3.000 ofertas' que el catálogo real todavía no puede respaldar", () => {
+    // Acotado al propio <span> de la etiqueta (nunca al fichero entero): el
+    // comentario de justificación, justo encima, SÍ necesita citar ese
+    // ejemplo de cifra inventada para explicar por qué no se usa.
+    const badgeMatch = heroSource.match(/aria-hidden="true"\s*\n\s*className="[^"]*"\s*\n\s*>\s*\n\s*([^\n<]+)\n/);
+    const badgeText = badgeMatch?.[1]?.trim() ?? "";
+    expect(badgeText).toBe("Ofertas actualizadas cada día");
+    for (const fabricatedCount of [/\+\s*\d/, /\b\d[.,]?\d*\s*(ofertas|productos)\b/i]) {
+      expect(badgeText).not.toMatch(fabricatedCount);
+    }
   });
 
   it("el titular es el primer elemento del bloque de texto (sin hueco reservado donde estaba la etiqueta retirada)", () => {
@@ -192,8 +213,8 @@ describe("Hero.tsx: hero estático único (sustituye a PromoBannerMain + PromoBa
     expect(tagClassName).not.toMatch(/shadow|rotate|animate|transition/); // sin sombra/inclinación/animación
   });
 
-  it("la etiqueta usa el icono Tag de lucide-react (mismo sistema de iconos que ArrowRight en el CTA)", () => {
-    expect(heroSource).toMatch(/import \{ ArrowRight, Tag \} from "lucide-react"/);
+  it("la etiqueta usa el icono Tag de lucide-react (mismo sistema de iconos que ArrowRight/Flame en el CTA)", () => {
+    expect(heroSource).toMatch(/import \{ ArrowRight, Flame, Tag \} from "lucide-react"/);
     expect(heroSource).toMatch(/<Tag className="[^"]*" aria-hidden="true" \/>/);
   });
 
