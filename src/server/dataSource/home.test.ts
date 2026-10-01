@@ -283,15 +283,20 @@ describe("selectSuperDeals", () => {
   });
 });
 
-describe("selectAllOfertas: nunca filtra por descuento (usada por /supergangas completa, a diferencia de selectSuperDeals)", () => {
-  it("incluye productos por debajo de cualquier umbral razonable, e incluso sin ningún descuento", () => {
+describe("selectAllOfertas: sin umbral de descuento MÍNIMO, pero SIEMPRE exige descuento real (> 0%) — nunca un producto a su PVP normal", () => {
+  it("incluye cualquier descuento real por pequeño que sea, pero EXCLUYE los productos sin ningún descuento", () => {
     const products = [
       fakeProduct({ name: "Chollo real", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "65" }] }), // 35%
       fakeProduct({ name: "Descuento flojo", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "95" }] }), // 5%
-      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
+      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%: a su PVP normal, nunca una "ganga"
     ];
     const selected = selectAllOfertas(products);
-    expect(selected.map((p) => p.name).sort()).toEqual(["Chollo real", "Descuento flojo", "Sin descuento"]);
+    expect(selected.map((p) => p.name).sort()).toEqual(["Chollo real", "Descuento flojo"]);
+  });
+
+  it("un descuento mínimo mínimo (1%) sigue contando como real: no hay umbral alto, solo exige > 0%", () => {
+    const products = [fakeProduct({ name: "Apenas rebajado", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "99" }] })]; // 1%
+    expect(selectAllOfertas(products).map((p) => p.name)).toEqual(["Apenas rebajado"]);
   });
 
   it("sigue deduplicando variantes del mismo modelo, igual que selectSuperDeals/collapseProductVariants", () => {
@@ -304,21 +309,29 @@ describe("selectAllOfertas: nunca filtra por descuento (usada por /supergangas c
     expect(selected[0].name).toBe("Pantalón X 24-30"); // 50%, el mayor de las dos
   });
 
-  it("nunca recorta: devuelve TODOS los productos de entrada (tras deduplicar variantes), sin ningún límite propio", () => {
+  it("nunca recorta por un límite propio: devuelve TODOS los productos con descuento real de entrada (tras deduplicar variantes)", () => {
     const products = Array.from({ length: 50 }, (_, i) =>
-      fakeProduct({ name: `P${i}`, categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }),
+      fakeProduct({ name: `P${i}`, categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "90" }] }), // 10%, todos con descuento real
     );
     expect(selectAllOfertas(products)).toHaveLength(50);
   });
 
-  it("el resultado sigue ordenado por % de descuento real descendente, con los productos sin descuento al final, nunca ocultos", () => {
+  it("el resultado sigue ordenado por % de descuento real descendente", () => {
     const products = [
-      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%
+      fakeProduct({ name: "Sin descuento", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }), // 0%, nunca aparece
       fakeProduct({ name: "Máximo", categoryId: 2, offers: [{ previousPrice: "100", currentPrice: "10" }] }), // 90%
       fakeProduct({ name: "Medio", categoryId: 3, offers: [{ previousPrice: "100", currentPrice: "60" }] }), // 40%
     ];
     const selected = selectAllOfertas(products);
-    expect(selected.map((p) => p.name)).toEqual(["Máximo", "Medio", "Sin descuento"]);
+    expect(selected.map((p) => p.name)).toEqual(["Máximo", "Medio"]);
+  });
+
+  it("con ningún producto con descuento real, devuelve una lista vacía", () => {
+    const products = [
+      fakeProduct({ name: "X", categoryId: 1, offers: [{ previousPrice: null, currentPrice: "10" }] }),
+      fakeProduct({ name: "Y", categoryId: 1, offers: [{ previousPrice: "100", currentPrice: "100" }] }), // previousPrice igual al actual: tampoco es un descuento real
+    ];
+    expect(selectAllOfertas(products)).toEqual([]);
   });
 
   it("con una lista vacía, devuelve una lista vacía sin lanzar", () => {
@@ -646,7 +659,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
     }
   });
 
-  it("un producto SIN ningún descuento (sin previousPrice) nunca aparece en el adelanto de portada, pero sí en /supergangas completa: esta página nunca oculta nada por falta de descuento", async () => {
+  it("un producto SIN ningún descuento (sin previousPrice, a su PVP normal) NUNCA aparece en Supergangas, ni en el adelanto de portada ni en /supergangas completa: una 'ganga' exige descuento real", async () => {
     const merchant = await prisma!.merchant.findUniqueOrThrow({ where: { slug: merchantSlug } });
     const noDiscountProduct = await prisma!.product.create({
       data: { slug: `${PREFIX}-sin-descuento`, name: "Producto sin ningún descuento", categoryId },
@@ -669,7 +682,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
 
     const ofertas = await getOfertasBundle();
     if (ofertas.source === "database") {
-      expect(ofertas.data.products.find((p) => p.slug === `${PREFIX}-sin-descuento`)).toBeDefined();
+      expect(ofertas.data.products.find((p) => p.slug === `${PREFIX}-sin-descuento`)).toBeUndefined();
     }
   });
 

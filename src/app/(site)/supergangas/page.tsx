@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Supergangas",
-  description: "Todo el catálogo activo de Preciara en un único listado, de todas las tiendas, ordenado por mayor descuento.",
+  description: "Todos los productos con descuento real de Preciara en un único listado, de todas las tiendas, ordenados por mayor descuento.",
   alternates: { canonical: "/supergangas" },
   openGraph: { title: "Supergangas — Preciara", type: "website", images: [DEFAULT_OG_IMAGE_PATH] },
   twitter: { card: "summary_large_image", title: "Supergangas — Preciara", images: [DEFAULT_OG_IMAGE_PATH] },
@@ -24,8 +24,10 @@ export const metadata: Metadata = {
  * principal, ver categoryLinks.ts): a diferencia del adelanto curado de
  * la portada (`SupergangasGrid`, como mucho SUPERGANGAS_LIMIT tarjetas y
  * solo con descuento ≥ SUPERGANGAS_MIN_DISCOUNT_PERCENT), esta página
- * NUNCA aplica un umbral de descuento mínimo: muestra TODAS las ofertas
- * activas del catálogo, con o sin descuento — ver `getOfertasBundle`.
+ * NUNCA aplica un umbral de descuento mínimo ALTO: muestra TODAS las
+ * ofertas CON descuento real del catálogo, por pequeño que sea — nunca
+ * productos a su PVP normal, sin tachado ni pastilla de % (ver
+ * `getOfertasBundle`/`selectAllOfertas`).
  */
 export default async function SupergangasPage() {
   const [{ data, source }, categoriesIndex] = await Promise.all([getOfertasBundle(), getCategoriesIndex()]);
@@ -67,8 +69,8 @@ export default async function SupergangasPage() {
         {source === "demo"
           ? "Datos de demostración: aún no está conectado el catálogo real."
           : data.products.length > 0
-            ? `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} de todas las tiendas, ordenados por mayor descuento.`
-            : "Ahora mismo no hay ningún producto activo en nuestro catálogo real. Vuelve pronto."}
+            ? `${data.products.length} ${data.products.length === 1 ? "producto" : "productos"} con descuento real, de todas las tiendas, ordenados por mayor descuento.`
+            : "Ahora mismo no hay ningún producto con descuento real en nuestro catálogo. Vuelve pronto."}
       </p>
 
       {/*

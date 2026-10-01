@@ -12,9 +12,10 @@ const PAGE_SIZE = 24;
  * Catálogo completo de `/supergangas` con filtros por categoría y
  * tienda (lógica de filtrado en `src/lib/ofertasFilters.ts`, probada
  * aparte) — a diferencia del adelanto de la portada, esta página nunca
- * recorta el catálogo por descuento ni a un puñado de tarjetas: `products`
- * ya llega con TODAS las ofertas activas del catálogo (ver
- * `getOfertasBundle`), este componente solo decide cuánto enseña de golpe.
+ * recorta el catálogo por un umbral de descuento MÍNIMO ni a un puñado de
+ * tarjetas: `products` ya llega con TODAS las ofertas CON descuento real
+ * del catálogo (nunca productos a su PVP normal, ver `getOfertasBundle`),
+ * este componente solo decide cuánto enseña de golpe.
  */
 export function OfertasCatalog({
   products,
