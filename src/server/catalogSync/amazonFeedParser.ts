@@ -58,7 +58,7 @@
  */
 import { Availability, OfferSource } from "@/generated/prisma";
 import { buildAmazonAffiliateUrl } from "@/lib/amazon";
-import { GENERIC_CATEGORY_TARGET, mapAwinCategoryText } from "./categoryMapping";
+import { GENERIC_CATEGORY_TARGET, mapAwinProductCategory } from "./categoryMapping";
 import { validateNormalizedOfferRow } from "./validation";
 import { NormalizedOfferRowError, type NormalizedMerchant, type NormalizedOfferRow } from "./types";
 
@@ -132,7 +132,10 @@ function normalizeAmazonItem(item: AmazonPaapiItem, fetchedAt: Date): Normalized
   }
 
   const categoryText = item.ItemInfo?.Classifications?.ProductGroup?.DisplayValue?.trim();
-  const category = categoryText ? mapAwinCategoryText(categoryText) : GENERIC_CATEGORY_TARGET;
+  // `mapAwinProductCategory` también comprueba el propio nombre del
+  // artículo, no solo `categoryText` — mismo criterio que Awin, ver
+  // categoryMapping.ts.
+  const category = categoryText ? mapAwinProductCategory(categoryText, name) : GENERIC_CATEGORY_TARGET;
 
   const productUrl = item.DetailPageURL?.trim() || `https://www.amazon.es/dp/${asin}`;
   const gtin = item.ItemInfo?.ExternalIds?.EANs?.DisplayValues?.[0] ?? item.ItemInfo?.ExternalIds?.UPCs?.DisplayValues?.[0] ?? null;

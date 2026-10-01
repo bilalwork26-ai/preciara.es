@@ -45,27 +45,6 @@ export function bestOfferDiscountPercent(offers: { price: number; previousPrice?
 }
 
 /**
- * Precio total real de una oferta para la tabla comparativa de
- * `/producto/[slug]`: precio del producto + gastos de envío conocidos.
- * Cuando el envío no está especificado (`shippingCost` ausente o `null`),
- * se asume 0 para poder ordenar la tabla de menor a mayor sin descartar
- * la oferta — nunca se inventa un importe de envío, pero tampoco se dejan
- * esas ofertas fuera de la comparación. La celda "Envío" de la tabla
- * (ver `formatShippingCost`) sigue mostrando "No especificado" para esas
- * filas, así que nunca sugiere un envío gratis confirmado que no lo está.
- */
-export function offerTotalPrice(offer: { price: number; shippingCost?: number | null }): number {
-  return offer.price + (offer.shippingCost ?? 0);
-}
-
-/** Texto de la celda "Envío" de la tabla comparativa: importe formateado, "Gratis" cuando el comercio confirma 0€, o "No especificado" cuando el comercio/feed no lo indica (nunca se asume gratis por defecto — ver `offerTotalPrice`). */
-export function formatShippingCost(shippingCost: number | null | undefined): string {
-  if (shippingCost == null) return "No especificado";
-  if (shippingCost === 0) return "Gratis";
-  return `+ ${formatPrice(shippingCost)}`;
-}
-
-/**
  * Corrige, solo para mostrar (nunca reescribe el dato guardado), un
  * nombre que llega del feed COMPLETAMENTE EN MAYÚSCULAS (p. ej. "BOLSA DE
  * VIAJE FAVORITE"), caso real observado en varios comercios. Un nombre

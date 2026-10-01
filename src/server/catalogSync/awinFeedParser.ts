@@ -88,7 +88,8 @@
 import { OfferSource } from "@/generated/prisma";
 import { Availability } from "@/generated/prisma";
 import { parseDecimalField, RowValidationError } from "@/server/importer/validate";
-import { mapAwinCategoryText } from "./categoryMapping";
+import { mapAwinProductCategory } from "./categoryMapping";
+import { looksPortugueseText } from "./languageGuard";
 import { parseCsvStream, singleChunk, StreamingCsvTruncatedError } from "./streamingCsv";
 import { validateNormalizedOfferRow } from "./validation";
 import { NormalizedOfferRowError, type NormalizedMerchant, type NormalizedOfferRow } from "./types";
@@ -279,15 +280,29 @@ function normalizeAwinRow(record: Record<string, string>, headerIndex: Map<strin
   if (!categoryText) {
     throw new NormalizedOfferRowError("MISSING_FIELD", `Falta la categoría de la fila (${COLUMN_ALIASES.categoryText.join(" / ")}).`);
   }
+
+  const name = pickField(headerIndex, record, COLUMN_ALIASES.name);
+
+  // Defensa de última línea (ver languageGuard.ts): el filtro principal
+  // contra idiomas no españoles actúa a nivel de FEED, antes de llegar
+  // aquí (ver `isSpanishFeedLanguage` en awinOrchestrator.ts) — esto
+  // cubre el caso en que esa columna venga ausente o mal rellenada
+  // mientras el propio título de la fila sigue en portugués.
+  if (looksPortugueseText(name) || looksPortugueseText(categoryText)) {
+    throw new NormalizedOfferRowError("NON_SPANISH_TITLE", "El título o la categoría de la fila están en portugués, no en español.");
+  }
+
   // Mapeo conservador a la taxonomía YA existente de Preciara (ver
   // categoryMapping.ts) — nunca un slug nuevo derivado a ciegas del texto
   // de cada comercio: siempre agrupa bajo una de las categorías reales que
   // el usuario ya navega, o bajo la categoría genérica "Otros" si el texto
-  // no coincide con ninguna regla. `mapAwinCategoryText` nunca devuelve un
-  // resultado vacío, así que esta fila nunca se rechaza por su categoría.
-  const category = mapAwinCategoryText(categoryText);
-
-  const name = pickField(headerIndex, record, COLUMN_ALIASES.name);
+  // no coincide con ninguna regla. `mapAwinProductCategory` nunca devuelve
+  // un resultado vacío, así que esta fila nunca se rechaza por su
+  // categoría — y comprueba también el NOMBRE del producto, no solo el
+  // texto de categoría del comercio, para que una fila que el comercio
+  // agrupó bajo "Infantil" pero cuyo propio nombre dice "Hombre"/"Mujer"
+  // no acabe mal clasificada (ver el comentario de esa función).
+  const category = mapAwinProductCategory(categoryText, name);
 
   const price = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.price), "search_price", { required: true })!;
   const shippingCost = parseDecimalOrThrow(pickField(headerIndex, record, COLUMN_ALIASES.shippingCost), "delivery_cost", { required: false });

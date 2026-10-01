@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENERIC_CATEGORY_TARGET, mapAwinCategoryText } from "./categoryMapping";
+import { GENERIC_CATEGORY_TARGET, mapAwinCategoryText, mapAwinProductCategory } from "./categoryMapping";
 
 describe("mapAwinCategoryText: mapeo conservador a las seis categorías cubiertas", () => {
   it.each([
@@ -93,5 +93,25 @@ describe("mapAwinCategoryText: respaldo genérico, nunca aleatorio", () => {
   it("nunca lanza, incluso con una cadena vacía", () => {
     expect(() => mapAwinCategoryText("")).not.toThrow();
     expect(mapAwinCategoryText("")).toEqual(GENERIC_CATEGORY_TARGET);
+  });
+});
+
+describe("mapAwinProductCategory: cross-check por nombre antes de confirmar Infantil", () => {
+  it("un producto infantil normal (categoría Infantil, nombre sin señal de adulto) se mantiene en Infantil", () => {
+    expect(mapAwinProductCategory("Ropa infantil", "Chaqueta acolchada niño").slug).toBe("infantil");
+    expect(mapAwinProductCategory("Zapatillas running niño", "Zapatilla Tensaur Niño").slug).toBe("infantil");
+  });
+
+  it("caso real reportado: una categoría 'Infantil' del comercio que agrupa también tallas de adulto (nombre con 'Hombre'/'Mujer', sin ningún término infantil) se reclasifica, nunca se cuela en Infantil", () => {
+    expect(mapAwinProductCategory("Zapatillas running infantil", "Zapatilla Ultraboost Running Hombre").slug).toBe("deporte");
+    expect(mapAwinProductCategory("Calzado trail running infantil", "Zapatilla Trail Running Mujer").slug).toBe("deporte");
+  });
+
+  it("si el nombre trae señal de adulto Y señal infantil a la vez, se respeta Infantil (nunca se asume adulto solo por una palabra suelta)", () => {
+    expect(mapAwinProductCategory("Ropa infantil", "Chaqueta Niño Hombre Tallaje Junior").slug).toBe("infantil");
+  });
+
+  it("una categoría que no es Infantil nunca pasa por este cross-check (se comporta igual que mapAwinCategoryText)", () => {
+    expect(mapAwinProductCategory("Tecnología", "Portátil para Hombre de Negocios").slug).toBe("tecnologia");
   });
 });

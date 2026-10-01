@@ -608,4 +608,37 @@ describe("parseAwinProductFeed: la categoría se mapea a la taxonomía existente
     expect(resultsA[0].row.category.slug).toBe("electrodomesticos");
     expect(resultsB[0].row.category.slug).toBe("electrodomesticos");
   });
+
+  it("una categoría del comercio que el mapeo conservador ya cubre (Infantil) pero cuyo propio nombre señala adulto se reclasifica (ver mapAwinProductCategory, categoryMapping.ts)", async () => {
+    const csv = [
+      FULL_HEADER,
+      row({ aw_product_id: "1", product_name: "Zapatilla Ultraboost Running Hombre", merchant_category: "Zapatillas running infantil", search_price: "60", currency: "EUR", aw_deep_link: "https://x.invalid/1" }),
+    ].join("\n");
+    const results = valid(await collect(csv));
+    expect(results[0].row.category.slug).toBe("deporte");
+  });
+});
+
+describe("parseAwinProductFeed: defensa contra títulos/categorías en portugués (ver languageGuard.ts) — caso real reportado: feed de Trotec con filas en portugués coladas en Hogar", () => {
+  it("un título en portugués se rechaza (nunca se ingiere como catálogo en español)", async () => {
+    const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "Ventoinha de mesa", merchant_category: "Hogar", search_price: "20", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
+    const results = await collect(csv);
+    expect(valid(results)).toHaveLength(0);
+    expect(invalid(results)[0].code).toBe("NON_SPANISH_TITLE");
+  });
+
+  it("los tres casos reales reportados (Ventoinha, Humidificador de ar, Comando à distância) se rechazan", async () => {
+    const titles = ["Ventoinha de coluna", "Humidificador de ar ultrassônico", "Comando à distância universal"];
+    for (const product_name of titles) {
+      const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name, merchant_category: "Hogar", search_price: "20", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
+      const results = await collect(csv);
+      expect(invalid(results)[0]?.code).toBe("NON_SPANISH_TITLE");
+    }
+  });
+
+  it("un título/categoría en español, aunque comparta letras con marcadores portugueses, nunca se rechaza por error", async () => {
+    const csv = [FULL_HEADER, row({ aw_product_id: "1", product_name: "Humidificador de aire ultrasónico", merchant_category: "Hogar", search_price: "20", currency: "EUR", aw_deep_link: "https://x.invalid/1" })].join("\n");
+    const results = valid(await collect(csv));
+    expect(results).toHaveLength(1);
+  });
 });

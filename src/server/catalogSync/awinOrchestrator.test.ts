@@ -170,33 +170,59 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: descubrimie
     expect(merchantA.websiteUrl).toBeNull(); // nunca inventado
   });
 
-  it("varios feeds/idiomas del MISMO anunciante se agrupan bajo un único merchant (slug derivado solo de advertiserId)", async () => {
+  it("varios feeds EN ESPAÑOL del MISMO anunciante se agrupan bajo un único merchant (slug derivado solo de advertiserId); un feed del mismo anunciante en OTRO idioma nunca se descarga ni se mezcla en ese catálogo", async () => {
     const adv = "910010";
     const listCsv = buildFeedListCsv([
       { "Advertiser ID": adv, "Advertiser Name": "Tienda Multi", "Membership Status": "Joined", "Feed ID": "1", "Feed Name": "Feed ES", Language: "es", URL: feedUrlFor("multi-es") },
-      { "Advertiser ID": adv, "Advertiser Name": "Tienda Multi", "Membership Status": "Joined", "Feed ID": "2", "Feed Name": "Feed PT", Language: "pt", URL: feedUrlFor("multi-pt") },
+      // Segundo feed ES del mismo anunciante (p. ej. otra región/vertical): sigue agrupándose bajo el mismo merchant, mismo criterio que antes.
+      { "Advertiser ID": adv, "Advertiser Name": "Tienda Multi", "Membership Status": "Joined", "Feed ID": "2", "Feed Name": "Feed ES 2", Language: "es-ES", URL: feedUrlFor("multi-es-2") },
+      // Feed PT del mismo anunciante: aprobado por Awin, pero en otro idioma — nunca debe descargarse (ver makeDownloadProductFeed: sin comportamiento configurado para "multi-pt", lanzaría si el orquestador lo intentara).
+      { "Advertiser ID": adv, "Advertiser Name": "Tienda Multi", "Membership Status": "Joined", "Feed ID": "3", "Feed Name": "Feed PT", Language: "pt", URL: feedUrlFor("multi-pt") },
     ]);
     const csvEs = buildProductCsv([{ aw_product_id: "es-1", product_name: "Producto ES", merchant_category: `${PREFIX}-cat`, search_price: "5", currency: "EUR", aw_deep_link: "https://x.invalid/es-1" }]);
-    const csvPt = buildProductCsv([{ aw_product_id: "pt-1", product_name: "Producto PT", merchant_category: `${PREFIX}-cat`, search_price: "6", currency: "EUR", aw_deep_link: "https://x.invalid/pt-1" }]);
+    const csvEs2 = buildProductCsv([{ aw_product_id: "es-2", product_name: "Producto ES 2", merchant_category: `${PREFIX}-cat`, search_price: "7", currency: "EUR", aw_deep_link: "https://x.invalid/es-2" }]);
 
     const summary = await runAwinCatalogSyncCycle({
       apiKey: "fake-key",
       deps: baseDeps({
         downloadFeedList: makeDownloadFeedList(listCsv),
-        downloadProductFeed: makeDownloadProductFeed({ "multi-es": { csv: csvEs }, "multi-pt": { csv: csvPt } }),
+        downloadProductFeed: makeDownloadProductFeed({ "multi-es": { csv: csvEs }, "multi-es-2": { csv: csvEs2 } }),
       }),
     });
 
+    expect(summary.feedsApproved).toBe(3);
+    expect(summary.feedsSkippedNonSpanishLanguage).toBe(1); // el feed PT, nunca descargado
     expect(summary.advertisersProcessed).toBe(1);
     const outcome = advertiserOutcome(summary, adv);
-    expect(outcome.feedCount).toBe(2);
+    expect(outcome.feedCount).toBe(2); // solo los 2 feeds ES, el PT ni siquiera cuenta como feed del ciclo
     expect(outcome.feedsCompleted).toBe(2);
 
     const merchants = await prisma!.merchant.findMany({ where: { slug: deriveAwinMerchantSlug(adv) } });
-    expect(merchants).toHaveLength(1); // un único comercio, aunque haya 2 feeds/idiomas
+    expect(merchants).toHaveLength(1); // un único comercio, aunque haya 2 feeds ES
 
     const offers = await prisma!.offer.findMany({ where: { merchantId: merchants[0].id } });
-    expect(offers).toHaveLength(2); // ambas ofertas (ES y PT), cada una con su propio externalId
+    expect(offers).toHaveLength(2); // solo las ofertas ES — nunca la del feed PT, que ni se descargó
+  });
+
+  it("un feed aprobado en un idioma distinto del español nunca se agrupa ni se procesa, y se cuenta aparte de 'Not Joined'", async () => {
+    const adv = "910011";
+    const listCsv = buildFeedListCsv([
+      { "Advertiser ID": adv, "Advertiser Name": "Trotec", "Membership Status": "Joined", "Feed ID": "1", "Feed Name": "Feed PT", Language: "Portuguese", URL: feedUrlFor("lang-pt-only") },
+    ]);
+
+    const summary = await runAwinCatalogSyncCycle({
+      apiKey: "fake-key",
+      deps: baseDeps({
+        downloadFeedList: makeDownloadFeedList(listCsv),
+        // Sin comportamiento configurado para "lang-pt-only": si el orquestador lo descargara, el fake lanzaría y la prueba fallaría.
+        downloadProductFeed: makeDownloadProductFeed({}),
+      }),
+    });
+
+    expect(summary.feedsApproved).toBe(1);
+    expect(summary.feedsSkippedNotJoined).toBe(0); // el feed SÍ estaba aprobado — nunca se confunde con "Not Joined"
+    expect(summary.feedsSkippedNonSpanishLanguage).toBe(1);
+    expect(summary.advertisersProcessed).toBe(0); // sin ningún feed español, el anunciante ni siquiera se procesa
   });
 
   it("el orden de procesamiento de anunciantes y de feeds dentro de cada anunciante es determinista (no depende del orden de llegada de la lista)", async () => {
@@ -204,7 +230,7 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: descubrimie
     const advLow = "910020";
     // La lista llega con el anunciante "alto" primero, a propósito.
     const listCsv = buildFeedListCsv([
-      { "Advertiser ID": advHigh, "Advertiser Name": "Z", "Membership Status": "Joined", "Feed ID": "2", "Feed Name": "F2", Language: "pt", URL: feedUrlFor("order-high-2") },
+      { "Advertiser ID": advHigh, "Advertiser Name": "Z", "Membership Status": "Joined", "Feed ID": "2", "Feed Name": "F2", Language: "es", URL: feedUrlFor("order-high-2") },
       { "Advertiser ID": advHigh, "Advertiser Name": "Z", "Membership Status": "Joined", "Feed ID": "1", "Feed Name": "F1", Language: "es", URL: feedUrlFor("order-high-1") },
       { "Advertiser ID": advLow, "Advertiser Name": "A", "Membership Status": "Joined", "Feed ID": "1", "Feed Name": "F1", URL: feedUrlFor("order-low-1") },
     ]);

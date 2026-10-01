@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getProductDetail } from "@/server/dataSource/product";
-import { formatPrice, formatShippingCost, bestOfferDiscount, formatProductDisplayName, offerTotalPrice } from "@/lib/format";
+import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, buildProductJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
 import { Container } from "@/components/ui/Container";
@@ -16,14 +16,15 @@ export const dynamic = "force-dynamic";
  * Orden de la tabla comparativa: primero las ofertas EN STOCK (nunca se
  * destaca como "Mejor precio" ni encabeza el "Desde X €" una oferta sin
  * stock, por barata que sea — sería mandar al usuario a un "Ver oferta"
- * que no puede completar); dentro de cada grupo, por precio TOTAL
- * ascendente (producto + envío conocido, ver `offerTotalPrice`). Una
- * oferta sin stock sigue apareciendo en la tabla (transparencia: el
- * usuario ve que existe esa tienda), solo nunca gana el primer puesto.
+ * que no puede completar); dentro de cada grupo, por PVP ascendente (solo
+ * el precio del producto, nunca precio + envío — la web ya no muestra ni
+ * calcula ningún total con gastos de envío). Una oferta sin stock sigue
+ * apareciendo en la tabla (transparencia: el usuario ve que existe esa
+ * tienda), solo nunca gana el primer puesto.
  */
-function compareOffersForTable(a: { inStock: boolean; price: number; shippingCost?: number | null }, b: typeof a): number {
+function compareOffersForTable(a: { inStock: boolean; price: number }, b: typeof a): number {
   if (a.inStock !== b.inStock) return a.inStock ? -1 : 1;
-  return offerTotalPrice(a) - offerTotalPrice(b);
+  return a.price - b.price;
 }
 
 export async function generateMetadata({ params }: PageProps<"/producto/[slug]">): Promise<Metadata> {
@@ -34,7 +35,8 @@ export async function generateMetadata({ params }: PageProps<"/producto/[slug]">
   const { product, source } = result;
   // Mismo criterio de "mejor oferta" que la tabla comparativa de la
   // página (ver compareOffersForTable): la tienda que se cita aquí como
-  // "mejor precio" es la misma que encabeza esa tabla.
+  // "mejor precio" es la misma que encabeza esa tabla, y el precio es
+  // siempre el PVP solo (nunca precio + envío).
   const best = [...product.offers].sort(compareOffersForTable)[0];
   const displayName = formatProductDisplayName(product.name, product.brand);
   const description = `Compara ${product.offers.length} ${product.offers.length === 1 ? "tienda" : "tiendas"} para ${displayName}. Desde ${formatPrice(best.price)}.`;
@@ -118,14 +120,14 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
           </h1>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-2 sm:mt-2 sm:gap-3">
             <span className="text-sm font-medium text-navy-500 sm:text-base">Desde</span>
-            <span className="text-lg font-bold text-navy-900 sm:text-2xl">{formatPrice(offerTotalPrice(best))}</span>
+            <span className="text-lg font-bold text-navy-900 sm:text-2xl">{formatPrice(best.price)}</span>
             {discount && (
               <span className="text-xs text-navy-300 line-through sm:text-sm">{formatPrice(discount.previousPrice)}</span>
             )}
             <DiscountBadge percent={percent} />
           </div>
           <p className="mt-1 text-xs text-navy-500 sm:text-sm">
-            Precio total más bajo, en {merchants.find((m) => m.id === best.merchantId)?.name ?? "una tienda asociada"} ·
+            Precio más bajo, en {merchants.find((m) => m.id === best.merchantId)?.name ?? "una tienda asociada"} ·
             Actualizado {best.lastCheckedLabel}
           </p>
         </div>
@@ -153,12 +155,6 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
                   Precio
                 </th>
                 <th scope="col" className="px-3 py-2.5 sm:px-4">
-                  Envío
-                </th>
-                <th scope="col" className="px-3 py-2.5 sm:px-4">
-                  Total
-                </th>
-                <th scope="col" className="px-3 py-2.5 sm:px-4">
                   <span className="sr-only">Acción</span>
                 </th>
               </tr>
@@ -166,9 +162,9 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
             <tbody>
               {offers.map((offer, index) => {
                 const merchant = merchants.find((m) => m.id === offer.merchantId);
-                const isBestTotal = index === 0;
+                const isBestPrice = index === 0;
                 return (
-                  <tr key={offer.id} className={`border-b border-border last:border-0 ${isBestTotal ? "bg-teal-600/5" : ""}`}>
+                  <tr key={offer.id} className={`border-b border-border last:border-0 ${isBestPrice ? "bg-teal-600/5" : ""}`}>
                     <td className="px-3 py-3 sm:px-4">
                       <div className="flex items-center gap-2.5">
                         <MerchantLogo
@@ -186,11 +182,9 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
                         </div>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-navy-900 sm:px-4">{formatPrice(offer.price)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-navy-500 sm:px-4">{formatShippingCost(offer.shippingCost)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-semibold text-navy-900 sm:px-4">
-                      {formatPrice(offerTotalPrice(offer))}
-                      {isBestTotal && (
+                      {formatPrice(offer.price)}
+                      {isBestPrice && (
                         <span className="ml-2 rounded-full bg-teal-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                           Mejor precio
                         </span>
