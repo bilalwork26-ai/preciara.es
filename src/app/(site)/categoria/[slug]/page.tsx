@@ -14,7 +14,11 @@ export async function generateMetadata({ params }: PageProps<"/categoria/[slug]"
   if (result.status === "not-found") return {};
 
   const { category, products, source } = result;
-  const description = `${products.length} productos con ofertas activas en ${category.name}. Compara precios entre tiendas españolas en Preciara.`;
+  // Sin "con ofertas activas": esta página muestra TODO el catálogo de la
+  // categoría (con descuento o a precio normal, ver getCategoryDetail), así
+  // que ese texto sugeriría un filtro de descuento que no existe aquí
+  // (ese filtro es exclusivo de /supergangas, ver selectAllOfertas).
+  const description = `${products.length} productos en ${category.name}. Compara precios entre tiendas españolas en Preciara.`;
 
   return {
     title: category.name,
@@ -46,7 +50,7 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
       <p className="mt-1 text-sm text-navy-500">
         {source === "demo"
           ? "Datos de demostración: aún no está conectado el catálogo real para esta categoría."
-          : `${products.length} productos con ofertas activas.`}
+          : `${products.length} ${products.length === 1 ? "producto" : "productos"} en ${category.name}, de todas las tiendas.`}
       </p>
 
       <CategoryProductGrid products={products} merchants={merchants} categorySlug={category.slug} />

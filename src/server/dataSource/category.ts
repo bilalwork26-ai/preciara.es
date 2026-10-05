@@ -13,6 +13,18 @@ import { searchActiveProducts } from "@/server/repositories/products";
 import { collapseProductVariants } from "./home";
 import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
+/**
+ * Tope de productos por categoría. A diferencia de `/supergangas`
+ * (`selectAllOfertas`), esta página NUNCA exige descuento activo: muestra
+ * el catálogo completo de la categoría, con o sin descuento en ese
+ * momento (badge de % solo en los que sí lo tengan, ver
+ * `CategoryProductCard`) — `searchActiveProducts`/`getRankedProductIds`
+ * (server/repositories/products.ts) solo exigen que el producto tenga
+ * alguna oferta activa (para poder mostrar un precio), nunca que esa
+ * oferta traiga descuento; el ranking solo ordena los que sí tienen
+ * descuento primero, nunca excluye a los que no. Este límite es un tope
+ * de cantidad, no de descuento.
+ */
 export const CATEGORY_PRODUCTS_LIMIT = 60;
 
 export type CategoryDetailResult =
