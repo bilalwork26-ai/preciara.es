@@ -164,6 +164,11 @@ export function toLegacyProduct(product: ProductWithOffers, priceHistory: PriceP
   };
 }
 
+/** Mismo mapeo que `extractMerchants` de abajo, para una fila de `getActiveMerchants` (server/repositories/merchants.ts) — comercio suelto, no derivado de las ofertas de un producto. */
+export function toLegacyMerchant(row: { slug: string; name: string; logoUrl: string | null }): Merchant {
+  return { id: row.slug, slug: row.slug, name: row.name, accentColor: "var(--color-navy-500)", logoUrl: row.logoUrl };
+}
+
 /** Deduplica los comercios que aparecen en las ofertas de una lista de productos. */
 export function extractMerchants(products: ProductWithOffers[]): Merchant[] {
   const bySlug = new Map<string, Merchant>();

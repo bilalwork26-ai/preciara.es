@@ -10,8 +10,9 @@ import { demoMerchants } from "@/data/demo/merchants";
 import { bestOfferDiscountPercent } from "@/lib/format";
 import type { Merchant, Product } from "@/types";
 import { getActiveProductsWithOffers, type ProductWithOffers } from "@/server/repositories/products";
+import { getActiveMerchants } from "@/server/repositories/merchants";
 import { resolveWithFallback, type SourcedResult } from "./withFallback";
-import { extractMerchants, toLegacyProduct } from "./transform";
+import { extractMerchants, toLegacyMerchant, toLegacyProduct } from "./transform";
 
 /**
  * Curación histórica: este producto tenía su propio banner secundario en
@@ -347,7 +348,18 @@ export async function getSupergangasBundle(): Promise<SourcedResult<SupergangasB
  */
 const OFERTAS_PAGE_POOL_SIZE = 5000;
 
-export type OfertasBundle = { products: Product[]; merchants: Merchant[] };
+/**
+ * `merchants`: SOLO los comercios de los productos devueltos (para
+ * `MerchantLogo`/"Mejor precio en..." de cada tarjeta). `allMerchants`:
+ * TODOS los comercios reales activos, tengan o no algún producto con
+ * descuento ahora mismo — para el desplegable de "Tienda" (ver
+ * `getActiveMerchants`, requisito de negocio: nunca ocultar una tienda
+ * real asociada solo porque no tiene ningún descuento en este momento).
+ * Elegir una tienda sin coincidencias actuales en `products` simplemente
+ * muestra "Ningún producto cumple estos filtros ahora mismo" (ver
+ * OfertasCatalog) — nunca un enlace roto ni una lista inventada.
+ */
+export type OfertasBundle = { products: Product[]; merchants: Merchant[]; allMerchants: Merchant[] };
 
 /**
  * Listado completo de "Supergangas" para `/supergangas` (el destino del
@@ -371,7 +383,14 @@ export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> 
       const filtered = rows.filter((p) => p.slug !== SECONDARY_BANNER_PRODUCT_SLUG);
       const selected = selectAllOfertas(filtered);
       const products = selected.map((p) => toLegacyProduct(p));
-      return { products, merchants: extractMerchants(selected) };
+      // `allMerchants` nunca debe tumbar toda la página si falla (fallo
+      // aparte de la consulta de productos, que ya tiene su propio
+      // fallback): sin comercios, el desplegable de Tienda simplemente
+      // se queda vacío (mismo criterio que "nunca lanza" del resto de
+      // listados de filtro), nunca rompe /supergangas entera.
+      const allMerchantRows = await getActiveMerchants();
+      const allMerchants = (allMerchantRows ?? []).map(toLegacyMerchant);
+      return { products, merchants: extractMerchants(selected), allMerchants };
     },
     demoFallback: {
       // A diferencia del adelanto de portada (que usa `demoSupergangas`,
@@ -389,6 +408,9 @@ export async function getOfertasBundle(): Promise<SourcedResult<OfertasBundle>> 
         .filter((p) => bestOfferDiscountPercent(p.offers) > 0)
         .sort((a, b) => bestOfferDiscountPercent(b.offers) - bestOfferDiscountPercent(a.offers)),
       merchants: demoMerchants,
+      // En modo demo, demoMerchants YA es "todas las tiendas" (no hay
+      // comercios demo adicionales sin ningún producto demo asociado).
+      allMerchants: demoMerchants,
     },
     // "Supergangas" nunca sustituye un catálogo real (aunque esté vacío)
     // por productos inventados: con BD conectada, 0 productos activos se

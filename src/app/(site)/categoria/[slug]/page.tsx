@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getCategoryDetail } from "@/server/dataSource/category";
 import { buildBreadcrumbList, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
 import { serializeJsonLd } from "@/lib/jsonLd";
+import { getCategoryEditorial } from "@/lib/categoryEditorial";
 import { Container } from "@/components/ui/Container";
 import { CategoryProductGrid } from "@/components/category/CategoryProductGrid";
 
@@ -36,6 +37,7 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
   if (result.status === "not-found") notFound();
 
   const { category, products, merchants, source } = result;
+  const editorial = getCategoryEditorial(category.slug);
 
   const breadcrumbJsonLd = buildBreadcrumbList([
     { name: "Inicio", path: "/" },
@@ -52,8 +54,23 @@ export default async function CategoryPage({ params }: PageProps<"/categoria/[sl
           ? "Datos de demostración: aún no está conectado el catálogo real para esta categoría."
           : `${products.length} ${products.length === 1 ? "producto" : "productos"} en ${category.name}, de todas las tiendas.`}
       </p>
+      {/*
+        Párrafo editorial corto, fijo por categoría (nunca generado a
+        partir de `products`, que cambia con cada sincronización) — ver
+        src/lib/categoryEditorial.ts. Contenido real propio de la página,
+        no solo una rejilla de productos (requisito habitual de revisión
+        de redes publicitarias contra el "contenido de poco valor").
+      */}
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-navy-700">{editorial.intro}</p>
 
       <CategoryProductGrid products={products} merchants={merchants} categorySlug={category.slug} />
+
+      {products.length > 0 && (
+        <section className="mt-10 max-w-3xl border-t border-border pt-6">
+          <h2 className="font-serif text-lg font-semibold text-navy-900">{editorial.guideTitle}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-navy-700">{editorial.guide}</p>
+        </section>
+      )}
     </Container>
   );
 }

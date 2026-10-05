@@ -78,7 +78,9 @@ export default async function SupergangasPage() {
         OfertasCatalog.tsx) — con catálogo real pero 0 chollos (nunca con
         demo), no se pinta nada más: el mensaje de arriba ya lo cuenta.
       */}
-      {data.products.length > 0 && <OfertasCatalog products={data.products} merchants={data.merchants} categoryNameById={categoryNameById} />}
+      {data.products.length > 0 && (
+        <OfertasCatalog products={data.products} merchants={data.merchants} allMerchants={data.allMerchants} categoryNameById={categoryNameById} />
+      )}
     </Container>
   );
 }

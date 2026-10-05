@@ -28,6 +28,11 @@ describe("OfertasCatalog.tsx", () => {
     expect((source.match(/<select/g) ?? []).length).toBe(2);
   });
 
+  it("el desplegable de Tienda se construye a partir de `allMerchants` (TODAS las tiendas reales), nunca de `products` (que solo trae las que tienen descuento activo ahora mismo)", () => {
+    expect(source).toMatch(/availableMerchantOptions\(allMerchants\)/);
+    expect(source).not.toMatch(/availableMerchantOptions\(products/);
+  });
+
   it("ofrece un input de búsqueda por texto, pasado a filterOfertas como `query` (casi 1.000 productos en Supergangas: hace falta poder filtrar por palabra clave, no solo por categoría/tienda)", () => {
     expect(source).toMatch(/<input[^>]*type="search"/);
     expect(source).toMatch(/filterOfertas\([^)]*\bquery\b/);

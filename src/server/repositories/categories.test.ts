@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/server/db/client";
-import { getActiveCategoriesWithOfferCounts } from "./categories";
+import { getActiveCategoriesWithOfferCounts, getActiveCategoriesWithProductCounts } from "./categories";
 
 const PREFIX = "test-cat-counts";
 
@@ -142,5 +142,44 @@ describe.skipIf(!process.env.DATABASE_URL)("getActiveCategoriesWithOfferCounts",
     expect(rows!.find((r) => r.id === categoryEmptyId)).toBeUndefined();
 
     await prisma!.merchant.deleteMany({ where: { slug: `${PREFIX}-comercio-demo` } });
+  });
+});
+
+const PRODUCT_COUNTS_PREFIX = "test-cat-product-counts";
+
+describe.skipIf(!process.env.DATABASE_URL)("getActiveCategoriesWithProductCounts", () => {
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { slug: { startsWith: PRODUCT_COUNTS_PREFIX } } });
+    await prisma.merchant.deleteMany({ where: { slug: { startsWith: PRODUCT_COUNTS_PREFIX } } });
+    await prisma.category.deleteMany({ where: { slug: { startsWith: PRODUCT_COUNTS_PREFIX } } });
+  });
+
+  it("incluye una categoría cuyo único producto NO tiene ninguna oferta activa — a diferencia de getActiveCategoriesWithOfferCounts, que la excluiría", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PRODUCT_COUNTS_PREFIX}-sin-oferta`, name: "Sin oferta" } });
+    await prisma!.product.create({
+      data: { slug: `${PRODUCT_COUNTS_PREFIX}-producto-sin-oferta`, name: "Producto sin oferta", categoryId: category.id },
+    });
+
+    const withProductCounts = await getActiveCategoriesWithProductCounts();
+    expect(withProductCounts!.find((r) => r.id === category.id)).toMatchObject({ productCount: 1 });
+
+    const withOfferCounts = await getActiveCategoriesWithOfferCounts();
+    expect(withOfferCounts!.find((r) => r.id === category.id)).toBeUndefined();
+  });
+
+  it("nunca incluye una categoría sin ningún producto en absoluto", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PRODUCT_COUNTS_PREFIX}-vacia`, name: "Vacía" } });
+    const rows = await getActiveCategoriesWithProductCounts();
+    expect(rows!.find((r) => r.id === category.id)).toBeUndefined();
+  });
+
+  it("un producto demo nunca cuenta", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PRODUCT_COUNTS_PREFIX}-demo`, name: "Solo demo" } });
+    await prisma!.product.create({
+      data: { slug: `${PRODUCT_COUNTS_PREFIX}-producto-demo`, name: "Producto demo", categoryId: category.id, isDemo: true },
+    });
+    const rows = await getActiveCategoriesWithProductCounts();
+    expect(rows!.find((r) => r.id === category.id)).toBeUndefined();
   });
 });

@@ -446,6 +446,7 @@ describe("dataSource/home: sin DATABASE_URL en absoluto, la portada usa demo", (
     const { source, data } = await fn();
     expect(source).toBe("demo");
     expect(data.products.length).toBeGreaterThan(0);
+    expect(data.allMerchants.length).toBeGreaterThan(0);
   });
 
   it("getOfertasBundle en demo sale ordenado por descuento real descendente, igual que getSupergangasBundle", async () => {
@@ -711,6 +712,37 @@ describe.skipIf(!process.env.DATABASE_URL)("dataSource/home: Supergangas (integr
       expect(supergangas.data.products.length).toBeLessThanOrEqual(8);
       const presentInOfertas = manySlugs.filter((slug) => ofertas.data.products.some((p) => p.slug === slug));
       expect(presentInOfertas.length).toBe(manySlugs.length); // ninguno se queda fuera por el límite de la portada
+    }
+  });
+
+  it("allMerchants incluye una tienda real SIN ningún producto con descuento activo ahora mismo (caso real Vatrer/BIKILA ES) — a diferencia de `merchants`, que solo trae las de los productos devueltos", async () => {
+    const noDiscountMerchantSlug = `${PREFIX}-tienda-sin-descuentos`;
+    const merchant = await prisma!.merchant.create({
+      data: { slug: noDiscountMerchantSlug, name: "Tienda sin descuentos ahora mismo", websiteUrl: "https://example.invalid" },
+    });
+    const product = await prisma!.product.create({
+      data: { slug: `${PREFIX}-producto-sin-descuento-tienda`, name: "Producto sin descuento de esa tienda", categoryId },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: product.id,
+        merchantId: merchant.id,
+        currentPrice: 30,
+        // Sin previousPrice: oferta real, pero sin descuento — esta tienda
+        // nunca aparecería en `merchants` (derivado de `selected`, el
+        // listado ya filtrado a descuento activo), pero SÍ debe aparecer
+        // en `allMerchants`.
+        productUrl: "https://example.invalid/sin-descuento-tienda",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+      },
+    });
+
+    const ofertas = await getOfertasBundle();
+    if (ofertas.source === "database") {
+      expect(ofertas.data.allMerchants.some((m) => m.slug === noDiscountMerchantSlug)).toBe(true);
+      expect(ofertas.data.merchants.some((m) => m.slug === noDiscountMerchantSlug)).toBe(false);
     }
   });
 });
