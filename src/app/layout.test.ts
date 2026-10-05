@@ -19,16 +19,22 @@ describe("layout.tsx: verificación de Google Search Console, condicional y nunc
   });
 
   it("solo añade `verification.google` a la metadata cuando la variable existe (spread condicional), nunca un código de verificación de ejemplo", () => {
-    expect(layoutSource).toMatch(/\.\.\.\(googleSiteVerification \? \{ verification: \{ google: googleSiteVerification \} \} : \{\}\)/);
+    expect(layoutSource).toMatch(/\.\.\.\(googleSiteVerification \? \{ google: googleSiteVerification \} : \{\}\)/);
     // Nunca un valor de verificación hardcodeado (una cadena literal larga
-    // asignada directamente a `verification`), solo la variable de entorno.
-    expect(layoutSource).not.toMatch(/verification:\s*\{\s*google:\s*"[^"]+"/);
+    // asignada directamente a `google`), solo la variable de entorno.
+    expect(layoutSource).not.toMatch(/google:\s*"[^"]+"/);
   });
 
   it("sigue declarando metadataBase, title (con plantilla) y openGraph, sin que el cambio los haya afectado", () => {
     expect(layoutSource).toContain("metadataBase: new URL(siteUrl)");
     expect(layoutSource).toContain('template: "%s · Preciara"');
     expect(layoutSource).toContain("openGraph:");
+  });
+});
+
+describe("layout.tsx: verificación de propiedad de dominio para Admitad/Mitgo", () => {
+  it("incluye la etiqueta meta mitgo-verification con el código exacto dado por Admitad/Mitgo", () => {
+    expect(layoutSource).toContain('other: { "mitgo-verification": ["f98a525a-c971-45ab-9817-7226c8490247"] }');
   });
 });
 
