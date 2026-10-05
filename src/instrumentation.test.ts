@@ -28,8 +28,14 @@ function buildSummary(overrides: Partial<AwinOrchestratorSummary> = {}): AwinOrc
     staleDeactivatedTotal: 0,
     advertisers: [],
     feeds: [],
+    skippedFeeds: [],
     ...overrides,
   };
+}
+
+// Evita que estas pruebas escriban de verdad en `awin_sync_cycle_runs`.
+function noopPersistRun(): Promise<void> {
+  return Promise.resolve();
 }
 
 describe("computeMsUntilNextRun", () => {
@@ -93,7 +99,7 @@ describe("runScheduledAwinSync", () => {
   it("ciclo correcto: registra awin_sync_done con dryRun:false y los contadores del resumen, nunca lanza", async () => {
     const runCycle = vi.fn().mockResolvedValue(buildSummary({ feedsDiscovered: 900, feedsApproved: 12, productsCreatedTotal: 40 }));
 
-    await expect(runScheduledAwinSync("fake-key", "https://ui.awin.com/fake-list", { runCycle })).resolves.toBeUndefined();
+    await expect(runScheduledAwinSync("fake-key", "https://ui.awin.com/fake-list", { runCycle, persistRun: noopPersistRun })).resolves.toBeUndefined();
 
     expect(runCycle).toHaveBeenCalledWith({ apiKey: "fake-key", feedListUrl: "https://ui.awin.com/fake-list", dryRun: false, deactivateStaleAfterHours: undefined });
     expect(logSpy).toHaveBeenCalledWith(
@@ -105,7 +111,7 @@ describe("runScheduledAwinSync", () => {
   it("fallo del ciclo (error no modelado): registra awin_sync_failed, nunca lanza", async () => {
     const runCycle = vi.fn().mockRejectedValue(new Error("fallo simulado"));
 
-    await expect(runScheduledAwinSync("fake-key", undefined, { runCycle })).resolves.toBeUndefined();
+    await expect(runScheduledAwinSync("fake-key", undefined, { runCycle, persistRun: noopPersistRun })).resolves.toBeUndefined();
 
     expect(logSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: "awin_sync_failed" }));
@@ -114,7 +120,7 @@ describe("runScheduledAwinSync", () => {
   it("bloqueo de ciclo ya en curso (AwinOrchestratorLockBusyError): registra awin_sync_lock_busy, nunca lanza", async () => {
     const runCycle = vi.fn().mockRejectedValue(new AwinOrchestratorLockBusyError());
 
-    await expect(runScheduledAwinSync("fake-key", undefined, { runCycle })).resolves.toBeUndefined();
+    await expect(runScheduledAwinSync("fake-key", undefined, { runCycle, persistRun: noopPersistRun })).resolves.toBeUndefined();
 
     expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: "awin_sync_lock_busy" }));
   });
@@ -124,7 +130,7 @@ describe("runScheduledAwinSync", () => {
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await runScheduledAwinSync("fake-key", undefined, { runCycle });
+    await runScheduledAwinSync("fake-key", undefined, { runCycle, persistRun: noopPersistRun });
 
     expect(runCycle).toHaveBeenCalledWith(expect.objectContaining({ deactivateStaleAfterHours: undefined }));
     expect(warnSpy).toHaveBeenCalledWith(expect.objectContaining({ event: "awin_sync_invalid_deactivate_stale_config" }));
@@ -133,7 +139,7 @@ describe("runScheduledAwinSync", () => {
 
   it("nunca registra la API key ni la URL del feed en ningún log", async () => {
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
-    await runScheduledAwinSync("api-key-secreta-canario", "https://ui.awin.com/secreto-canario", { runCycle });
+    await runScheduledAwinSync("api-key-secreta-canario", "https://ui.awin.com/secreto-canario", { runCycle, persistRun: noopPersistRun });
 
     const allCalls = [...logSpy.mock.calls, ...errorSpy.mock.calls];
     const loggedText = allCalls.map((args) => args.map((a: unknown) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")).join("\n");
@@ -160,7 +166,7 @@ describe("scheduleNextAwinSync", () => {
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
     process.env.AWIN_DATAFEED_API_KEY = "fake-key";
 
-    scheduleNextAwinSync({ runCycle });
+    scheduleNextAwinSync({ runCycle, persistRun: noopPersistRun });
 
     expect(runCycle).not.toHaveBeenCalled();
   });
@@ -170,7 +176,7 @@ describe("scheduleNextAwinSync", () => {
     process.env.AWIN_DATAFEED_API_KEY = "fake-key";
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
 
-    scheduleNextAwinSync({ runCycle });
+    scheduleNextAwinSync({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(77 * 60 * 1000); // hasta las 04:17 UTC
     expect(runCycle).toHaveBeenCalledTimes(1);
 
@@ -184,7 +190,7 @@ describe("scheduleNextAwinSync", () => {
     process.env.AWIN_DATAFEED_API_KEY = "fake-key";
     const runCycle = vi.fn().mockRejectedValue(new Error("fallo simulado"));
 
-    scheduleNextAwinSync({ runCycle });
+    scheduleNextAwinSync({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(77 * 60 * 1000);
     expect(runCycle).toHaveBeenCalledTimes(1);
 
@@ -205,7 +211,7 @@ describe("scheduleNextAwinSync", () => {
       return buildSummary();
     });
 
-    scheduleNextAwinSync({ runCycle });
+    scheduleNextAwinSync({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000); // un día entero: ambas horas se disparan
 
     expect(maxConcurrent).toBe(1);
@@ -217,7 +223,7 @@ describe("scheduleNextAwinSync", () => {
     delete process.env.AWIN_DATAFEED_API_KEY;
     const runCycle = vi.fn();
 
-    scheduleNextAwinSync({ runCycle });
+    scheduleNextAwinSync({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(77 * 60 * 1000);
 
     expect(runCycle).not.toHaveBeenCalled();
@@ -245,7 +251,7 @@ describe("register", () => {
     process.env.AWIN_DATAFEED_API_KEY = "fake-key";
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
 
-    register({ runCycle });
+    register({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
 
     expect(runCycle).not.toHaveBeenCalled();
@@ -256,7 +262,7 @@ describe("register", () => {
     delete process.env.AWIN_DATAFEED_API_KEY;
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
 
-    register({ runCycle });
+    register({ runCycle, persistRun: noopPersistRun });
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
 
     expect(runCycle).not.toHaveBeenCalled();
@@ -267,7 +273,7 @@ describe("register", () => {
     process.env.AWIN_DATAFEED_API_KEY = "fake-key";
     const runCycle = vi.fn().mockResolvedValue(buildSummary());
 
-    register({ runCycle });
+    register({ runCycle, persistRun: noopPersistRun });
     expect(runCycle).not.toHaveBeenCalled(); // register() nunca ejecuta de inmediato
 
     await vi.advanceTimersByTimeAsync(77 * 60 * 1000);

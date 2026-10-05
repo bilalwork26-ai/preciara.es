@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { AwinOrchestratorLockBusyError, runAwinCatalogSyncCycle, summarizeAwinFeedFailures } from "@/server/catalogSync/awinOrchestrator";
 import { InvalidDeactivateStaleAfterHoursError, readDeactivateStaleAfterHours } from "@/server/catalogSync/deactivationConfig";
 import { verifyAwinSyncSignature } from "@/server/jobs/awinSyncRequestAuth";
+import { persistAwinSyncCycleRun } from "@/server/repositories/awinSyncCycles";
 
 /**
  * Nunca deja que un valor inválido de `AWIN_DEACTIVATE_STALE_AFTER_HOURS`
@@ -87,9 +88,12 @@ export async function POST(request: NextRequest) {
   const { dryRun } = payload;
   const deactivateStaleAfterHours = resolveDeactivateStaleAfterHours();
   after(async () => {
-    const startedAt = Date.now();
+    const startedAtDate = new Date();
+    const startedAt = startedAtDate.getTime();
     try {
       const summary = await runAwinCatalogSyncCycle({ apiKey, feedListUrl, dryRun, deactivateStaleAfterHours });
+      const finishedAtDate = new Date();
+      await persistAwinSyncCycleRun(summary, { startedAt: startedAtDate, finishedAt: finishedAtDate });
       console.log({
         event: "awin_sync_job_done",
         durationMs: Date.now() - startedAt,

@@ -69,6 +69,7 @@ import {
   type AwinOrchestratorSummary,
 } from "@/server/catalogSync/awinOrchestrator";
 import { InvalidDeactivateStaleAfterHoursError, readDeactivateStaleAfterHours } from "@/server/catalogSync/deactivationConfig";
+import { persistAwinSyncCycleRun } from "@/server/repositories/awinSyncCycles";
 
 /**
  * Mismos dos horarios diarios (hora UTC) que
@@ -126,6 +127,8 @@ function resolveDeactivateStaleAfterHoursForScheduler(): number | undefined {
 export type AwinSchedulerDeps = {
   /** Por defecto, `runAwinCatalogSyncCycle` real. Las pruebas inyectan un doble: cero red, cero proceso real. */
   runCycle?: (options: Parameters<typeof runAwinCatalogSyncCycle>[0]) => Promise<AwinOrchestratorSummary>;
+  /** Por defecto, `persistAwinSyncCycleRun` real. Las pruebas inyectan un doble: cero escritura real en BD. */
+  persistRun?: typeof persistAwinSyncCycleRun;
 };
 
 /**
@@ -138,11 +141,14 @@ export type AwinSchedulerDeps = {
  */
 export async function runScheduledAwinSync(apiKey: string, feedListUrl: string | undefined, deps: AwinSchedulerDeps = {}): Promise<void> {
   const runCycle = deps.runCycle ?? runAwinCatalogSyncCycle;
-  const startedAt = Date.now();
+  const persistRun = deps.persistRun ?? persistAwinSyncCycleRun;
+  const startedAtDate = new Date();
+  const startedAt = startedAtDate.getTime();
   const deactivateStaleAfterHours = resolveDeactivateStaleAfterHoursForScheduler();
 
   try {
     const summary = await runCycle({ apiKey, feedListUrl, dryRun: false, deactivateStaleAfterHours });
+    await persistRun(summary, { startedAt: startedAtDate, finishedAt: new Date() });
     console.log({
       event: "awin_sync_done",
       durationMs: Date.now() - startedAt,
