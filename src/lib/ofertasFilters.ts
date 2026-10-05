@@ -123,15 +123,19 @@ export function availableCategoryOptions(products: readonly Product[], nameByCat
   return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label, "es"));
 }
 
-/** Mismo criterio que `availableCategoryOptions`, pero por tienda (ver `bestOfferMerchantId`). */
-export function availableMerchantOptions(products: readonly Product[], merchants: readonly Merchant[]): FilterOption[] {
-  const nameByMerchantId = new Map(merchants.map((m) => [m.id, m.name]));
-  const seen = new Map<string, FilterOption>();
-  for (const product of products) {
-    const merchantId = bestOfferMerchantId(product);
-    if (merchantId && !seen.has(merchantId)) {
-      seen.set(merchantId, { value: merchantId, label: nameByMerchantId.get(merchantId) ?? merchantId });
-    }
-  }
-  return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label, "es"));
+/**
+ * Opciones del desplegable de "Tienda": TODAS las tiendas reales activas
+ * recibidas (ver `getActiveMerchants`/`OfertasBundle.allMerchants`),
+ * tengan o no algún producto con descuento activo ahora mismo en
+ * `products` — requisito de negocio explícito: antes solo se ofrecían las
+ * tiendas con al menos un producto en el listado YA filtrado por
+ * descuento (criterio "nunca un filtro que lleve a un resultado vacío"),
+ * lo que ocultaba comercios reales recién sincronizados o sin rebajas en
+ * este momento (caso real: Vatrer/BIKILA ES). Elegir una tienda sin
+ * coincidencias actuales ahora muestra el mensaje "Ningún producto cumple
+ * estos filtros ahora mismo" (ver OfertasCatalog) en vez de desaparecer
+ * del desplegable — nunca un enlace roto, solo una lista vacía honesta.
+ */
+export function availableMerchantOptions(merchants: readonly Merchant[]): FilterOption[] {
+  return merchants.map((m) => ({ value: m.id, label: m.name })).sort((a, b) => a.label.localeCompare(b.label, "es"));
 }

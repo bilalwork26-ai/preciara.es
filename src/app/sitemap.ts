@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/seo";
 import { guides } from "@/data/guides";
-import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
+import { getActiveCategoriesWithProductCounts } from "@/server/repositories/categories";
 import { getActiveProductsWithOffers } from "@/server/repositories/products";
 
 /**
@@ -32,7 +32,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const [categories, products] = await Promise.all([
-    getActiveCategoriesWithOfferCounts(),
+    // `getActiveCategoriesWithProductCounts`, no `...WithOfferCounts`: el
+    // sitemap debe listar toda categoría que de verdad resuelve con
+    // contenido real (200), y desde que /categoria/[slug] sirve el
+    // catálogo completo (con o sin oferta activa, ver getCategoryDetail)
+    // esos dos criterios ya no coinciden — una categoría sin ningún
+    // producto con oferta activa, pero con productos reales, resuelve
+    // igualmente y debe estar aquí.
+    getActiveCategoriesWithProductCounts(),
     getActiveProductsWithOffers(5000),
   ]);
 

@@ -69,3 +69,44 @@ export async function getActiveCategoriesWithOfferCounts(): Promise<CategoryWith
   });
   return result.ok ? result.data : null;
 }
+
+export type CategoryWithProductCount = CategoryRow & {
+  /** Nº de productos activos (no demo) en esta categoría, CON o SIN oferta activa — a diferencia de `activeProductCount` de arriba. */
+  productCount: number;
+};
+
+/**
+ * Categorías activas con al menos un producto real (con o sin oferta
+ * activa) — exactamente el mismo criterio de existencia que usa
+ * `getCategoryDetail` (`requireActiveOffer: false`, ver
+ * `server/dataSource/category.ts`) para decidir si `/categoria/[slug]`
+ * resuelve con contenido real o da 404. Pensada para `sitemap.ts`: antes
+ * usaba `getActiveCategoriesWithOfferCounts` (exige oferta activa), lo que
+ * dejaba fuera del sitemap categorías que SÍ resuelven con el catálogo
+ * completo (200, con contenido real) pero cuyos productos aún no tienen
+ * ninguna oferta activa sincronizada — páginas reales e indexables que
+ * nunca llegaban a los buscadores por no estar en el sitemap.
+ */
+export async function getActiveCategoriesWithProductCounts(): Promise<CategoryWithProductCount[] | null> {
+  const result = await withDb(async (db) => {
+    const [categories, counts] = await Promise.all([
+      db.category.findMany({
+        where: { isActive: true },
+        select: { id: true, slug: true, name: true, description: true },
+      }),
+      db.product.groupBy({
+        by: ["categoryId"],
+        where: { isActive: true, isDemo: false },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const countByCategoryId = new Map(counts.map((c) => [c.categoryId, c._count._all]));
+
+    return categories
+      .map((category) => ({ ...category, productCount: countByCategoryId.get(category.id) ?? 0 }))
+      .filter((category) => category.productCount > 0)
+      .sort((a, b) => b.productCount - a.productCount || a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+  });
+  return result.ok ? result.data : null;
+}

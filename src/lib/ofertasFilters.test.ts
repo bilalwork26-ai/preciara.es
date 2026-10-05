@@ -276,16 +276,22 @@ describe("availableCategoryOptions", () => {
 });
 
 describe("availableMerchantOptions", () => {
-  it("solo incluye tiendas con al menos un producto (el de mejor precio), en orden alfabético", () => {
-    const options = availableMerchantOptions([adidasShoe, trotecDehumidifier], merchants);
+  it("lista TODAS las tiendas recibidas, en orden alfabético — ya no depende de qué productos tengan descuento ahora mismo (requisito de negocio: nunca ocultar una tienda real por no tener ninguna rebaja en este momento, caso real Vatrer/BIKILA ES)", () => {
+    const vatrer: Merchant = { id: "vatrer", slug: "vatrer", name: "Vatrer", accentColor: "#222" };
+    const options = availableMerchantOptions([...merchants, vatrer]);
     expect(options).toEqual([
       { value: "adidas-es", label: "adidas ES" },
       { value: "trotec", label: "Trotec" },
+      { value: "vatrer", label: "Vatrer" },
     ]);
   });
 
-  it("productos sin ninguna oferta no aportan ninguna opción", () => {
-    const options = availableMerchantOptions([fakeProduct({ id: "sin-ofertas", categoryId: "moda", offers: [] })], merchants);
-    expect(options).toEqual([]);
+  it("una tienda sin ningún producto en el catálogo actual sigue apareciendo (antes se excluía del desplegable por completo)", () => {
+    const bikila: Merchant = { id: "bikila-es", slug: "bikila-es", name: "BIKILA ES", accentColor: "#333" };
+    expect(availableMerchantOptions([bikila])).toEqual([{ value: "bikila-es", label: "BIKILA ES" }]);
+  });
+
+  it("sin tiendas, lista vacía, nunca lanza", () => {
+    expect(availableMerchantOptions([])).toEqual([]);
   });
 });

@@ -98,6 +98,19 @@ describe.skipIf(!process.env.DATABASE_URL)("sitemap (integración, BD local de p
     expect(urls).toContain(`https://preciara.es/categoria/${PREFIX}-cat`);
   });
 
+  it("incluye una categoría cuyos productos NO tienen ninguna oferta activa — /categoria/[slug] resuelve con el catálogo completo (ver getCategoryDetail), así que debe estar en el sitemap aunque no tenga ningún chollo", async () => {
+    const categorySinOfertas = await prisma!.category.create({
+      data: { slug: `${PREFIX}-sin-ofertas-cat`, name: "Categoría sitemap sin ofertas" },
+    });
+    await prisma!.product.create({
+      data: { slug: `${PREFIX}-sin-ofertas-producto`, name: "Producto sin ninguna oferta", categoryId: categorySinOfertas.id },
+    });
+
+    const entries = await sitemap();
+    const urls = entries.map((e) => e.url);
+    expect(urls).toContain(`https://preciara.es/categoria/${PREFIX}-sin-ofertas-cat`);
+  });
+
   it("nunca incluye un producto o comercio de demostración", async () => {
     const demoMerchant = await prisma!.merchant.create({
       data: { slug: `${PREFIX}-demo-merchant`, name: "Comercio demo", websiteUrl: "https://example.invalid", isDemo: true },

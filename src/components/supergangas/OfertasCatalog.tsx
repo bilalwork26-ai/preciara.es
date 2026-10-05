@@ -21,10 +21,13 @@ const PAGE_SIZE = 24;
 export function OfertasCatalog({
   products,
   merchants,
+  allMerchants,
   categoryNameById,
 }: {
   products: Product[];
   merchants: Merchant[];
+  /** TODAS las tiendas reales activas, para el desplegable de Tienda — ver el comentario de `availableMerchantOptions` (ofertasFilters.ts) para el porqué de no derivarlo de `products`. */
+  allMerchants: Merchant[];
   categoryNameById: Record<string, string>;
 }) {
   const [categoryId, setCategoryId] = useState(ALL_FILTER_VALUE);
@@ -44,7 +47,7 @@ export function OfertasCatalog({
   }
 
   const categoryOptions = useMemo(() => availableCategoryOptions(products, categoryNameById), [products, categoryNameById]);
-  const merchantOptions = useMemo(() => availableMerchantOptions(products, merchants), [products, merchants]);
+  const merchantOptions = useMemo(() => availableMerchantOptions(allMerchants), [allMerchants]);
   const filtered = useMemo(() => filterOfertas(products, { categoryId, merchantId, query }), [products, categoryId, merchantId, query]);
   const filtersActive = categoryId !== ALL_FILTER_VALUE || merchantId !== ALL_FILTER_VALUE || query.trim() !== "";
 
