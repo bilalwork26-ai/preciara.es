@@ -91,11 +91,19 @@ export function Footer() {
           </div>
         </div>
 
+        {/*
+          Mismo criterio de independencia que /aviso-afiliacion (ver esa
+          página, fuente de este texto): recibir o no comisión nunca influye
+          en QUÉ ofertas se muestran, en QUÉ ORDEN aparecen, ni en si se
+          marcan como "verificadas" — las tres cosas, no solo la última,
+          que era todo lo que decía antes esta versión del footer.
+        */}
         <p className="mt-8 border-t border-border-navy pt-6 text-xs leading-relaxed text-navy-100">
           Algunos enlaces de Preciara son enlaces de afiliado: si compras a
           través de ellos, podemos recibir una comisión, sin coste adicional
-          para ti. Esto no influye en qué ofertas mostramos como verificadas.
-          Consulta nuestro{" "}
+          para ti. Recibir o no esa comisión nunca influye en qué ofertas
+          mostramos, en qué orden aparecen ni en si se marcan como
+          &ldquo;verificadas&rdquo;. Consulta nuestro{" "}
           <Link
             href="/aviso-afiliacion"
             className={`rounded underline decoration-navy-300 underline-offset-2 hover:text-white ${FOCUS_RING_CLASSES}`}

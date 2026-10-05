@@ -72,6 +72,12 @@ describe("Footer.tsx: contenido y enlaces conservados, con contraste accesible s
     expect(footerSource).toContain("Preciara. Todos los precios mostrados en esta versión son datos de demostración.");
   });
 
+  it("la cláusula de independencia cubre las tres cosas que cubre /aviso-afiliacion (qué ofertas se muestran, en qué orden, y si se marcan 'verificadas'), no solo la última", () => {
+    expect(footerSource).toContain("qué ofertas");
+    expect(footerSource).toContain("qué orden");
+    expect(footerSource).toContain("verificadas");
+  });
+
   it("el logotipo usa el tema claro pensado para fondo navy (Logo theme=\"light\"), nunca el tema oscuro por defecto (invisible sobre navy)", () => {
     expect(footerSource).toContain('<Logo theme="light" />');
     expect(footerSource).not.toMatch(/<Logo\s*\/>/); // nunca sin theme (theme="dark" por defecto)
