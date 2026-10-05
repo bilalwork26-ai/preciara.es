@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import type { Merchant, Product } from "@/types";
 import { ALL_FILTER_VALUE, availableCategoryOptions, availableMerchantOptions, filterOfertas } from "@/lib/ofertasFilters";
 import { ProductDealCard } from "@/components/home/ProductDealCard";
@@ -28,6 +29,7 @@ export function OfertasCatalog({
 }) {
   const [categoryId, setCategoryId] = useState(ALL_FILTER_VALUE);
   const [merchantId, setMerchantId] = useState(ALL_FILTER_VALUE);
+  const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   // Para volver siempre a la primera página en cuanto cambia un filtro
   // (seguir en la página 3 de un filtro nuevo dejaría "Mostrar más" ya
@@ -35,22 +37,33 @@ export function OfertasCatalog({
   // "setState dentro de un efecto": se ajusta en el propio cuerpo del
   // render, el patrón que React recomienda para "resetear estado cuando
   // cambia una prop" (https://react.dev/learn/you-might-not-need-an-effect).
-  const [appliedFilters, setAppliedFilters] = useState({ categoryId, merchantId });
-  if (appliedFilters.categoryId !== categoryId || appliedFilters.merchantId !== merchantId) {
-    setAppliedFilters({ categoryId, merchantId });
+  const [appliedFilters, setAppliedFilters] = useState({ categoryId, merchantId, query });
+  if (appliedFilters.categoryId !== categoryId || appliedFilters.merchantId !== merchantId || appliedFilters.query !== query) {
+    setAppliedFilters({ categoryId, merchantId, query });
     setVisibleCount(PAGE_SIZE);
   }
 
   const categoryOptions = useMemo(() => availableCategoryOptions(products, categoryNameById), [products, categoryNameById]);
   const merchantOptions = useMemo(() => availableMerchantOptions(products, merchants), [products, merchants]);
-  const filtered = useMemo(() => filterOfertas(products, { categoryId, merchantId }), [products, categoryId, merchantId]);
-  const filtersActive = categoryId !== ALL_FILTER_VALUE || merchantId !== ALL_FILTER_VALUE;
+  const filtered = useMemo(() => filterOfertas(products, { categoryId, merchantId, query }), [products, categoryId, merchantId, query]);
+  const filtersActive = categoryId !== ALL_FILTER_VALUE || merchantId !== ALL_FILTER_VALUE || query.trim() !== "";
 
   const visible = filtered.slice(0, visibleCount);
 
   return (
     <div>
       <div className="mt-4 flex flex-wrap items-center gap-3" role="group" aria-label="Filtrar Supergangas">
+        <label className="relative flex w-full items-center sm:w-64">
+          <span className="sr-only">Buscar en Supergangas</span>
+          <Search className="pointer-events-none absolute left-3 h-4 w-4 text-navy-300" aria-hidden="true" strokeWidth={1.75} />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar: zapatillas, sudadera, batería..."
+            className="w-full rounded-full border border-border bg-white py-1.5 pl-9 pr-3 text-sm text-navy-900 placeholder:text-navy-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+          />
+        </label>
         <label className="flex items-center gap-2 text-sm font-medium text-navy-700">
           Categoría
           <select

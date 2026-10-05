@@ -11,6 +11,17 @@ export const ALL_FILTER_VALUE = "todas";
 
 export type FilterOption = { value: string; label: string };
 
+// Marcas diacríticas combinantes (tildes, diéresis...) tras normalizar a NFD
+// — mismo patrón que `normalizeForSearch` en `server/dataSource/search.ts`
+// (no se importa de ahí: ese fichero tira de los repositorios de BD y no es
+// seguro de incluir en el bundle de cliente de OfertasCatalog.tsx).
+const COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`, "g");
+
+/** Insensible a mayúsculas y a tildes: "Batería" y "bateria" deben coincidir igual. */
+export function normalizeForSearch(value: string): string {
+  return value.normalize("NFD").replace(COMBINING_MARKS, "").toLowerCase();
+}
+
 /**
  * Comercio de la oferta MÁS BARATA de `product` (mismo criterio "mejor
  * precio" que muestra `ProductDealCard`, para que filtrar por tienda
@@ -24,17 +35,20 @@ export function bestOfferMerchantId(product: Product): string | null {
 }
 
 /**
- * Filtra `products` por categoría y/o tienda. `ALL_FILTER_VALUE` en
- * cualquiera de los dos significa "no filtrar por ese criterio" — los
- * dos filtros se combinan con Y (categoría Y tienda), nunca con O.
+ * Filtra `products` por categoría, tienda y/o texto libre (nombre del
+ * producto). `ALL_FILTER_VALUE` en categoría/tienda, o `query` vacía (tras
+ * recortar espacios), significa "no filtrar por ese criterio" — los tres
+ * filtros se combinan con Y, nunca con O.
  */
 export function filterOfertas(
   products: readonly Product[],
-  { categoryId, merchantId }: { categoryId: string; merchantId: string }
+  { categoryId, merchantId, query = "" }: { categoryId: string; merchantId: string; query?: string }
 ): Product[] {
+  const normalizedQuery = normalizeForSearch(query.trim());
   return products.filter((product) => {
     if (categoryId !== ALL_FILTER_VALUE && product.categoryId !== categoryId) return false;
     if (merchantId !== ALL_FILTER_VALUE && bestOfferMerchantId(product) !== merchantId) return false;
+    if (normalizedQuery && !normalizeForSearch(product.name).includes(normalizedQuery)) return false;
     return true;
   });
 }

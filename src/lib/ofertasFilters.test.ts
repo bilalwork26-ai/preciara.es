@@ -5,6 +5,7 @@ import {
   availableMerchantOptions,
   bestOfferMerchantId,
   filterOfertas,
+  normalizeForSearch,
 } from "./ofertasFilters";
 import type { Merchant, Product } from "@/types";
 
@@ -91,6 +92,57 @@ describe("filterOfertas", () => {
   it("una combinación que no cumple ningún producto devuelve una lista vacía, nunca lanza", () => {
     const result = filterOfertas(all, { categoryId: "hogar", merchantId: "adidas-es" });
     expect(result).toEqual([]);
+  });
+
+  describe("búsqueda por texto (query)", () => {
+    const zapatillas = fakeProduct({
+      id: "p-zapatillas",
+      name: "Zapatillas running Ultraboost",
+      categoryId: "deporte",
+      offers: [fakeOffer({ merchantId: "adidas-es", price: 89.99 })],
+    });
+    const bateria = fakeProduct({
+      id: "p-bateria",
+      name: "Batería externa 10000mAh",
+      categoryId: "tecnologia",
+      offers: [fakeOffer({ merchantId: "trotec", price: 24.99 })],
+    });
+    const products = [zapatillas, bateria];
+
+    it("sin query (u omitida), no filtra por texto", () => {
+      expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE })).toEqual(products);
+      expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "" })).toEqual(products);
+      expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "   " })).toEqual(products);
+    });
+
+    it("filtra por coincidencia parcial en el nombre, insensible a mayúsculas", () => {
+      const result = filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "ZAPATILLAS" });
+      expect(result.map((p) => p.slug)).toEqual(["p-zapatillas"]);
+    });
+
+    it("insensible a tildes en ambos sentidos: 'bateria' encuentra 'Batería' y viceversa", () => {
+      expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "bateria" }).map((p) => p.slug)).toEqual([
+        "p-bateria",
+      ]);
+      expect(
+        filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "báteríá" }).map((p) => p.slug)
+      ).toEqual(["p-bateria"]);
+    });
+
+    it("se combina con categoría y tienda (Y, no O)", () => {
+      const result = filterOfertas(products, { categoryId: "deporte", merchantId: ALL_FILTER_VALUE, query: "bateria" });
+      expect(result).toEqual([]);
+    });
+
+    it("una query que no coincide con nada devuelve lista vacía, nunca lanza", () => {
+      expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "monopatín" })).toEqual([]);
+    });
+  });
+});
+
+describe("normalizeForSearch", () => {
+  it("quita tildes/diéresis (incluida la virgulilla de la ñ, que NFD descompone en n + tilde combinante) y pasa a minúsculas", () => {
+    expect(normalizeForSearch("Batería ÑOÑO Über")).toBe("bateria nono uber");
   });
 });
 

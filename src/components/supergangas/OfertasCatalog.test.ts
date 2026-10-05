@@ -28,6 +28,15 @@ describe("OfertasCatalog.tsx", () => {
     expect((source.match(/<select/g) ?? []).length).toBe(2);
   });
 
+  it("ofrece un input de búsqueda por texto, pasado a filterOfertas como `query` (casi 1.000 productos en Supergangas: hace falta poder filtrar por palabra clave, no solo por categoría/tienda)", () => {
+    expect(source).toMatch(/<input[^>]*type="search"/);
+    expect(source).toMatch(/filterOfertas\([^)]*\bquery\b/);
+  });
+
+  it("el input de búsqueda también resetea la paginación en cliente al cambiar (mismo criterio que categoría/tienda)", () => {
+    expect(source).toMatch(/appliedFilters\.query\s*!==\s*query/);
+  });
+
   it("pagina en cliente sobre el array completo recibido por props, nunca vuelve a pedir datos al servidor", () => {
     expect(source).toContain("visibleCount");
     expect(source).not.toMatch(/fetch\(|router\.push|useRouter/);
