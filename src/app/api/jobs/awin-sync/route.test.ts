@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import type { AwinOrchestratorSummary } from "@/server/catalogSync/awinOrchestrator";
 
-const { runAwinCatalogSyncCycleMock, verifyAwinSyncSignatureMock, afterTasks } = vi.hoisted(() => ({
+const { runAwinCatalogSyncCycleMock, verifyAwinSyncSignatureMock, persistAwinSyncCycleRunMock, afterTasks } = vi.hoisted(() => ({
   runAwinCatalogSyncCycleMock: vi.fn(),
   verifyAwinSyncSignatureMock: vi.fn(),
+  persistAwinSyncCycleRunMock: vi.fn(),
   afterTasks: [] as Promise<unknown>[],
 }));
 
@@ -15,6 +16,13 @@ vi.mock("@/server/catalogSync/awinOrchestrator", async (importOriginal) => {
 
 vi.mock("@/server/jobs/awinSyncRequestAuth", () => ({
   verifyAwinSyncSignature: verifyAwinSyncSignatureMock,
+}));
+
+// Sin este stub, estas pruebas llamarían a la implementación real (que usa
+// `withDb`/Prisma) cada vez que el ciclo simulado resuelve — nunca deben
+// depender de si hay una base de datos real configurada en este entorno.
+vi.mock("@/server/repositories/awinSyncCycles", () => ({
+  persistAwinSyncCycleRun: persistAwinSyncCycleRunMock,
 }));
 
 // `after()` solo funciona dentro de una petición real servida por Next.js.
@@ -63,6 +71,7 @@ function buildSummary(overrides: Partial<AwinOrchestratorSummary> = {}): AwinOrc
     staleDeactivatedTotal: 0,
     advertisers: [],
     feeds: [],
+    skippedFeeds: [],
     ...overrides,
   };
 }
@@ -95,6 +104,7 @@ describe("POST /api/jobs/awin-sync (disparador privado de sincronización)", () 
   beforeEach(() => {
     runAwinCatalogSyncCycleMock.mockReset();
     verifyAwinSyncSignatureMock.mockReset();
+    persistAwinSyncCycleRunMock.mockReset().mockResolvedValue(undefined);
     afterTasks.length = 0;
   });
   afterEach(() => {
@@ -165,6 +175,7 @@ describe("POST /api/jobs/awin-sync (disparador privado de sincronización)", () 
 
     await flushAfterTasks();
     expect(runAwinCatalogSyncCycleMock).toHaveBeenCalledWith({ apiKey: API_KEY, feedListUrl: FEED_LIST_URL, dryRun: true, deactivateStaleAfterHours: undefined });
+    expect(persistAwinSyncCycleRunMock).toHaveBeenCalledWith(summary, expect.objectContaining({ startedAt: expect.any(Date), finishedAt: expect.any(Date) }));
   });
 
   it("firma válida y dryRun=false: la petición en segundo plano pasa dryRun=false a runAwinCatalogSyncCycle", async () => {

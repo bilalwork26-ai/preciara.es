@@ -223,6 +223,9 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: descubrimie
     expect(summary.feedsSkippedNotJoined).toBe(0); // el feed SÍ estaba aprobado — nunca se confunde con "Not Joined"
     expect(summary.feedsSkippedNonSpanishLanguage).toBe(1);
     expect(summary.advertisersProcessed).toBe(0); // sin ningún feed español, el anunciante ni siquiera se procesa
+    expect(summary.skippedFeeds).toEqual([
+      { advertiserId: adv, advertiserName: "Trotec", feedId: "1", feedName: "Feed PT", reason: "NON_SPANISH_LANGUAGE", detail: "Portuguese" },
+    ]);
   });
 
   it("el orden de procesamiento de anunciantes y de feeds dentro de cada anunciante es determinista (no depende del orden de llegada de la lista)", async () => {
@@ -273,6 +276,9 @@ describe.skipIf(!process.env.DATABASE_URL)("runAwinCatalogSyncCycle: descubrimie
     expect(summary.feedsSkippedNotJoined).toBe(1);
     expect(summary.advertisersProcessed).toBe(1);
     expect(summary.advertisers[0].advertiserId).toBe(advJoined);
+    expect(summary.skippedFeeds).toEqual([
+      { advertiserId: advNotJoined, advertiserName: "Pendiente", feedId: "1", feedName: "F1", reason: "NOT_JOINED", detail: "Not Joined" },
+    ]);
   });
 
   it("un feed duplicado EXACTO (mismo id) en la lista se descarga UNA sola vez", async () => {

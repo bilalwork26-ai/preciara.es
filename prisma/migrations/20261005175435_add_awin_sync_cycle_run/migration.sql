@@ -1,0 +1,32 @@
+-- CreateTable
+CREATE TABLE `awin_sync_cycle_runs` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `startedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `finishedAt` DATETIME(3) NULL,
+    `dryRun` BOOLEAN NOT NULL,
+    `listFatalError` BOOLEAN NOT NULL DEFAULT false,
+    `feedsDiscovered` INTEGER NOT NULL DEFAULT 0,
+    `feedsApproved` INTEGER NOT NULL DEFAULT 0,
+    `feedsSkippedNotJoined` INTEGER NOT NULL DEFAULT 0,
+    `feedsSkippedNonSpanishLanguage` INTEGER NOT NULL DEFAULT 0,
+    `feedsInvalidInList` INTEGER NOT NULL DEFAULT 0,
+    `feedsDuplicate` INTEGER NOT NULL DEFAULT 0,
+    `advertisersProcessed` INTEGER NOT NULL DEFAULT 0,
+    `advertisersSuccessful` INTEGER NOT NULL DEFAULT 0,
+    `advertisersIncomplete` INTEGER NOT NULL DEFAULT 0,
+    `validRowsTotal` INTEGER NOT NULL DEFAULT 0,
+    `invalidRowsTotal` INTEGER NOT NULL DEFAULT 0,
+    `feedsCompleted` INTEGER NOT NULL DEFAULT 0,
+    `feedsFailed` INTEGER NOT NULL DEFAULT 0,
+    `feedsEmpty` INTEGER NOT NULL DEFAULT 0,
+    `productsCreatedTotal` INTEGER NOT NULL DEFAULT 0,
+    `productsUpdatedTotal` INTEGER NOT NULL DEFAULT 0,
+    `offersCreatedTotal` INTEGER NOT NULL DEFAULT 0,
+    `offersUpdatedTotal` INTEGER NOT NULL DEFAULT 0,
+    `staleDeactivatedTotal` INTEGER NOT NULL DEFAULT 0,
+    `skippedFeeds` JSON NOT NULL,
+    `advertiserOutcomes` JSON NOT NULL,
+
+    INDEX `awin_sync_cycle_runs_startedAt_idx`(`startedAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

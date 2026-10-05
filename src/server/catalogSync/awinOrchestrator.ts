@@ -205,6 +205,32 @@ export type AwinOrchestratorDeactivationReason =
   | "INVALID_ROWS_PRESENT"
   | "DEACTIVATION_CALL_FAILED";
 
+/**
+ * Un feed `approved` por Awin (aprobado/Joined) o explícitamente `Not
+ * Joined`, que NUNCA llegó a `processAdvertiser` — se queda fuera ANTES
+ * de intentar descargar/aplicar nada. Pensado para diagnóstico desde
+ * `/admin/sincronizacion` (ver `persistAwinSyncCycleRun`,
+ * `server/repositories/awinSyncCycles.ts`): sin esto, un anunciante
+ * nuevo que Awin todavía no ha aprobado (o cuyo feed está en otro
+ * idioma) era indistinguible de uno que simplemente no existe en Awin —
+ * ambos casos se veían igual desde la web (sin productos), y la única
+ * diferencia quedaba en el log crudo del proceso de Hostinger, no en la
+ * base de datos.
+ *
+ * Nunca incluye la URL del feed ni ningún dato sensible: solo
+ * identificadores y nombres ya públicos (misma fuente que
+ * `AwinFeedListEntry`) más el motivo/valor crudo que causó la exclusión.
+ */
+export type AwinOrchestratorSkippedFeed = {
+  advertiserId: string;
+  advertiserName: string;
+  feedId: string;
+  feedName: string;
+  reason: "NOT_JOINED" | "NON_SPANISH_LANGUAGE";
+  /** `membershipStatus` crudo (si reason es NOT_JOINED) o `language` crudo (si es NON_SPANISH_LANGUAGE) — tal cual lo trae Awin, para diagnóstico. */
+  detail: string;
+};
+
 export type AwinOrchestratorFeedOutcome = {
   advertiserId: string;
   feedId: string;
@@ -274,6 +300,14 @@ export type AwinOrchestratorSummary = {
   staleDeactivatedTotal: number;
   advertisers: AwinOrchestratorAdvertiserOutcome[];
   feeds: AwinOrchestratorFeedOutcome[];
+  /**
+   * Feeds excluidos ANTES de `processAdvertiser` (nunca se intentó
+   * descargar/aplicar nada): "Not Joined" en Awin o idioma distinto del
+   * español. `feedsSkippedNotJoined`/`feedsSkippedNonSpanishLanguage` ya
+   * dan el recuento agregado; esto da el detalle por anunciante concreto
+   * — para responder "¿por qué no aparece la tienda X?" sin adivinar.
+   */
+  skippedFeeds: AwinOrchestratorSkippedFeed[];
 };
 
 export type AwinOrchestratorDeps = {
@@ -409,6 +443,7 @@ type FeedListClassification = {
   feedsDuplicate: number;
   listHadInvalidRows: boolean;
   advertiserGroups: Map<string, { advertiserName: string; feeds: AwinFeedListEntry[] }>;
+  skippedFeeds: AwinOrchestratorSkippedFeed[];
 };
 
 /** Consume la lista de feeds en streaming, clasifica cada fila y agrupa los `approved` (deduplicados por `id`) por `advertiserId`. La lista SÍ se agrupa en memoria (metadatos, nunca productos — ver comentario de cabecera). Un fallo del transporte/parser de la LISTA se refleja en `listFatalError`, nunca se propaga como excepción (aborta el resto del ciclo, que comprueba esa bandera antes de tocar ningún producto). */
@@ -423,12 +458,21 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
   let feedsDuplicate = 0;
   let listHadInvalidRows = false;
   let listFatalError = false;
+  const skippedFeeds: AwinOrchestratorSkippedFeed[] = [];
 
   try {
     for await (const result of deps.downloadFeedList(apiKey, feedListUrl)) {
       feedsDiscovered += 1;
       if (result.status === "skipped") {
         feedsSkippedNotJoined += 1;
+        skippedFeeds.push({
+          advertiserId: result.advertiserId,
+          advertiserName: result.advertiserName,
+          feedId: result.feedId,
+          feedName: result.feedName,
+          reason: "NOT_JOINED",
+          detail: result.membershipStatus,
+        });
         continue;
       }
       if (result.status === "invalid") {
@@ -449,6 +493,14 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
       // está aprobado, solo no es el idioma del catálogo de Preciara.
       if (!isSpanishFeedLanguage(entry.language)) {
         feedsSkippedNonSpanishLanguage += 1;
+        skippedFeeds.push({
+          advertiserId: entry.advertiserId,
+          advertiserName: entry.advertiserName,
+          feedId: entry.feedId,
+          feedName: entry.feedName,
+          reason: "NON_SPANISH_LANGUAGE",
+          detail: entry.language ?? "",
+        });
         continue;
       }
       const group = advertiserGroups.get(entry.advertiserId) ?? { advertiserName: entry.advertiserName, feeds: [] };
@@ -474,6 +526,7 @@ async function classifyFeedList(deps: ResolvedDeps, apiKey: string, feedListUrl?
     feedsDuplicate,
     listHadInvalidRows,
     advertiserGroups,
+    skippedFeeds,
   };
 }
 
@@ -667,6 +720,7 @@ export async function runAwinCatalogSyncCycle(options: AwinOrchestratorOptions):
       staleDeactivatedTotal: advertisers.reduce((sum, a) => sum + a.deactivation.deactivatedCount, 0),
       advertisers,
       feeds,
+      skippedFeeds: classification.skippedFeeds,
     };
   } finally {
     await deps.releaseLock(AWIN_CYCLE_LOCK_NAME);

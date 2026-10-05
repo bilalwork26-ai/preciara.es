@@ -47,11 +47,18 @@ function buildSummary(overrides: Partial<AwinOrchestratorSummary> = {}): AwinOrc
     staleDeactivatedTotal: 0,
     advertisers: [],
     feeds: [],
+    skippedFeeds: [],
     ...overrides,
   };
 }
 
 function noopDisconnect(): Promise<void> {
+  return Promise.resolve();
+}
+
+// Evita que estas pruebas de lógica pura del CLI escriban de verdad en
+// `awin_sync_cycle_runs` — mismo papel que `noopDisconnect` para Prisma.
+function noopPersistRun(): Promise<void> {
   return Promise.resolve();
 }
 
@@ -160,7 +167,7 @@ describe("runAwinSyncCommand: configuración", () => {
         received = options;
         return buildSummary();
       },
-      disconnect: noopDisconnect,
+      disconnect: noopDisconnect, persistRun: noopPersistRun,
     };
     const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "  clave-valida  " }), deps);
     expect(outcome.exitCode).toBe(0);
@@ -178,7 +185,7 @@ describe("runAwinSyncCommand: configuración", () => {
     const outcome = await runAwinSyncCommand(
       [],
       envWith({ AWIN_DATAFEED_API_KEY: "clave-valida", AWIN_DATAFEED_LIST_URL: `  ${feedListUrl}  ` }),
-      { runCycle, disconnect: noopDisconnect }
+      { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun }
     );
 
     expect(outcome.exitCode).toBe(0);
@@ -187,14 +194,14 @@ describe("runAwinSyncCommand: configuración", () => {
 
   it("clave ausente: nunca invoca el ciclo, termina con exitCode 3", async () => {
     const runCycle = vi.fn(async () => buildSummary());
-    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: undefined }), { runCycle, disconnect: noopDisconnect });
+    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: undefined }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     expect(outcome.exitCode).toBe(3);
     expect(runCycle).not.toHaveBeenCalled();
   });
 
   it("clave vacía o con espacios: nunca invoca el ciclo, termina con exitCode 3", async () => {
     const runCycle = vi.fn(async () => buildSummary());
-    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "   " }), { runCycle, disconnect: noopDisconnect });
+    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "   " }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     expect(outcome.exitCode).toBe(3);
     expect(runCycle).not.toHaveBeenCalled();
   });
@@ -206,7 +213,7 @@ describe("runAwinSyncCommand: configuración", () => {
         received = options;
         return buildSummary();
       },
-      disconnect: noopDisconnect,
+      disconnect: noopDisconnect, persistRun: noopPersistRun,
     };
     await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), deps);
     expect((received as { deactivateStaleAfterHours?: number }).deactivateStaleAfterHours).toBeUndefined();
@@ -219,7 +226,7 @@ describe("runAwinSyncCommand: configuración", () => {
         received = options;
         return buildSummary();
       },
-      disconnect: noopDisconnect,
+      disconnect: noopDisconnect, persistRun: noopPersistRun,
     };
     await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave", AWIN_DEACTIVATE_STALE_AFTER_HOURS: "72" }), deps);
     expect((received as { deactivateStaleAfterHours?: number }).deactivateStaleAfterHours).toBe(72);
@@ -227,14 +234,14 @@ describe("runAwinSyncCommand: configuración", () => {
 
   it("umbral inválido (texto): nunca invoca el ciclo, termina con exitCode 3", async () => {
     const runCycle = vi.fn(async () => buildSummary());
-    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave", AWIN_DEACTIVATE_STALE_AFTER_HOURS: "no-es-un-numero" }), { runCycle, disconnect: noopDisconnect });
+    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave", AWIN_DEACTIVATE_STALE_AFTER_HOURS: "no-es-un-numero" }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     expect(outcome.exitCode).toBe(3);
     expect(runCycle).not.toHaveBeenCalled();
   });
 
   it("--dry-run se reconoce ÚNICAMENTE de forma explícita (flag simple): un valor ambiguo detiene la ejecución antes de invocar el ciclo", async () => {
     const runCycle = vi.fn(async () => buildSummary());
-    const outcome = await runAwinSyncCommand(["--dry-run=1"], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect });
+    const outcome = await runAwinSyncCommand(["--dry-run=1"], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     expect(outcome.exitCode).toBe(3);
     expect(runCycle).not.toHaveBeenCalled();
   });
@@ -246,7 +253,7 @@ describe("runAwinSyncCommand: configuración", () => {
         received = options;
         return buildSummary({ dryRun: true });
       },
-      disconnect: noopDisconnect,
+      disconnect: noopDisconnect, persistRun: noopPersistRun,
     };
     await runAwinSyncCommand(["--dry-run"], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), deps);
     expect((received as { dryRun: boolean }).dryRun).toBe(true);
@@ -256,12 +263,12 @@ describe("runAwinSyncCommand: configuración", () => {
 describe("runAwinSyncCommand: invocación del orquestador y códigos de salida", () => {
   it("el orquestador se invoca EXACTAMENTE una vez por ejecución", async () => {
     const runCycle = vi.fn(async () => buildSummary());
-    await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect });
+    await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     expect(runCycle).toHaveBeenCalledTimes(1);
   });
 
   it("un ciclo limpio (sin fallos) termina con exitCode 0", async () => {
-    const deps: AwinSyncCliDeps = { runCycle: async () => buildSummary(), disconnect: noopDisconnect };
+    const deps: AwinSyncCliDeps = { runCycle: async () => buildSummary(), disconnect: noopDisconnect, persistRun: noopPersistRun };
     const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), deps);
     expect(outcome.exitCode).toBe(0);
   });
@@ -271,7 +278,7 @@ describe("runAwinSyncCommand: invocación del orquestador y códigos de salida",
     ["feedsFailed > 0", buildSummary({ feedsFailed: 1 })],
     ["advertisersIncomplete > 0", buildSummary({ advertisersIncomplete: 1 })],
   ] as const)("un resumen con %s termina con exitCode distinto de 0", async (_label, summary) => {
-    const deps: AwinSyncCliDeps = { runCycle: async () => summary, disconnect: noopDisconnect };
+    const deps: AwinSyncCliDeps = { runCycle: async () => summary, disconnect: noopDisconnect, persistRun: noopPersistRun };
     const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), deps);
     expect(outcome.exitCode).not.toBe(0);
   });
@@ -281,7 +288,7 @@ describe("runAwinSyncCommand: invocación del orquestador y códigos de salida",
       runCycle: async () => {
         throw new Error("fallo inesperado simulado");
       },
-      disconnect: noopDisconnect,
+      disconnect: noopDisconnect, persistRun: noopPersistRun,
     };
     const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), deps);
     expect(outcome.exitCode).toBe(1);
@@ -291,7 +298,7 @@ describe("runAwinSyncCommand: invocación del orquestador y códigos de salida",
 describe("runAwinSyncCommand: desconexión de Prisma", () => {
   it("se desconecta EXACTAMENTE una vez tras una ejecución correcta", async () => {
     const disconnect = vi.fn(async () => undefined);
-    await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect });
+    await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect, persistRun: noopPersistRun });
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
@@ -305,6 +312,7 @@ describe("runAwinSyncCommand: desconexión de Prisma", () => {
           throw new Error("fallo simulado");
         },
         disconnect,
+        persistRun: noopPersistRun,
       }
     );
     expect(disconnect).toHaveBeenCalledTimes(1);
@@ -313,7 +321,7 @@ describe("runAwinSyncCommand: desconexión de Prisma", () => {
   it("se desconecta EXACTAMENTE una vez incluso ante un error de CONFIGURACIÓN (antes de invocar el ciclo)", async () => {
     const disconnect = vi.fn(async () => undefined);
     const runCycle = vi.fn(async () => buildSummary());
-    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "" }), { runCycle, disconnect });
+    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "" }), { runCycle, disconnect, persistRun: noopPersistRun });
     expect(outcome.exitCode).toBe(3);
     expect(runCycle).not.toHaveBeenCalled();
     expect(disconnect).toHaveBeenCalledTimes(1);
@@ -325,7 +333,7 @@ describe("runAwinSyncCommand: bloqueo/ejecución concurrente", () => {
     const runCycle = vi.fn(async () => {
       throw new AwinOrchestratorLockBusyError("bloqueo de ciclo ocupado (simulado)");
     });
-    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect });
+    const outcome = await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle, disconnect: noopDisconnect, persistRun: noopPersistRun });
     // Documentamos aquí la decisión exacta de código de salida para este caso.
     expect(outcome.exitCode).toBe(2);
     expect(outcome.exitCode).not.toBe(0);
@@ -338,7 +346,7 @@ describe("runAwinSyncCommand: logs estructurados", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     let events: Array<Record<string, unknown>>;
     try {
-      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect });
+      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect, persistRun: noopPersistRun });
       events = logSpy.mock.calls.map((call) => JSON.parse(call[0] as string));
     } finally {
       logSpy.mockRestore();
@@ -354,7 +362,7 @@ describe("runAwinSyncCommand: logs estructurados", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     let events: Array<Record<string, unknown>>;
     try {
-      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect });
+      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect, persistRun: noopPersistRun });
       events = logSpy.mock.calls.map((call) => JSON.parse(call[0] as string));
     } finally {
       logSpy.mockRestore();
@@ -374,7 +382,7 @@ describe("runAwinSyncCommand: logs estructurados", () => {
           runCycle: async () => {
             throw new Error("fallo inesperado simulado");
           },
-          disconnect: noopDisconnect,
+          disconnect: noopDisconnect, persistRun: noopPersistRun,
         }
       );
       events = logSpy.mock.calls.map((call) => JSON.parse(call[0] as string));
@@ -430,7 +438,7 @@ describe("runAwinSyncCommand: ningún canario secreto aparece en NINGUNA salida 
           runCycle: async () => {
             throw buildCanaryLeakError();
           },
-          disconnect: noopDisconnect,
+          disconnect: noopDisconnect, persistRun: noopPersistRun,
         }
       );
     } catch (error) {
@@ -464,7 +472,7 @@ describe("runAwinSyncCommand: sin acceso de red", () => {
   it("ninguna prueba de este fichero llama a fetch real (el orquestador se sustituye siempre por un doble)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     try {
-      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect });
+      await runAwinSyncCommand([], envWith({ AWIN_DATAFEED_API_KEY: "clave" }), { runCycle: async () => buildSummary(), disconnect: noopDisconnect, persistRun: noopPersistRun });
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
       fetchSpy.mockRestore();

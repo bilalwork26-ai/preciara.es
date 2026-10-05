@@ -113,8 +113,26 @@ export type AwinFeedListEntry = {
 
 export type AwinFeedListResult =
   | { status: "approved"; rowNumber: number; feed: AwinFeedListEntry }
-  /** Fila estructuralmente válida, pero su `Membership Status` no es una de `APPROVED_MEMBERSHIP_STATUSES` ("Joined"/"active") — nunca se selecciona automáticamente, pero tampoco desaparece en silencio: se reporta para que quede constancia de que existe. */
-  | { status: "skipped"; rowNumber: number; reason: "not_joined"; advertiserId: string; feedId: string; membershipStatus: string }
+  /**
+   * Fila estructuralmente válida, pero su `Membership Status` no es una de
+   * `APPROVED_MEMBERSHIP_STATUSES` ("Joined"/"active") — nunca se
+   * selecciona automáticamente, pero tampoco desaparece en silencio: se
+   * reporta para que quede constancia de que existe. `advertiserName` y
+   * `feedName` (ya parseados en este punto, antes de decidir si se
+   * aprueba) se incluyen para que un diagnóstico (p. ej. el panel de
+   * sincronización) pueda mostrar el nombre real de la tienda, no solo su
+   * `advertiserId` numérico — ver `awinOrchestrator.ts`.
+   */
+  | {
+      status: "skipped";
+      rowNumber: number;
+      reason: "not_joined";
+      advertiserId: string;
+      advertiserName: string;
+      feedId: string;
+      feedName: string;
+      membershipStatus: string;
+    }
   | { status: "invalid"; rowNumber: number; code: string; message: string };
 
 const COLUMN_ALIASES = {
@@ -401,7 +419,16 @@ export async function* parseAwinFeedList(input: AsyncIterable<string> | string):
       if (isApprovedMembershipStatus(feed.membershipStatus)) {
         yield { status: "approved", rowNumber, feed };
       } else {
-        yield { status: "skipped", rowNumber, reason: "not_joined", advertiserId: feed.advertiserId, feedId: feed.feedId, membershipStatus: feed.membershipStatus };
+        yield {
+          status: "skipped",
+          rowNumber,
+          reason: "not_joined",
+          advertiserId: feed.advertiserId,
+          advertiserName: feed.advertiserName,
+          feedId: feed.feedId,
+          feedName: feed.feedName,
+          membershipStatus: feed.membershipStatus,
+        };
       }
     } catch (error) {
       if (error instanceof AwinFeedListRowError) {

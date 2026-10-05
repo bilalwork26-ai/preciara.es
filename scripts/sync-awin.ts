@@ -86,6 +86,7 @@ import {
   InvalidDeactivateStaleAfterHoursError,
   readDeactivateStaleAfterHours as readDeactivateStaleAfterHoursShared,
 } from "../src/server/catalogSync/deactivationConfig";
+import { persistAwinSyncCycleRun } from "../src/server/repositories/awinSyncCycles";
 
 export { MAX_DEACTIVATE_STALE_AFTER_HOURS };
 
@@ -172,6 +173,8 @@ export type AwinSyncCliDeps = {
   now?: () => Date;
   /** Por defecto, desconecta el cliente Prisma real (si está configurado). Las pruebas inyectan un doble para comprobar que se llama EXACTAMENTE una vez, tanto en éxito como en fallo, sin tocar ninguna conexión real. */
   disconnect?: () => Promise<void>;
+  /** Por defecto, `persistAwinSyncCycleRun` real (server/repositories/awinSyncCycles.ts). Las pruebas sustituyen esto por un doble simulado: cero escritura real. */
+  persistRun?: typeof persistAwinSyncCycleRun;
 };
 
 export type AwinSyncCliOutcome = { exitCode: number };
@@ -191,6 +194,7 @@ export type AwinSyncCliOutcome = { exitCode: number };
 export async function runAwinSyncCommand(argv: string[], env: Record<string, string | undefined>, deps: AwinSyncCliDeps = {}): Promise<AwinSyncCliOutcome> {
   const runCycle = deps.runCycle ?? runAwinCatalogSyncCycle;
   const now = deps.now ?? (() => new Date());
+  const persistRun = deps.persistRun ?? persistAwinSyncCycleRun;
   const disconnect =
     deps.disconnect ??
     (async () => {
@@ -224,8 +228,11 @@ export async function runAwinSyncCommand(argv: string[], env: Record<string, str
 
     try {
       const summary = await runCycle({ apiKey, feedListUrl, dryRun, deactivateStaleAfterHours });
-      const durationMs = now().getTime() - startedAt.getTime();
+      const finishedAt = now();
+      const durationMs = finishedAt.getTime() - startedAt.getTime();
       const ok = !summary.listFatalError && summary.feedsFailed === 0 && summary.advertisersIncomplete === 0;
+
+      await persistRun(summary, { startedAt, finishedAt });
 
       log({
         level: ok ? "info" : "warn",

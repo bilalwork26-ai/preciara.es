@@ -63,6 +63,9 @@ describe("parseAwinFeedList: anunciante no aprobado excluido", () => {
     expect(approved(results)[0].feed.advertiserId).toBe("100");
     expect(skipped(results)).toHaveLength(1);
     expect(skipped(results)[0].advertiserId).toBe("200");
+    expect(skipped(results)[0].advertiserName).toBe("Pendiente");
+    expect(skipped(results)[0].feedId).toBe("2000");
+    expect(skipped(results)[0].feedName).toBe("Feed B");
     expect(skipped(results)[0].reason).toBe("not_joined");
     expect(skipped(results)[0].membershipStatus).toBe("Not Joined");
   });

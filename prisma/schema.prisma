@@ -307,3 +307,48 @@ model SyncLock {
   @@index([expiresAt])
   @@map("sync_locks")
 }
+
+/// Resumen completo de UN ciclo de `runAwinCatalogSyncCycle`
+/// (awinOrchestrator.ts) — una fila por ciclo, nunca por feed/anunciante
+/// (eso ya lo tiene `ImportRun`, una fila por feed). Pensada para
+/// `/admin/sincronizacion`: antes de esto, el resumen completo del ciclo
+/// (incluidos qué anunciantes se omitieron y por qué — "Not Joined",
+/// idioma distinto del español) solo se imprimía en el log crudo del
+/// proceso de Hostinger (`console.log`, evento `awin_sync_job_done`/
+/// `awin_sync_done`), invisible desde el panel técnico. Nunca contiene la
+/// API key, ninguna URL de feed ni ningún mensaje de error crudo — mismos
+/// campos ya seguros que expone `AwinOrchestratorSummary`
+/// (awinOrchestrator.ts), solo que persistidos.
+model AwinSyncCycleRun {
+  id                             Int       @id @default(autoincrement())
+  startedAt                      DateTime  @default(now())
+  finishedAt                     DateTime?
+  dryRun                         Boolean
+  listFatalError                 Boolean   @default(false)
+  feedsDiscovered                Int       @default(0)
+  feedsApproved                  Int       @default(0)
+  feedsSkippedNotJoined          Int       @default(0)
+  feedsSkippedNonSpanishLanguage Int       @default(0)
+  feedsInvalidInList             Int       @default(0)
+  feedsDuplicate                 Int       @default(0)
+  advertisersProcessed           Int       @default(0)
+  advertisersSuccessful          Int       @default(0)
+  advertisersIncomplete          Int       @default(0)
+  validRowsTotal                 Int       @default(0)
+  invalidRowsTotal               Int       @default(0)
+  feedsCompleted                 Int       @default(0)
+  feedsFailed                    Int       @default(0)
+  feedsEmpty                     Int       @default(0)
+  productsCreatedTotal           Int       @default(0)
+  productsUpdatedTotal           Int       @default(0)
+  offersCreatedTotal             Int       @default(0)
+  offersUpdatedTotal             Int       @default(0)
+  staleDeactivatedTotal          Int       @default(0)
+  /// `AwinOrchestratorSkippedFeed[]` — feeds excluidos ANTES de procesarse (Not Joined / idioma no español), con advertiserId/advertiserName/feedId/feedName/motivo/detalle. Nunca secretos.
+  skippedFeeds                   Json
+  /// `AwinOrchestratorAdvertiserOutcome[]` — resumen por anunciante realmente procesado (feedCount, completados/fallidos/vacíos, complete, desactivación). Nunca secretos.
+  advertiserOutcomes             Json
+
+  @@index([startedAt])
+  @@map("awin_sync_cycle_runs")
+}

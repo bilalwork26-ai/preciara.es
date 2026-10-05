@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { getSyncSourcesOverview, getSyncImportRunsPage } from "@/server/repositories/syncOverview";
+import { getRecentAwinSyncCycleRuns } from "@/server/repositories/awinSyncCycles";
 import { Badge } from "../_components/StatCard";
 import type { OfferSource } from "@/generated/prisma";
+
+const SKIPPED_REASON_LABEL: Record<"NOT_JOINED" | "NON_SPANISH_LANGUAGE", string> = {
+  NOT_JOINED: "Sin contrato (Not Joined)",
+  NON_SPANISH_LANGUAGE: "Idioma no español",
+};
 
 export const metadata = { title: "Sincronización — Panel técnico", robots: { index: false, follow: false } };
 
@@ -28,7 +34,11 @@ export default async function AdminSyncPage({ searchParams }: PageProps<"/admin/
   const rawPage = Array.isArray(params.page) ? params.page[0] : params.page;
   const page = Math.max(1, Number(rawPage) || 1);
 
-  const [overview, runsPage] = await Promise.all([getSyncSourcesOverview(), getSyncImportRunsPage({ page })]);
+  const [overview, runsPage, awinCycleRuns] = await Promise.all([
+    getSyncSourcesOverview(),
+    getSyncImportRunsPage({ page }),
+    getRecentAwinSyncCycleRuns(5),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -113,6 +123,93 @@ export default async function AdminSyncPage({ searchParams }: PageProps<"/admin/
           ))}
         </section>
       )}
+
+      <section>
+        <div>
+          <h2 className="font-serif text-lg font-semibold text-navy-900">Diagnóstico de ciclos Awin</h2>
+          <p className="mt-1 text-sm text-navy-500">
+            Por qué un anunciante no aparece: omitido antes de procesar (sin contrato o idioma no español) o
+            procesado pero sin productos válidos en su feed.
+          </p>
+        </div>
+
+        {!awinCycleRuns ? (
+          <p className="mt-3 text-sm text-navy-500">Base de datos no disponible.</p>
+        ) : awinCycleRuns.length === 0 ? (
+          <p className="mt-3 text-sm text-navy-500">
+            Todavía no hay ciclos de Awin registrados con este diagnóstico detallado.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-4">
+            {awinCycleRuns.map((run) => {
+              const emptyAdvertisers = run.advertiserOutcomes.filter(
+                (advertiser) => advertiser.validRowsTotal === 0 || advertiser.feedsEmpty > 0
+              );
+              return (
+                <div key={run.id} className="rounded-xl border border-border bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-navy-900">{dateFormatter.format(run.startedAt)}</span>
+                      {run.dryRun && <Badge tone="neutral">Simulación (dry-run)</Badge>}
+                      {run.listFatalError && <Badge tone="bad">Error al listar feeds</Badge>}
+                    </div>
+                    <span className="text-xs text-navy-300">
+                      {run.feedsDiscovered} feeds descubiertos · {run.feedsApproved} aprobados ·{" "}
+                      {run.feedsSkippedNotJoined} sin contrato · {run.feedsSkippedNonSpanishLanguage} idioma no
+                      español
+                    </span>
+                  </div>
+
+                  {run.skippedFeeds.length > 0 && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-300">
+                        Anunciantes omitidos antes de procesar ({run.skippedFeeds.length})
+                      </h3>
+                      <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+                        {run.skippedFeeds.map((feed, index) => (
+                          <li key={`${feed.advertiserId}-${feed.feedId}-${index}`} className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-navy-700">{feed.advertiserName}</span>
+                            <span className="text-xs text-navy-300">({feed.feedName})</span>
+                            <Badge tone={feed.reason === "NOT_JOINED" ? "bad" : "warn"}>
+                              {SKIPPED_REASON_LABEL[feed.reason]}
+                            </Badge>
+                            <span className="text-xs text-navy-300">{feed.detail}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {emptyAdvertisers.length > 0 && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-300">
+                        Anunciantes procesados sin productos válidos ({emptyAdvertisers.length})
+                      </h3>
+                      <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+                        {emptyAdvertisers.map((advertiser) => (
+                          <li key={advertiser.advertiserId} className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-navy-700">{advertiser.merchantSlug}</span>
+                            <Badge tone="warn">0 productos válidos</Badge>
+                            <span className="text-xs text-navy-300">
+                              {advertiser.feedCount} feed(s) · {advertiser.feedsEmpty} vacío(s) · {advertiser.invalidRowsTotal} filas inválidas
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {run.skippedFeeds.length === 0 && emptyAdvertisers.length === 0 && (
+                    <p className="mt-3 border-t border-border pt-3 text-xs text-navy-300">
+                      Ningún anunciante omitido ni sin productos en este ciclo.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <section>
         <div className="flex items-center justify-between">
