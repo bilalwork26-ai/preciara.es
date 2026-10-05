@@ -4,6 +4,7 @@ import {
   availableCategoryOptions,
   availableMerchantOptions,
   bestOfferMerchantId,
+  expandSearchSynonyms,
   filterOfertas,
   normalizeForSearch,
 } from "./ofertasFilters";
@@ -137,6 +138,106 @@ describe("filterOfertas", () => {
     it("una query que no coincide con nada devuelve lista vacía, nunca lanza", () => {
       expect(filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "monopatín" })).toEqual([]);
     });
+  });
+
+  describe("búsqueda conceptual: sinónimos de subcategoría (ver expandSearchSynonyms)", () => {
+    const botaFutbol = fakeProduct({
+      id: "p-bota",
+      name: "Bota de fútbol Nike césped artificial",
+      categoryId: "deporte",
+      offers: [fakeOffer({ merchantId: "adidas-es", price: 45 })],
+    });
+    const sudadera = fakeProduct({
+      id: "p-sudadera",
+      name: "Sudadera con capucha",
+      categoryId: "moda",
+      offers: [fakeOffer({ merchantId: "adidas-es", price: 30 })],
+    });
+    const ventilador = fakeProduct({
+      id: "p-ventilador",
+      name: "Ventilador de torre silencioso",
+      categoryId: "hogar",
+      offers: [fakeOffer({ merchantId: "trotec", price: 60 })],
+    });
+    const products = [botaFutbol, sudadera, ventilador];
+
+    it("'zapatillas' encuentra 'Bota de fútbol' (misma subcategoría 'Zapatillas y calzado'), no solo coincidencia literal", () => {
+      const result = filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "zapatillas" });
+      expect(result.map((p) => p.slug)).toEqual(["p-bota"]);
+    });
+
+    it("el nombre de la subcategoría en sí ('calzado') también encuentra sus productos", () => {
+      const result = filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "calzado" });
+      expect(result.map((p) => p.slug)).toEqual(["p-bota"]);
+    });
+
+    it("'climatizacion' (otra subcategoría, de Hogar) encuentra 'Ventilador', aunque el nombre no contenga esa palabra", () => {
+      const result = filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "climatizacion" });
+      expect(result.map((p) => p.slug)).toEqual(["p-ventilador"]);
+    });
+
+    it("sigue encontrando por coincidencia literal cuando la query no activa ninguna regla de subcategoría (p. ej. 'capucha', que no es palabra clave de ninguna)", () => {
+      expect(expandSearchSynonyms(normalizeForSearch("capucha"))).toEqual([]);
+      const result = filterOfertas(products, { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "capucha" });
+      expect(result.map((p) => p.slug)).toEqual(["p-sudadera"]);
+    });
+
+    it("límite conocido: un modelo sin ninguna palabra de categoría en su nombre ('Adidas Ultraboost') no se encuentra buscando 'zapatillas' — no hay ningún dato de subcategoría/modelo guardado para enlazarlo", () => {
+      const ultraboost = fakeProduct({
+        id: "p-ultraboost",
+        name: "Adidas Ultraboost 22",
+        categoryId: "deporte",
+        offers: [fakeOffer({ merchantId: "adidas-es", price: 150 })],
+      });
+      const result = filterOfertas([...products, ultraboost], { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "zapatillas" });
+      expect(result.map((p) => p.slug)).toEqual(["p-bota"]);
+    });
+  });
+
+  describe("búsqueda multicampo: también por descripción, no solo por nombre", () => {
+    it("encuentra un producto cuyo nombre no contiene la query pero su descripción sí", () => {
+      const withDescription = fakeProduct({
+        id: "p-desc",
+        name: "Modelo XR-200",
+        description: "Altavoz bluetooth portátil resistente al agua",
+        categoryId: "tecnologia",
+        offers: [fakeOffer({ merchantId: "adidas-es", price: 25 })],
+      });
+      const result = filterOfertas([withDescription], { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "altavoz" });
+      expect(result.map((p) => p.slug)).toEqual(["p-desc"]);
+    });
+
+    it("sin descripción (null/ausente), no lanza y simplemente no aporta coincidencias extra", () => {
+      const withoutDescription = fakeProduct({
+        id: "p-sin-desc",
+        name: "Modelo YZ-100",
+        categoryId: "tecnologia",
+        offers: [fakeOffer({ merchantId: "adidas-es", price: 25 })],
+      });
+      expect(() =>
+        filterOfertas([withoutDescription], { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "altavoz" })
+      ).not.toThrow();
+      expect(
+        filterOfertas([withoutDescription], { categoryId: ALL_FILTER_VALUE, merchantId: ALL_FILTER_VALUE, query: "altavoz" })
+      ).toEqual([]);
+    });
+  });
+});
+
+describe("expandSearchSynonyms", () => {
+  it("query vacía no expande a nada", () => {
+    expect(expandSearchSynonyms("")).toEqual([]);
+  });
+
+  it("una query que no reconoce ninguna subcategoría no expande a nada", () => {
+    expect(expandSearchSynonyms("bateria")).toEqual([]);
+  });
+
+  it("'zapatillas' expande a todas las palabras clave de esa subcategoría (incluye 'bota', 'sneaker'...)", () => {
+    const terms = expandSearchSynonyms(normalizeForSearch("zapatillas"));
+    expect(terms).toEqual(
+      expect.arrayContaining(["zapatilla", "zapato", "calzado", "sandalia", "chancla", "bota", "sneaker"])
+    );
   });
 });
 

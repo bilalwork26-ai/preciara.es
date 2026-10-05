@@ -67,6 +67,16 @@ export interface Product {
   imageUrl?: string | null;
   /** Marca del producto (feed del proveedor), si existe. Ver `formatProductDisplayName` en src/lib/format.ts. */
   brand?: string | null;
+  /**
+   * Descripción larga del producto, si existe. Columna presente en el
+   * esquema desde el principio, pero HOY ningún importador/sincronización
+   * la escribe (ni Awin ni el CSV histórico la leen todavía) — en datos
+   * reales siempre llega `null`/ausente. Se incluye en el tipo igualmente
+   * para que el buscador de /supergangas (ver ofertasFilters.ts) ya la
+   * tenga en cuenta sin más cambios el día que algún importador empiece a
+   * rellenarla.
+   */
+  description?: string | null;
   priceHistory: PricePoint[];
   offers: Offer[];
 }

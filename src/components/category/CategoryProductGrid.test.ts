@@ -37,4 +37,14 @@ describe("CategoryProductGrid.tsx", () => {
     expect(gridSource).toContain("CategoryProductCard");
     expect(gridSource).not.toMatch(/<DiscountBadge/); // eso vive en CategoryProductCard, no aquí
   });
+
+  it("pagina en cliente ('Mostrar más') sobre el array completo recibido por props, tanto con pestañas de subcategoría como sin ellas — desde que /categoria/[slug] sirve el catálogo completo, products puede ser mucho más grande que antes", () => {
+    expect(gridSource).toContain("visibleCount");
+    expect(gridSource).toContain("Mostrar más");
+    expect(gridSource).not.toMatch(/fetch\(|router\.push|useRouter/);
+  });
+
+  it("nunca ajusta la paginación dentro de un useEffect (antipatrón de cascada de renders) — se ajusta en el cuerpo del render, mismo patrón que OfertasCatalog.tsx", () => {
+    expect(gridSource).not.toContain("useEffect");
+  });
 });

@@ -102,6 +102,18 @@ export function getSubcategoryTaxonomy(categorySlug: string): readonly Subcatego
   return TAXONOMY_BY_CATEGORY_SLUG[categorySlug] ?? null;
 }
 
+/**
+ * Todas las reglas de subcategoría definidas, de cualquier taxonomía,
+ * sin duplicar `MODA_DEPORTE_TAXONOMY` (referenciada dos veces en
+ * `TAXONOMY_BY_CATEGORY_SLUG`, para moda Y deporte). Pensado para
+ * reutilizar este mismo vocabulario (etiquetas + palabras clave) como
+ * tabla de sinónimos del buscador de /supergangas (ver
+ * `expandSearchSynonyms` en `src/lib/ofertasFilters.ts`), en vez de
+ * mantener un diccionario de equivalencias aparte y desincronizado de
+ * las pestañas de subcategoría reales.
+ */
+export const ALL_SUBCATEGORY_RULES: readonly SubcategoryRule[] = [...MODA_DEPORTE_TAXONOMY, ...HOGAR_TAXONOMY];
+
 /** Misma normalización que `categoryMapping.ts` (quita diacríticos, minúsculas) — aplicada aquí solo para comparar. */
 function normalize(text: string): string {
   return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();

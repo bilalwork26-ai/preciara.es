@@ -109,6 +109,53 @@ describe.skipIf(!process.env.DATABASE_URL)("getCategoryDetail (integración, BD 
     }
   });
 
+  it("una categoría real con un producto SIN ninguna oferta activa también se sirve desde la BD: catálogo completo, no solo lo que tiene oferta", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PREFIX}-sin-oferta-cat`, name: "Categoría sin oferta" } });
+    await prisma!.product.create({
+      data: { slug: `${PREFIX}-sin-oferta-producto`, name: "Producto sin ninguna oferta activa", categoryId: category.id },
+    });
+
+    const result = await getCategoryDetail(`${PREFIX}-sin-oferta-cat`);
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.source).toBe("database");
+      expect(result.products).toHaveLength(1);
+      expect(result.products[0].offers).toEqual([]);
+    }
+  });
+
+  it("en una misma categoría, un producto CON oferta y otro SIN ninguna conviven en el resultado, el primero ordenado antes", async () => {
+    const category = await prisma!.category.create({ data: { slug: `${PREFIX}-mixta-cat`, name: "Categoría mixta" } });
+    const withOffer = await prisma!.product.create({
+      data: { slug: `${PREFIX}-mixta-con-oferta`, name: "Mixta con oferta", categoryId: category.id },
+    });
+    await prisma!.offer.create({
+      data: {
+        productId: withOffer.id,
+        merchantId,
+        currentPrice: 10,
+        // Con descuento real (no solo "con oferta"): así el orden esperado
+        // más abajo depende del criterio de negocio real (descuento >
+        // sin oferta, ver getRankedProductIds), no de qué producto se
+        // creó una fracción de segundo antes en el test.
+        previousPrice: 20,
+        productUrl: "https://example.invalid/mixta",
+        availability: "IN_STOCK",
+        lastCheckedAt: new Date(),
+        isActive: true,
+      },
+    });
+    await prisma!.product.create({
+      data: { slug: `${PREFIX}-mixta-sin-oferta`, name: "Mixta sin oferta", categoryId: category.id },
+    });
+
+    const result = await getCategoryDetail(`${PREFIX}-mixta-cat`);
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.products.map((p) => p.name)).toEqual(["Mixta con oferta", "Mixta sin oferta"]);
+    }
+  });
+
   it("varias tallas del mismo modelo en la categoría nunca salen como tarjetas repetidas", async () => {
     const category = await prisma!.category.create({ data: { slug: `${PREFIX}-variantes-cat`, name: "Categoría variantes" } });
     for (const size of ["XS", "S", "M"]) {

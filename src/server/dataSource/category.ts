@@ -8,35 +8,63 @@ import { demoCategories } from "@/data/demo/categories";
 import { demoProducts } from "@/data/demo/products";
 import { demoMerchants } from "@/data/demo/merchants";
 import type { Category, Merchant, Product } from "@/types";
-import { getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
+import { getActiveCategories, getActiveCategoriesWithOfferCounts } from "@/server/repositories/categories";
 import { searchActiveProducts } from "@/server/repositories/products";
 import { collapseProductVariants } from "./home";
 import { extractMerchants, toLegacyCategory, toLegacyProduct } from "./transform";
 
 /**
  * Tope de productos por categoría. A diferencia de `/supergangas`
- * (`selectAllOfertas`), esta página NUNCA exige descuento activo: muestra
- * el catálogo completo de la categoría, con o sin descuento en ese
- * momento (badge de % solo en los que sí lo tengan, ver
- * `CategoryProductCard`) — `searchActiveProducts`/`getRankedProductIds`
- * (server/repositories/products.ts) solo exigen que el producto tenga
- * alguna oferta activa (para poder mostrar un precio), nunca que esa
- * oferta traiga descuento; el ranking solo ordena los que sí tienen
- * descuento primero, nunca excluye a los que no. Este límite es un tope
- * de cantidad, no de descuento.
+ * (`selectAllOfertas`), esta página NUNCA exige descuento activo NI
+ * siquiera que exista una oferta activa en absoluto: muestra el
+ * catálogo COMPLETO de la categoría tal cual está en la tabla `Product`,
+ * con o sin oferta/descuento en este momento (badge de % solo en los que
+ * sí tienen descuento, precio/tienda solo en los que sí tienen alguna
+ * oferta activa — ver `CategoryProductCard`). Se consigue pasando
+ * `requireActiveOffer: false` a `searchActiveProducts`
+ * (server/repositories/products.ts): ese flag cambia el INNER JOIN con
+ * `offers` por un LEFT JOIN, así que un producto sin ninguna oferta
+ * activa ahora mismo también entra (con `offers: []`) — ver el
+ * comentario de `requireActiveOffer` en `getRankedProductIds` para el
+ * motivo de no excluirlo.
+ *
+ * Tope bastante más alto que el de antes (60): con el filtro de oferta ya
+ * quitado, una categoría puede tener muchos más productos en total que
+ * antes con oferta activa — sigue siendo un tope técnico de seguridad
+ * (una consulta nunca debe ser literalmente sin límite), no un recorte de
+ * catálogo a propósito (mismo criterio que `OFERTAS_PAGE_POOL_SIZE` en
+ * home.ts). `CategoryProductGrid` pagina en cliente sobre el resultado
+ * completo (ver "Mostrar más" en ese componente), así que un tope alto
+ * aquí no vuelca de golpe miles de tarjetas al DOM.
  */
-export const CATEGORY_PRODUCTS_LIMIT = 60;
+export const CATEGORY_PRODUCTS_LIMIT = 2000;
 
 export type CategoryDetailResult =
   | { status: "found"; source: "database" | "demo"; category: Category; products: Product[]; merchants: Merchant[] }
   | { status: "not-found" };
 
 export async function getCategoryDetail(slug: string): Promise<CategoryDetailResult> {
-  const dbCategories = await getActiveCategoriesWithOfferCounts();
+  // `getActiveCategories` (nunca `getActiveCategoriesWithOfferCounts` aquí
+  // a propósito): esa otra función exige que la categoría tenga al menos
+  // un producto CON oferta activa, el mismo requisito que ya se quitó más
+  // abajo de `searchActiveProducts` — con ella, una categoría real cuyos
+  // productos aún no tienen ninguna oferta activa (pero sí existen en la
+  // tabla Product) seguiría dando 404 aunque el catálogo completo ya la
+  // sirviera sin problema. `getActiveCategoriesWithOfferCounts` se sigue
+  // usando tal cual en `getCategoriesIndex` (más abajo) y en sitemap.ts:
+  // ahí sí es la curación correcta (categorías con algún chollo real para
+  // destacar en navegación), una decisión aparte de "¿resuelve esta URL?".
+  const dbCategories = await getActiveCategories();
   const dbMatch = dbCategories?.find((c) => c.slug === slug);
 
   if (dbMatch) {
-    const productRows = await searchActiveProducts({ categorySlug: slug, limit: CATEGORY_PRODUCTS_LIMIT });
+    const productRows = await searchActiveProducts({
+      categorySlug: slug,
+      limit: CATEGORY_PRODUCTS_LIMIT,
+      // Catálogo completo de la categoría, tenga o no oferta activa ahora
+      // mismo — ver el comentario de CATEGORY_PRODUCTS_LIMIT arriba.
+      requireActiveOffer: false,
+    });
     if (productRows && productRows.length > 0) {
       return {
         status: "found",

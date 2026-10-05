@@ -5,6 +5,7 @@
  * solo la envuelve en `useState`/JSX.
  */
 import type { Merchant, Product } from "@/types";
+import { ALL_SUBCATEGORY_RULES } from "./productType";
 
 /** Valor del filtro que significa "sin filtrar" (las dos categorías: categoría y tienda). */
 export const ALL_FILTER_VALUE = "todas";
@@ -35,20 +36,70 @@ export function bestOfferMerchantId(product: Product): string | null {
 }
 
 /**
- * Filtra `products` por categoría, tienda y/o texto libre (nombre del
- * producto). `ALL_FILTER_VALUE` en categoría/tienda, o `query` vacía (tras
- * recortar espacios), significa "no filtrar por ese criterio" — los tres
- * filtros se combinan con Y, nunca con O.
+ * Términos adicionales a considerar coincidencia cuando `normalizedQuery`
+ * reconoce una subcategoría conocida de `productType.ts` (misma
+ * taxonomía que las pestañas de /categoria/[slug], reutilizada aquí como
+ * vocabulario de sinónimos — ver el comentario de `ALL_SUBCATEGORY_RULES`):
+ * una regla "se activa" si la query coincide (en cualquier dirección, para
+ * cubrir singular/plural: "zapatillas" ⊃ "zapatilla") con su etiqueta o con
+ * alguna de sus palabras clave, y entonces TODAS sus palabras clave pasan a
+ * contar como coincidencia válida — así "zapatillas" también encuentra
+ * "Bota de fútbol" (ambas en la regla "Zapatillas y calzado"), no solo los
+ * productos que contienen literalmente "zapatillas".
+ *
+ * Límite real, no resuelto aquí: un modelo sin ninguna palabra de categoría
+ * en su propio nombre (p. ej. "Adidas Ultraboost") no se puede enlazar con
+ * "zapatillas" por este camino — haría falta el texto de
+ * categoría/subcategoría que ya trae el feed del comercio (hoy
+ * `categoryMapping.ts` lo reduce a la categoría principal de Preciara y
+ * descarta el resto) o un diccionario de modelos mantenido a mano; ninguno
+ * de los dos existe todavía.
+ */
+export function expandSearchSynonyms(normalizedQuery: string): string[] {
+  if (!normalizedQuery) return [];
+  const terms = new Set<string>();
+  for (const rule of ALL_SUBCATEGORY_RULES) {
+    const normalizedLabel = normalizeForSearch(rule.label);
+    const matchesLabel = normalizedLabel.includes(normalizedQuery) || normalizedQuery.includes(normalizedLabel);
+    const matchesKeyword = (rule.keywords ?? []).some((keyword) => {
+      const normalizedKeyword = normalizeForSearch(keyword);
+      return normalizedKeyword.includes(normalizedQuery) || normalizedQuery.includes(normalizedKeyword);
+    });
+    if (matchesLabel || matchesKeyword) {
+      for (const keyword of rule.keywords ?? []) terms.add(normalizeForSearch(keyword));
+    }
+  }
+  return [...terms];
+}
+
+/**
+ * Filtra `products` por categoría, tienda y/o texto libre. `ALL_FILTER_VALUE`
+ * en categoría/tienda, o `query` vacía (tras recortar espacios), significa
+ * "no filtrar por ese criterio" — los tres filtros se combinan con Y, nunca
+ * con O.
+ *
+ * La búsqueda por texto es multicampo (nombre + descripción, cuando
+ * exista — ver el comentario de `description` en `src/types/index.ts`) y
+ * conceptual: además de la coincidencia literal, expande la query a
+ * palabras equivalentes de la misma subcategoría (ver
+ * `expandSearchSynonyms`), así "zapatillas" encuentra también "Bota de
+ * fútbol" o "Sneakers urbanas", no solo el texto exacto.
  */
 export function filterOfertas(
   products: readonly Product[],
   { categoryId, merchantId, query = "" }: { categoryId: string; merchantId: string; query?: string }
 ): Product[] {
   const normalizedQuery = normalizeForSearch(query.trim());
+  const synonymTerms = expandSearchSynonyms(normalizedQuery);
   return products.filter((product) => {
     if (categoryId !== ALL_FILTER_VALUE && product.categoryId !== categoryId) return false;
     if (merchantId !== ALL_FILTER_VALUE && bestOfferMerchantId(product) !== merchantId) return false;
-    if (normalizedQuery && !normalizeForSearch(product.name).includes(normalizedQuery)) return false;
+    if (normalizedQuery) {
+      const searchableText = normalizeForSearch(`${product.name} ${product.description ?? ""}`);
+      const matchesDirectly = searchableText.includes(normalizedQuery);
+      const matchesSynonym = synonymTerms.some((term) => searchableText.includes(term));
+      if (!matchesDirectly && !matchesSynonym) return false;
+    }
     return true;
   });
 }

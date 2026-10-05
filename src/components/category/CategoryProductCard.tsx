@@ -24,11 +24,8 @@ export function CategoryProductCard({ product, merchants }: { product: Product; 
   // bestOfferDiscount (src/lib/format.ts) y ProductDealCard.
   const discount = bestOfferDiscount(product.offers);
 
-  return (
-    <Link
-      href={`/producto/${product.slug}`}
-      className="group flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm transition-colors hover:border-teal-600 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
-    >
+  const cardContent = (
+    <>
       <div className="relative shrink-0 overflow-hidden rounded-xl">
         <ProductGlyph
           icon={product.icon}
@@ -44,7 +41,7 @@ export function CategoryProductCard({ product, merchants }: { product: Product; 
       </div>
       <div className="min-w-0 w-full">
         <p className="line-clamp-2 text-xs font-medium text-navy-900 sm:truncate sm:text-sm">{displayName}</p>
-        {best && (
+        {best ? (
           <>
             <p className="mt-0.5 flex flex-wrap items-baseline justify-center gap-x-1.5 sm:justify-start">
               <span className="text-sm font-semibold text-navy-900 sm:text-base">{formatPrice(best.price)}</span>
@@ -65,8 +62,30 @@ export function CategoryProductCard({ product, merchants }: { product: Product; 
               Mejor precio en <span className="font-medium text-navy-500">{merchant?.name}</span>
             </div>
           </>
+        ) : (
+          // Catálogo completo de la categoría (ver getCategoryDetail): un
+          // producto puede no tener ninguna oferta activa ahora mismo. Sin
+          // precio/tienda que mostrar, la ficha de producto tampoco lo
+          // serviría (getProductDetail la trata como 404, mismo criterio
+          // que el sitemap — nunca una ficha sin ninguna oferta real) así
+          // que esta tarjeta NUNCA enlaza en ese caso (ver más abajo):
+          // enlazar llevaría a un 404 real.
+          <p className="mt-0.5 text-xs text-navy-300">Sin oferta activa ahora mismo</p>
         )}
       </div>
+    </>
+  );
+
+  const cardClassName =
+    "flex h-full flex-col items-center gap-2 rounded-2xl border border-border bg-white p-2.5 text-center shadow-sm sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left";
+
+  if (!best) {
+    return <div className={cardClassName}>{cardContent}</div>;
+  }
+
+  return (
+    <Link href={`/producto/${product.slug}`} className={`group transition-colors hover:border-teal-600 ${cardClassName}`}>
+      {cardContent}
     </Link>
   );
 }
