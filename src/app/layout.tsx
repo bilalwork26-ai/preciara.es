@@ -66,7 +66,13 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     images: [DEFAULT_OG_IMAGE_PATH],
   },
-  ...(googleSiteVerification ? { verification: { google: googleSiteVerification } } : {}),
+  verification: {
+    ...(googleSiteVerification ? { google: googleSiteVerification } : {}),
+    // Verificación de propiedad de dominio para Admitad/Mitgo — código fijo
+    // (no es un secreto: una etiqueta meta de verificación de propiedad es
+    // pública por diseño en cualquier verificador de este tipo).
+    other: { "mitgo-verification": ["f98a525a-c971-45ab-9817-7226c8490247"] },
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
