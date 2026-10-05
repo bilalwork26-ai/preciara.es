@@ -53,19 +53,61 @@ export type ProductWithOffers = Prisma.ProductGetPayload<typeof productWithOffer
  * sintaxis SQL real (`?` literal donde debía ir el fragmento vacío), lo
  * que hacía fallar SIEMPRE esta consulta y caer al catálogo de
  * demostración — la causa real, no una caché de Next.js, del catálogo
- * "viejo" que se seguía viendo en producción tras cada despliegue.
+ * "viejo" que se seguía viendo en producción tras cada despliegue. Por el
+ * mismo motivo, `requireActiveOffer` (abajo) tampoco compone un fragmento
+ * `INNER`/`LEFT JOIN` condicional dentro de una sola plantilla: son dos
+ * consultas completas, literales, elegidas con un `if` normal de TypeScript.
+ *
+ * `requireActiveOffer` decide si un producto SIN ninguna oferta activa
+ * ahora mismo entra o no en el resultado:
+ *   - `true` (por defecto — `/buscar` y el resto de usos): INNER JOIN con
+ *     `offers`, igual que siempre. Sin oferta activa, no hay precio que
+ *     mostrar ni tienda a la que enlazar, así que el producto no aparece.
+ *   - `false` (solo `/categoria/[slug]`, ver `getCategoryDetail`): LEFT
+ *     JOIN — el catálogo COMPLETO de la categoría, tenga o no oferta
+ *     activa ahora mismo. Los que sí tienen descuento siguen ordenados
+ *     primero (mismo criterio de abajo); el resto, por actualización más
+ *     reciente. Un producto sin ninguna oferta llega con `offers: []` tras
+ *     `hydrateRankedProducts` (mismo `include` de siempre) — la UI ya sabe
+ *     tratar ese caso sin precio/tienda que mostrar (ver `CategoryProductCard`).
  */
 async function getRankedProductIds(
   db: PrismaClient,
-  { limit, categoryId, query }: { limit: number; categoryId?: number; query?: string }
+  {
+    limit,
+    categoryId,
+    query,
+    requireActiveOffer = true,
+  }: { limit: number; categoryId?: number; query?: string; requireActiveOffer?: boolean }
 ): Promise<number[]> {
   const categoryFilter = categoryId ?? null;
   const nameFilter = query ? `%${query}%` : null;
+
+  if (requireActiveOffer) {
+    const rows = await db.$queryRaw<{ id: number }[]>`
+      SELECT p.id
+      FROM products p
+      INNER JOIN offers o ON o.productId = p.id AND o.isActive = true AND o.isDemo = false
+      INNER JOIN merchants m ON m.id = o.merchantId AND m.isActive = true AND m.isDemo = false
+      WHERE p.isActive = true AND p.isDemo = false
+        AND (${categoryFilter} IS NULL OR p.categoryId = ${categoryFilter})
+        AND (${nameFilter} IS NULL OR p.name LIKE ${nameFilter})
+      GROUP BY p.id
+      ORDER BY
+        MAX(CASE WHEN o.previousPrice IS NOT NULL AND o.previousPrice > o.currentPrice THEN 1 ELSE 0 END) DESC,
+        MAX(CASE WHEN o.previousPrice IS NOT NULL AND o.previousPrice > o.currentPrice
+                 THEN (o.previousPrice - o.currentPrice) / o.previousPrice ELSE 0 END) DESC,
+        p.updatedAt DESC
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => row.id);
+  }
+
   const rows = await db.$queryRaw<{ id: number }[]>`
     SELECT p.id
     FROM products p
-    INNER JOIN offers o ON o.productId = p.id AND o.isActive = true AND o.isDemo = false
-    INNER JOIN merchants m ON m.id = o.merchantId AND m.isActive = true AND m.isDemo = false
+    LEFT JOIN offers o ON o.productId = p.id AND o.isActive = true AND o.isDemo = false
+    LEFT JOIN merchants m ON m.id = o.merchantId AND m.isActive = true AND m.isDemo = false
     WHERE p.isActive = true AND p.isDemo = false
       AND (${categoryFilter} IS NULL OR p.categoryId = ${categoryFilter})
       AND (${nameFilter} IS NULL OR p.name LIKE ${nameFilter})
@@ -115,13 +157,25 @@ export async function getProductBySlug(slug: string): Promise<ProductWithOffers 
   return result.data ?? undefined;
 }
 
-/** Búsqueda simple por nombre (contiene, insensible a mayúsculas) y/o categoría, para /buscar y /categoria/[slug]. Mismo orden de "mejores chollos primero" que `getActiveProductsWithOffers` (ver `getRankedProductIds`). */
+/**
+ * Búsqueda simple por nombre (contiene, insensible a mayúsculas) y/o
+ * categoría, para /buscar y /categoria/[slug]. Mismo orden de "mejores
+ * chollos primero" que `getActiveProductsWithOffers` (ver
+ * `getRankedProductIds`).
+ *
+ * `requireActiveOffer` (por defecto `true`, el comportamiento de siempre
+ * para /buscar): `false` también incluye productos sin ninguna oferta
+ * activa ahora mismo — usado SOLO por `getCategoryDetail` para servir el
+ * catálogo completo de una categoría, no solo lo que tiene oferta. Ver el
+ * comentario del mismo nombre en `getRankedProductIds`.
+ */
 export async function searchActiveProducts(params: {
   query?: string;
   categorySlug?: string;
   limit?: number;
+  requireActiveOffer?: boolean;
 }): Promise<ProductWithOffers[] | null> {
-  const { query, categorySlug, limit = 60 } = params;
+  const { query, categorySlug, limit = 60, requireActiveOffer = true } = params;
   const result = await withDb(async (db) => {
     let categoryId: number | undefined;
     if (categorySlug) {
@@ -129,7 +183,7 @@ export async function searchActiveProducts(params: {
       if (!category) return [];
       categoryId = category.id;
     }
-    const ids = await getRankedProductIds(db, { limit, categoryId, query });
+    const ids = await getRankedProductIds(db, { limit, categoryId, query, requireActiveOffer });
     return hydrateRankedProducts(db, ids);
   });
   return result.ok ? result.data : null;

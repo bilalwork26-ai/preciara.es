@@ -193,6 +193,39 @@ describe.skipIf(!process.env.DATABASE_URL)("repositorios de productos: orden glo
     ]);
   });
 
+  it("por defecto (requireActiveOffer: true, el de siempre), un producto sin ninguna oferta activa NUNCA aparece", async () => {
+    const product = await prisma!.product.create({
+      data: { slug: `${RANK_PREFIX}-sin-ninguna-oferta`, name: "Producto sin ninguna oferta", categoryId, isDemo: false },
+    });
+    const rows = await searchActiveProducts({ categorySlug: `${RANK_PREFIX}-cat`, limit: 200 });
+    expect(rows).not.toBeNull();
+    expect(rows!.some((p) => p.id === product.id)).toBe(false);
+  });
+
+  it("con requireActiveOffer: false (catálogo completo de /categoria/[slug]), un producto sin ninguna oferta SÍ aparece, con offers: []", async () => {
+    const product = await prisma!.product.create({
+      data: { slug: `${RANK_PREFIX}-catalogo-completo`, name: "Producto solo en el catálogo completo", categoryId, isDemo: false },
+    });
+    const rows = await searchActiveProducts({ categorySlug: `${RANK_PREFIX}-cat`, limit: 200, requireActiveOffer: false });
+    expect(rows).not.toBeNull();
+    const found = rows!.find((p) => p.id === product.id);
+    expect(found).toBeDefined();
+    expect(found!.offers).toEqual([]);
+  });
+
+  it("con requireActiveOffer: false, los productos CON descuento siguen ordenados primero que los que no tienen ninguna oferta", async () => {
+    const noOffer = await prisma!.product.create({
+      data: { slug: `${RANK_PREFIX}-orden-sin-oferta`, name: "Orden sin oferta", categoryId, isDemo: false, updatedAt: new Date("2026-06-01T00:00:00Z") },
+    });
+    const rows = await searchActiveProducts({ categorySlug: `${RANK_PREFIX}-cat`, limit: 200, requireActiveOffer: false });
+    expect(rows).not.toBeNull();
+    const names = rows!.filter((p) => p.slug.startsWith(RANK_PREFIX) && p.slug !== noOffer.slug).map((p) => p.name);
+    const noOfferIndex = rows!.findIndex((p) => p.id === noOffer.id);
+    const bigDiscountIndex = rows!.findIndex((p) => p.name === "Descuento grande");
+    expect(bigDiscountIndex).toBeLessThan(noOfferIndex);
+    expect(names).toContain("Descuento grande");
+  });
+
   it("un producto con varias ofertas usa la de MAYOR descuento entre todas para el ranking", async () => {
     const product = await prisma!.product.create({
       data: { slug: `${RANK_PREFIX}-multi-oferta`, name: "Multi oferta", categoryId, isDemo: false, updatedAt: new Date("2018-01-01T00:00:00Z") },

@@ -158,6 +158,7 @@ export function toLegacyProduct(product: ProductWithOffers, priceHistory: PriceP
     icon: iconForCategorySlug(product.category.slug),
     imageUrl: product.imageUrl,
     brand: product.brand,
+    description: product.description,
     priceHistory,
     offers: collapseOffersByMerchant(product.offers.map(toLegacyOffer)),
   };

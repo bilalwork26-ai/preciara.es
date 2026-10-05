@@ -32,6 +32,9 @@ function tabCountClassName(active: boolean): string {
   return `rounded-full px-1.5 text-xs ${active ? "bg-white/20" : "bg-beige text-navy-500"}`;
 }
 
+/** Mismo tamaño de página y mismo motivo que PAGE_SIZE en OfertasCatalog.tsx: desde que /categoria/[slug] sirve el catálogo completo (ver CATEGORY_PRODUCTS_LIMIT en category.ts), `products` puede ser mucho más grande que antes — paginación en cliente, sin ida y vuelta al servidor. */
+const PAGE_SIZE = 24;
+
 /**
  * Listado de productos de `/categoria/[slug]`, con pestañas de
  * subcategoría cuando la categoría las tiene definidas (moda, deporte,
@@ -57,6 +60,7 @@ export function CategoryProductGrid({
 }) {
   const taxonomy = getSubcategoryTaxonomy(categorySlug);
   const [activeType, setActiveType] = useState<ProductTypeSlug | "todas">("todas");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // Solo se recalcula si cambian products/taxonomy, nunca en cada cambio de pestaña.
   const tabState = useMemo(
@@ -64,19 +68,47 @@ export function CategoryProductGrid({
     [products, taxonomy]
   );
 
-  if (!taxonomy || !tabState) {
-    return (
-      <ProductGridList ariaLabel="Todos los productos de la categoría">
-        {products.map((product) => (
+  const allVisibleProducts = taxonomy && tabState ? tabState.productsForTab(activeType) : products;
+
+  // Mismo patrón que OfertasCatalog.tsx (ver ese fichero para el porqué):
+  // ajustado en el cuerpo del render, nunca dentro de un efecto, para
+  // volver siempre a la primera página en cuanto cambia la pestaña o el
+  // propio `products` (p. ej. al navegar de una categoría a otra).
+  const [appliedState, setAppliedState] = useState({ activeType, products });
+  if (appliedState.activeType !== activeType || appliedState.products !== products) {
+    setAppliedState({ activeType, products });
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  const visibleProducts = allVisibleProducts.slice(0, visibleCount);
+
+  const grid = (ariaLabel: string) => (
+    <>
+      <ProductGridList ariaLabel={ariaLabel}>
+        {visibleProducts.map((product) => (
           <li key={product.slug} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
             <CategoryProductCard product={product} merchants={merchants} />
           </li>
         ))}
       </ProductGridList>
-    );
+      {visibleCount < allVisibleProducts.length && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            className="rounded-full border border-teal-600 px-5 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50"
+          >
+            Mostrar más ({allVisibleProducts.length - visibleCount} más)
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  if (!taxonomy || !tabState) {
+    return grid("Todos los productos de la categoría");
   }
 
-  const visibleProducts = tabState.productsForTab(activeType);
   const activeLabel = activeType === "todas" ? "todas las subcategorías" : taxonomy.find((rule) => rule.slug === activeType)?.label;
 
   return (
@@ -107,13 +139,7 @@ export function CategoryProductGrid({
         ))}
       </div>
 
-      <ProductGridList ariaLabel={`Productos: ${activeLabel}`}>
-        {visibleProducts.map((product) => (
-          <li key={product.slug} className="sm:min-w-[240px] sm:max-w-[560px] sm:flex-1">
-            <CategoryProductCard product={product} merchants={merchants} />
-          </li>
-        ))}
-      </ProductGridList>
+      {grid(`Productos: ${activeLabel}`)}
     </div>
   );
 }
