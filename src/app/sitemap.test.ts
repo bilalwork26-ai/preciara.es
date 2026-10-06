@@ -42,60 +42,27 @@ describe("sitemap", () => {
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("sitemap (integración, BD local de pruebas)", () => {
-  let categoryId: number;
-  let merchantId: number;
-
   beforeAll(async () => {
     const category = await prisma!.category.create({ data: { slug: `${PREFIX}-cat`, name: "Categoría sitemap" } });
-    categoryId = category.id;
-    const merchant = await prisma!.merchant.create({
-      data: { slug: `${PREFIX}-merchant`, name: "Comercio sitemap", websiteUrl: "https://example.invalid" },
-    });
-    merchantId = merchant.id;
+    // `getActiveCategoriesWithProductCounts` solo lista categorías con al
+    // menos un producto real (ver ese repositorio) — sin este producto, la
+    // categoría de prueba no aparecería y la aserción de abajo daría falso
+    // negativo por un motivo ajeno a lo que prueba este test.
+    await prisma!.product.create({ data: { slug: `${PREFIX}-cat-producto`, name: "Producto de la categoría", categoryId: category.id } });
   });
 
   afterAll(async () => {
     if (!prisma) return;
     await prisma.product.deleteMany({ where: { slug: { startsWith: PREFIX } } });
-    await prisma.merchant.deleteMany({ where: { slug: { startsWith: PREFIX } } });
     await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX } } });
   });
 
-  it("incluye un producto real con oferta activa, y nunca uno sin ofertas activas", async () => {
-    const withOffer = await prisma!.product.create({
-      data: { slug: `${PREFIX}-con-oferta`, name: "Con oferta", categoryId },
-    });
-    await prisma!.offer.create({
-      data: {
-        productId: withOffer.id,
-        merchantId,
-        currentPrice: 10,
-        productUrl: "https://example.invalid/p",
-        availability: "IN_STOCK",
-        lastCheckedAt: new Date(),
-        isActive: true,
-      },
-    });
-    const withoutOffer = await prisma!.product.create({
-      data: { slug: `${PREFIX}-sin-oferta`, name: "Sin oferta", categoryId },
-    });
-    await prisma!.offer.create({
-      data: {
-        productId: withoutOffer.id,
-        merchantId,
-        currentPrice: 10,
-        productUrl: "https://example.invalid/p2",
-        availability: "IN_STOCK",
-        lastCheckedAt: new Date(),
-        isActive: false,
-      },
-    });
-
+  it("incluye una categoría real (los productos, paginados, tienen su propio sitemap — ver producto/sitemap.test.ts)", async () => {
     const entries = await sitemap();
     const urls = entries.map((e) => e.url);
-    expect(urls).toContain(`https://preciara.es/producto/${PREFIX}-con-oferta`);
-    expect(urls).not.toContain(`https://preciara.es/producto/${PREFIX}-sin-oferta`);
     expect(urls).toContain(`https://preciara.es/categoria/${PREFIX}-cat`);
+    // Este sitemap ya NO lista productos individuales en absoluto.
+    expect(urls.some((url) => url.includes("/producto/"))).toBe(false);
   });
 
   it("incluye una categoría cuyos productos NO tienen ninguna oferta activa — /categoria/[slug] resuelve con el catálogo completo (ver getCategoryDetail), así que debe estar en el sitemap aunque no tenga ningún chollo", async () => {
@@ -109,32 +76,5 @@ describe.skipIf(!process.env.DATABASE_URL)("sitemap (integración, BD local de p
     const entries = await sitemap();
     const urls = entries.map((e) => e.url);
     expect(urls).toContain(`https://preciara.es/categoria/${PREFIX}-sin-ofertas-cat`);
-  });
-
-  it("nunca incluye un producto o comercio de demostración", async () => {
-    const demoMerchant = await prisma!.merchant.create({
-      data: { slug: `${PREFIX}-demo-merchant`, name: "Comercio demo", websiteUrl: "https://example.invalid", isDemo: true },
-    });
-    const demoProduct = await prisma!.product.create({
-      data: { slug: `${PREFIX}-demo-producto`, name: "Producto demo", categoryId, isDemo: true },
-    });
-    await prisma!.offer.create({
-      data: {
-        productId: demoProduct.id,
-        merchantId: demoMerchant.id,
-        currentPrice: 5,
-        productUrl: "https://example.invalid/demo",
-        availability: "IN_STOCK",
-        lastCheckedAt: new Date(),
-        isActive: true,
-        isDemo: true,
-      },
-    });
-
-    const entries = await sitemap();
-    const urls = entries.map((e) => e.url);
-    expect(urls).not.toContain(`https://preciara.es/producto/${PREFIX}-demo-producto`);
-
-    await prisma!.merchant.deleteMany({ where: { slug: `${PREFIX}-demo-merchant` } });
   });
 });

@@ -45,4 +45,19 @@ describe("getCategoryEditorial", () => {
   it("es determinista: el mismo slug devuelve siempre el mismo contenido", () => {
     expect(getCategoryEditorial("deporte")).toEqual(getCategoryEditorial("deporte"));
   });
+
+  it("las 4 categorías principales llevan el texto SEO exacto pedido, arriba del listado de productos (campo `intro`, ver categoria/[slug]/page.tsx)", () => {
+    expect(getCategoryEditorial("moda").intro).toBe(
+      "Encuentra las mejores ofertas en ropa, calzado y accesorios de marcas líderes. Compara precios y renueva tu armario ahorrando en cada compra."
+    );
+    expect(getCategoryEditorial("deporte").intro).toBe(
+      "Equípate al mejor precio con nuestra selección de productos de deporte, calzado técnico y nutrición. Compara ofertas de las mejores tiendas."
+    );
+    expect(getCategoryEditorial("tecnologia").intro).toBe(
+      "Descubre chollos en smartphones, informática y dispositivos de última generación. Compara precios y compra la mejor tecnología con total confianza."
+    );
+    expect(getCategoryEditorial("hogar").intro).toBe(
+      "Consigue ofertas exclusivas en cosmética, cuidado personal y artículos para tu hogar. Elige el precio que mejor se adapte a ti."
+    );
+  });
 });

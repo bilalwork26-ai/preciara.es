@@ -9,6 +9,26 @@ import type { Merchant, Offer, Product } from "@/types";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://preciara.es";
 
 /**
+ * Nº de productos por fichero de sitemap (`src/app/(site)/producto/sitemap.ts`,
+ * vía `generateSitemaps`) — por debajo del límite de 50.000 URLs/fichero
+ * de Google, y pensado para que cada fichero individual sea ligero de
+ * descargar y procesar por GoogleBot aunque el catálogo crezca a decenas
+ * de miles de productos.
+ */
+export const PRODUCT_SITEMAP_CHUNK_SIZE = 5000;
+
+/**
+ * Nº de ficheros de sitemap de productos que hacen falta para `count`
+ * productos indexables — compartido entre `producto/sitemap.ts`
+ * (`generateSitemaps`, decide cuántos ids genera) y `robots.ts` (lista esa
+ * misma cantidad de URLs de sitemap), para que nunca diverjan entre sí.
+ * Siempre al menos 1 (un sitemap vacío es válido; cero ficheros no lo es).
+ */
+export function computeProductSitemapPageCount(count: number | null): number {
+  return Math.max(1, Math.ceil((count ?? 0) / PRODUCT_SITEMAP_CHUNK_SIZE));
+}
+
+/**
  * Imagen de Open Graph/Twitter por defecto (ver `src/app/og/route.tsx`),
  * para cualquier página que defina su propio `openGraph`/`twitter` sin una
  * foto real propia. Necesaria porque Next.js NUNCA fusiona `openGraph`

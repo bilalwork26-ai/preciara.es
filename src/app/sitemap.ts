@@ -2,15 +2,20 @@ import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/seo";
 import { guides } from "@/data/guides";
 import { getActiveCategoriesWithProductCounts } from "@/server/repositories/categories";
-import { getActiveProductsWithOffers } from "@/server/repositories/products";
 
 /**
- * Sitemap dinámico: solo páginas públicas indexables y reales. Nunca
- * incluye admin, cuenta, login, APIs, `/buscar` (búsqueda interna), ni
- * ningún dato de demostración — cada entrada de categoría/producto sale
- * directamente de la base de datos (nunca de `src/data/demo/*`). Sin
- * `DATABASE_URL` o si la consulta falla, devuelve solo las páginas
- * estáticas: nunca lanza ni deja el sitemap a medias.
+ * Sitemap de páginas estáticas y categorías — solo páginas públicas
+ * indexables y reales. Nunca incluye admin, cuenta, login, APIs, `/buscar`
+ * (búsqueda interna), ni ningún dato de demostración — cada entrada de
+ * categoría sale directamente de la base de datos (nunca de
+ * `src/data/demo/*`). Sin `DATABASE_URL` o si la consulta falla, devuelve
+ * solo las páginas estáticas: nunca lanza ni deja el sitemap a medias.
+ *
+ * Los productos (potencialmente miles, y creciendo con cada sincronización)
+ * tienen su propio sitemap paginado, separado a propósito para no saturar
+ * a GoogleBot con un único fichero gigante — ver
+ * `src/app/(site)/producto/sitemap.ts` (`generateSitemaps`,
+ * `/producto/sitemap/<id>.xml`) y `robots.ts`, que lista ambos.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
@@ -31,17 +36,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 
-  const [categories, products] = await Promise.all([
-    // `getActiveCategoriesWithProductCounts`, no `...WithOfferCounts`: el
-    // sitemap debe listar toda categoría que de verdad resuelve con
-    // contenido real (200), y desde que /categoria/[slug] sirve el
-    // catálogo completo (con o sin oferta activa, ver getCategoryDetail)
-    // esos dos criterios ya no coinciden — una categoría sin ningún
-    // producto con oferta activa, pero con productos reales, resuelve
-    // igualmente y debe estar aquí.
-    getActiveCategoriesWithProductCounts(),
-    getActiveProductsWithOffers(5000),
-  ]);
+  // `getActiveCategoriesWithProductCounts`, no `...WithOfferCounts`: el
+  // sitemap debe listar toda categoría que de verdad resuelve con
+  // contenido real (200), y desde que /categoria/[slug] sirve el
+  // catálogo completo (con o sin oferta activa, ver getCategoryDetail)
+  // esos dos criterios ya no coinciden — una categoría sin ningún
+  // producto con oferta activa, pero con productos reales, resuelve
+  // igualmente y debe estar aquí.
+  const categories = await getActiveCategoriesWithProductCounts();
 
   const categoryEntries: MetadataRoute.Sitemap = (categories ?? []).map((category) => ({
     url: `${SITE_URL}/categoria/${category.slug}`,
@@ -49,12 +51,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  const productEntries: MetadataRoute.Sitemap = (products ?? []).map((product) => ({
-    url: `${SITE_URL}/producto/${product.slug}`,
-    lastModified: product.updatedAt,
-    changeFrequency: "daily",
-    priority: 0.7,
-  }));
-
-  return [...staticEntries, ...categoryEntries, ...productEntries];
+  return [...staticEntries, ...categoryEntries];
 }
