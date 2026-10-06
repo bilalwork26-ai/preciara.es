@@ -26,14 +26,21 @@ export type CategoryEditorial = {
 const CATEGORY_EDITORIAL: Readonly<Record<string, CategoryEditorial>> = {
   tecnologia: {
     intro:
-      "Smartphones, portátiles, auriculares y demás electrónica de consumo, comparados entre varias tiendas españolas para que no pagues de más por el mismo modelo.",
+      "Descubre chollos en smartphones, informática y dispositivos de última generación. Compara precios y compra la mejor tecnología con total confianza.",
     guideTitle: "Cómo elegir tecnología al mejor precio",
     guide:
       "El precio de un mismo modelo puede variar bastante de una tienda a otra, sobre todo en lanzamientos recientes o durante campañas puntuales de descuento. Antes de comprar, compara el precio final (sin sorpresas de envío) entre varias tiendas y revisa si el vendedor es el fabricante, un distribuidor oficial o un marketplace — puede afectar a la garantía y al plazo de devolución. Si no necesitas la última generación, un modelo con un año de antigüedad suele ofrecer mucho mejor relación calidad-precio.",
   },
   hogar: {
+    // Texto dado tal cual por el usuario para "Hogar y Belleza". La
+    // taxonomía real separa Hogar (aquí) de Belleza y Salud (slug
+    // `salud-cuidado`, página propia) — este texto menciona ambos
+    // dominios ("cosmética, cuidado personal... y artículos para tu
+    // hogar"), así que se aplica aquí por ser la lectura más directa de
+    // "Hogar y Belleza", no por ser un encaje perfecto. Ver el resumen de
+    // la PR para más detalle.
     intro:
-      "Climatización, pequeño y gran electrodoméstico para el hogar, menaje y artículos de bricolaje básico, de varias tiendas y marcas.",
+      "Consigue ofertas exclusivas en cosmética, cuidado personal y artículos para tu hogar. Elige el precio que mejor se adapte a ti.",
     guideTitle: "Cómo elegir productos para el hogar",
     guide:
       "En climatización (deshumidificadores, calefactores, ventiladores) fíjate en el consumo eléctrico declarado y el tamaño de la estancia que puede cubrir el aparato, no solo en el precio de compra — un modelo más barato pero menos eficiente puede salir más caro a medio plazo. En herramientas, comprueba si el precio incluye batería y cargador cuando el producto los necesita: es un extra habitual que algunos anuncios no dejan claro a primera vista.",
@@ -53,13 +60,14 @@ const CATEGORY_EDITORIAL: Readonly<Record<string, CategoryEditorial>> = {
   },
   deporte: {
     intro:
-      "Calzado, ropa técnica y accesorios deportivos de marcas conocidas, comparados por precio entre varias tiendas online.",
+      "Equípate al mejor precio con nuestra selección de productos de deporte, calzado técnico y nutrición. Compara ofertas de las mejores tiendas.",
     guideTitle: "Cómo acertar con la talla y el precio en ropa deportiva",
     guide:
       "La talla de calzado y ropa deportiva varía bastante según la marca y el país de origen del fabricante — si no has comprado antes ese modelo concreto, conviene revisar la tabla de tallas propia de la tienda en vez de guiarte solo por tu talla habitual. Compara también la política de cambios: en calzado técnico (running, fútbol) poder devolverlo si no es tu talla real tiene tanto valor como el precio en sí.",
   },
   moda: {
-    intro: "Ropa, calzado y complementos de varias tiendas, para comparar precio antes de decidir dónde comprar.",
+    intro:
+      "Encuentra las mejores ofertas en ropa, calzado y accesorios de marcas líderes. Compara precios y renueva tu armario ahorrando en cada compra.",
     guideTitle: "Antes de comprar ropa y calzado online",
     guide:
       "Cada marca tiene su propia tabla de tallas, así que una «M» no siempre significa lo mismo de una tienda a otra — revisa las medidas exactas en centímetros cuando la tienda las ofrezca, en vez de fiarte solo de la letra. Ten en cuenta también los gastos y plazos de devolución antes de comprar varias tallas a la vez para probar: no todas las tiendas los asumen igual.",

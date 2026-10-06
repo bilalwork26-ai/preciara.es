@@ -145,6 +145,54 @@ export async function getActiveProductsWithOffers(limit = 60): Promise<ProductWi
   return result.ok ? result.data : null;
 }
 
+/**
+ * Mismo criterio de "indexable" que el resto de este fichero (activo, no
+ * demo, con al menos una oferta activa no demo de un comercio activo no
+ * demo) — un producto sin ninguna oferta activa nunca debe estar en el
+ * sitemap: `getProductDetail` lo trata como 404 real (ver
+ * `src/app/(site)/producto/[slug]/page.tsx`), así que listarlo ahí
+ * mandaría a Google a una URL que no resuelve.
+ */
+const indexableProductWhere = {
+  isActive: true,
+  isDemo: false,
+  offers: { some: { isActive: true, isDemo: false, merchant: { isActive: true, isDemo: false } } },
+} as const;
+
+/** Nº total de productos indexables — para decidir cuántas páginas de sitemap hacen falta (ver `src/app/(site)/producto/sitemap.ts`). `null` = BD no disponible. */
+export async function getActiveProductSitemapCount(): Promise<number | null> {
+  const result = await withDb((db) => db.product.count({ where: indexableProductWhere }));
+  return result.ok ? result.data : null;
+}
+
+export type ProductSitemapEntry = { slug: string; updatedAt: Date };
+
+/**
+ * Una página de productos indexables (slug + fecha de actualización,
+ * nada más — el sitemap no necesita ofertas ni categoría), ordenados por
+ * `id` ascendente: orden estable entre páginas consecutivas, imprescindible
+ * para que `offset`/`limit` no se salten ni dupliquen productos entre una
+ * petición y la siguiente aunque el catálogo cambie entre medias.
+ */
+export async function getActiveProductSitemapPage({
+  offset,
+  limit,
+}: {
+  offset: number;
+  limit: number;
+}): Promise<ProductSitemapEntry[] | null> {
+  const result = await withDb((db) =>
+    db.product.findMany({
+      where: indexableProductWhere,
+      orderBy: { id: "asc" },
+      skip: offset,
+      take: limit,
+      select: { slug: true, updatedAt: true },
+    })
+  );
+  return result.ok ? result.data : null;
+}
+
 /** Un producto por slug, con sus ofertas activas incluidas. `undefined` = no existe; `null` = BD no disponible. */
 export async function getProductBySlug(slug: string): Promise<ProductWithOffers | null | undefined> {
   const result = await withDb((db) =>

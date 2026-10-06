@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 import { getProductDetail } from "@/server/dataSource/product";
 import { formatPrice, bestOfferDiscount, formatProductDisplayName } from "@/lib/format";
 import { buildBreadcrumbList, buildProductJsonLd, DEFAULT_OG_IMAGE_PATH } from "@/lib/seo";
@@ -33,13 +34,12 @@ export async function generateMetadata({ params }: PageProps<"/producto/[slug]">
   if (result.status === "not-found") return {};
 
   const { product, source } = result;
-  // Mismo criterio de "mejor oferta" que la tabla comparativa de la
-  // página (ver compareOffersForTable): la tienda que se cita aquí como
-  // "mejor precio" es la misma que encabeza esa tabla, y el precio es
-  // siempre el PVP solo (nunca precio + envío).
-  const best = [...product.offers].sort(compareOffersForTable)[0];
   const displayName = formatProductDisplayName(product.name, product.brand);
-  const description = `Compara ${product.offers.length} ${product.offers.length === 1 ? "tienda" : "tiendas"} para ${displayName}. Desde ${formatPrice(best.price)}.`;
+  // Plantilla fija de conversión (pedida explícitamente): siempre esta
+  // misma estructura para toda ficha de producto, nunca una variante
+  // distinta por producto — ni precio ni nº de tiendas, que ya se ven en
+  // la propia página.
+  const description = `Compara ofertas de ${displayName}. Encuentra el mejor precio entre distintas tiendas y ahorra en tu compra en Preciara.es.`;
   // La foto real del producto (hotlinked del comercio/Awin/Amazon) si
   // existe, nunca una genérica que pretenda ser el producto — solo cuando
   // no hay ninguna se usa la tarjeta de marca por defecto.
@@ -130,6 +130,26 @@ export default async function ProductPage({ params }: PageProps<"/producto/[slug
             Precio más bajo, en {merchants.find((m) => m.id === best.merchantId)?.name ?? "una tienda asociada"} ·
             Actualizado {best.lastCheckedLabel}
           </p>
+          {/*
+            CTA principal: pedido explícitamente como el elemento más
+            destacado visualmente de toda la página, en móvil y escritorio
+            — ancho completo en móvil (el mayor contraste posible en la
+            pantalla más pequeña), color de marca (teal-600, nunca usado
+            para otra cosa en esta página) y el texto más grande de todos
+            los botones. Enlaza a la MISMA oferta que encabeza la tabla
+            comparativa de abajo (`best`, ver compareOffersForTable) — un
+            solo "mejor precio" en toda la página, nunca dos tiendas
+            distintas marcadas como la oferta principal.
+          */}
+          <a
+            href={best.url}
+            rel="nofollow sponsored noopener"
+            target="_blank"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-teal-600 px-6 py-3.5 text-base font-bold text-white shadow-md shadow-teal-600/20 transition-colors hover:bg-teal-700 sm:mt-5 sm:inline-flex sm:w-auto sm:px-10 sm:text-lg"
+          >
+            Ir a la tienda
+            <ArrowRight className="h-5 w-5" strokeWidth={2.5} />
+          </a>
         </div>
       </div>
 
