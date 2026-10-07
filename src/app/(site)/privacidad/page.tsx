@@ -4,6 +4,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 export const metadata: Metadata = {
   title: "Privacidad y cookies",
   description: "Qué datos trata Preciara y qué cookies utiliza este sitio.",
+  alternates: { canonical: "/privacidad" },
 };
 
 export default function PrivacidadPage() {

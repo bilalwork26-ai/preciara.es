@@ -4,6 +4,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 export const metadata: Metadata = {
   title: "Aviso de afiliación",
   description: "Cómo se financia Preciara y cómo afecta a las ofertas que muestra.",
+  alternates: { canonical: "/aviso-afiliacion" },
 };
 
 export default function AvisoAfiliacionPage() {
