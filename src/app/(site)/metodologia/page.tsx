@@ -4,6 +4,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 export const metadata: Metadata = {
   title: "Metodología",
   description: "Cómo obtiene, verifica y actualiza Preciara los precios que muestra.",
+  alternates: { canonical: "/metodologia" },
 };
 
 export default function MetodologiaPage() {
